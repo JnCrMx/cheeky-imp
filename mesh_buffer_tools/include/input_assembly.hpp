@@ -1,7 +1,6 @@
 #pragma once
 
 #include <fstream>
-#include <glm/fwd.hpp>
 #include <string>
 
 #include <glm/glm.hpp>
@@ -24,6 +23,7 @@ namespace mbt
 			} attribute_value;
 
 			attribute_value read(void* pointer);
+			void write(attribute_value value, void* pointer);
 
 			int index;
 			std::string name;

@@ -56,4 +56,37 @@ namespace mbt
 
 		throw std::runtime_error("unknown format");
 	}
+
+	void input_attribute::write(attribute_value val, void *pointer)
+	{
+		void* p = ((uint8_t*)pointer) + offset;
+
+		if(format=="R32G32B32_FLOAT")
+		{
+			*(glm::vec3*)p = val.vec3;
+			return;
+		}
+		if(format=="R8G8B8A8_UINT")
+		{
+			*(glm::uint32*)p = glm::packUint4x8(val.u8vec4);
+			return;
+		}
+		if(format=="R8G8B8A8_UNORM")
+		{
+			*(uint*)p = glm::packUnorm4x8(val.vec4);
+			return;
+		}
+		if(format=="R8G8B8A8_SNORM")
+		{
+			*(uint*)p = glm::packSnorm4x8(val.vec4);
+			return;
+		}
+		if(format=="R16G16_FLOAT")
+		{
+			*(uint*)p = glm::packHalf2x16(val.vec2);
+			return;
+		}
+
+		throw std::runtime_error("unknown format");
+	}
 }

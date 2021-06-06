@@ -12,9 +12,11 @@ find_package(libxml2 REQUIRED)
 file(GLOB_RECURSE sources_common src/common/*.cpp)
 file(GLOB_RECURSE sources_extract src/extract/*.cpp)
 file(GLOB_RECURSE sources_pose src/pose/*.cpp)
+file(GLOB_RECURSE sources_patch src/patch/*.cpp)
 
 add_executable(extract ${sources_common} ${sources_extract})
 add_executable(pose ${sources_common} ${sources_pose})
+add_executable(patch ${sources_common} ${sources_patch})
 
 include_directories(include/)
 include_directories(${Boost_INCLUDE_DIR})
@@ -29,3 +31,5 @@ target_link_libraries(extract PUBLIC nlohmann_json::nlohmann_json)
 target_link_libraries(pose PUBLIC ${Boost_SYSTEM_LIBRARY})
 target_link_libraries(pose PUBLIC nlohmann_json::nlohmann_json)
 
+target_link_libraries(patch PUBLIC ${Boost_SYSTEM_LIBRARY})
+target_link_libraries(patch PUBLIC nlohmann_json::nlohmann_json)
