@@ -1,3 +1,4 @@
+#include "buffer.hpp"
 #include "input_assembly.hpp"
 
 #include <algorithm>
@@ -13,12 +14,8 @@
 #include <boost/interprocess/mapped_region.hpp>
 
 #include <glm/glm.hpp>
-#include <glm/gtc/packing.hpp>
 
 #include <nlohmann/json.hpp>
-
-using boost::interprocess::file_mapping;
-using boost::interprocess::mapped_region;
 
 typedef std::vector<mbt::input_attribute::attribute_value> vertex;
 
@@ -66,23 +63,13 @@ int main(int argc, char *argv[])
 	int bindingCount = attributeBindings.size();
 	assert(argc == 7 + bindingCount*2);
 
-	std::vector<std::string> 	buffer_paths	(bindingCount);
-	std::vector<int> 			buffer_strides	(bindingCount);
-	std::vector<file_mapping>	buffer_mappings	(bindingCount);
-	std::vector<mapped_region>	buffer_regions	(bindingCount);
-	std::vector<void*>			buffer_pointers	(bindingCount);
-
+	std::vector<std::unique_ptr<mbt::buffer>> buffers(bindingCount);
 	for(int i=0; i<bindingCount; i++)
 	{
-		buffer_paths[i] = argv[7 + 2*i + 0];
-		buffer_strides[i] = std::atoi(argv[7 + 2*i + 1]);
-
-		buffer_mappings[i] = file_mapping(buffer_paths[i].c_str(), boost::interprocess::read_only);
-		buffer_regions[i] = mapped_region(buffer_mappings[i], boost::interprocess::read_only);
-		buffer_pointers[i] = buffer_regions[i].get_address();
+		buffers[i] = std::make_unique<mbt::buffer>(argv[7 + 2*i + 0], std::atoi(argv[7 + 2*i + 1]), boost::interprocess::mode_t::read_only);
 	}
 
-	int vertexCount = buffer_regions[0].get_size() / buffer_strides[0];
+	int vertexCount = buffers[0]->count();
 	std::vector<vertex> vertices(vertexCount);
 
 	for(int i=0; i<vertexCount; i++)
@@ -94,18 +81,17 @@ int main(int argc, char *argv[])
 			int bufferIndex = std::distance(attributeBindings.begin(),
 				std::find(attributeBindings.begin(), attributeBindings.end(), attr.binding));
 
-			void* p = ((uint8_t*)buffer_pointers[bufferIndex]) + buffer_strides[bufferIndex] * i;
+			void* p = buffers[bufferIndex]->at(i);
 
 			vertices[i][j] = attr.read(p);
 		}
 	}
 
-	file_mapping m_index(index_path.c_str(), boost::interprocess::read_only);
-	mapped_region index_region(m_index, boost::interprocess::read_only);
+	mbt::buffer index_buffer(index_path, 2, boost::interprocess::mode_t::read_only);
+	unsigned short* indices = index_buffer;
 
 	std::ofstream out(output_path);
 	std::map<int, int> vertexPositions;
-	unsigned short* index_buffer = (unsigned short*)index_region.get_address();
 
 	std::optional<int> map_position;
 	std::optional<int> map_normal;
@@ -118,7 +104,7 @@ int main(int argc, char *argv[])
 	int counter = 0;
 	for(int i=0; i<index_count; i++)
 	{
-		int index = index_buffer[i+first_index] + vertex_offset;
+		int index = indices[i+first_index] + vertex_offset;
 
 		if(!vertexPositions.contains(index))
 		{
