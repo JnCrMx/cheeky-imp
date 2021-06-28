@@ -1,0 +1,21 @@
+{
+  "file_format_version" : "1.0.0",
+  "layer" : {
+    "name": "VK_LAYER_CHEEKYIMP_CheekyLayer",
+    "type": "GLOBAL",
+    "library_path": ".\\cheeky_layer.dll",
+    "api_version": "1.1.0",
+    "implementation_version": "1",
+    "description": "Vulkan layer for cheeky-imp - https://github.com/JnCrMx/cheeky-imp",
+    "functions": {
+      "vkGetInstanceProcAddr": "CheekyLayer_GetInstanceProcAddr",
+      "vkGetDeviceProcAddr": "CheekyLayer_GetDeviceProcAddr"
+    },
+    "enable_environment": {
+      "ENABLE_CHEEKY_LAYER": "1"
+    },
+    "disable_environment": {
+      "DISABLE_CHEEKY_LAYER": "1"
+    }
+  }
+}
