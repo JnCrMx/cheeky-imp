@@ -18,6 +18,7 @@ target_link_libraries(cheeky_layer PUBLIC ${Vulkan_LIBRARY} ${OPENSSL_CRYPTO_LIB
 
 option(CHEEKY_LAYER_SPIRV_CROSS "Decompile shaders with SPIRV-Cross. (very experimental)"   OFF)
 option(CHEEKY_LAYER_GLSLANG     "Compile shaders with glslang. (experimental)"              ON)
+option(CHEEKY_LAYER_IMAGE_TOOLS "Use image_tools to load and convert png images."           ON)
 
 if(CHEEKY_LAYER_SPIRV_CROSS)
     set(SPIRV_CROSS_EXCEPTIONS_TO_ASSERTIONS OFF CACHE BOOL "")
@@ -57,4 +58,16 @@ if(CHEEKY_LAYER_GLSLANG)
     target_include_directories(cheeky_layer PUBLIC external/glslang/glslang/Public external/glslang/SPIRV external/glslang/StandAlone)
 
     target_compile_definitions(cheeky_layer PUBLIC USE_GLSLANG)
+endif()
+
+if(CHEEKY_LAYER_IMAGE_TOOLS)
+    set(IMAGE_TOOLS_CLI OFF CACHE BOOL "Build 'pack' and 'unpack' executables")
+    set(IMAGE_TOOLS_PIC ON CACHE BOOL "Use -fPIC for compiling the library")
+
+    add_subdirectory(external/image_tools)
+
+    target_link_libraries(cheeky_layer PUBLIC image_tools)
+	target_include_directories(cheeky_layer PRIVATE external/stb)
+
+    target_compile_definitions(cheeky_layer PUBLIC USE_IMAGE_TOOLS)
 endif()

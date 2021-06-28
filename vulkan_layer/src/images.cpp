@@ -4,6 +4,18 @@
 #include "utils.hpp"
 
 #include "vk_format_utils.h"
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <vulkan/vulkan_core.h>
+
+#ifdef USE_IMAGE_TOOLS
+#include <block_compression.hpp>
+#include <image.hpp>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+#endif
 
 using CheekyLayer::logger;
 
@@ -128,6 +140,43 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBufferToImage(
 				log << " Found image override!";
 				in.read((char*)data, size);
 			}
+#ifdef USE_IMAGE_TOOLS
+			else if(imgInfo.format == VK_FORMAT_BC1_RGBA_SRGB_BLOCK ||
+					imgInfo.format == VK_FORMAT_BC3_SRGB_BLOCK)
+			{
+				std::string path = global_config["overrideDirectory"]+"/images/"+hash_string+".png";
+				if(std::filesystem::exists(path))
+				{
+					int w, h, comp;
+					uint8_t* buf = stbi_load(path.c_str(), &w, &h, &comp, STBI_rgb_alpha);
+
+					std::vector<unsigned char> imagedata(buf, buf+w*h*4);
+					image_tools::image image(w, h, imagedata);
+					std::vector<uint8_t> out;
+
+					bool ok = true;
+					switch(imgInfo.format)
+					{
+						case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
+							image_tools::compressBC1(image, out, imgInfo.extent.width, imgInfo.extent.height);
+							break;
+						case VK_FORMAT_BC3_SRGB_BLOCK:
+							image_tools::compressBC3(image, out, imgInfo.extent.width, imgInfo.extent.height);
+							break;
+						default:
+							log << " Cannot convert image override to format " << imgInfo.format;
+							ok = false;
+					}
+
+					if(ok)
+					{
+						log << " Found and converted image override to format " << imgInfo.format;
+						std::copy(out.begin(), out.end(), (uint8_t*)data);
+					}
+					free(buf);
+				}
+			}
+#endif
 		}
 
 		dispatch.UnmapMemory(device, memory);
