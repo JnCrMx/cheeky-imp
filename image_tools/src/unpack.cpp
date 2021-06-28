@@ -9,6 +9,8 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 
+using namespace image_tools;
+
 int main(int argc, char* argv[])
 {
 	assert(argc == 6);

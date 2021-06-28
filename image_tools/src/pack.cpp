@@ -11,6 +11,8 @@
 #include "block_compression.hpp"
 #include "image.hpp"
 
+using namespace image_tools;
+
 int main(int argc, char* argv[])
 {
 	assert(argc == 6);
