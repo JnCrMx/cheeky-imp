@@ -7,11 +7,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Vulkan REQUIRED FATAL_ERROR)
 find_package(OpenSSL REQUIRED)
 
-file(GLOB_RECURSE sources src/**.cpp)
+file(GLOB_RECURSE sources src/**.cpp external/Vulkan-ValidationLayers/layers/vk_format_utils.cpp)
 
 add_library(cheeky_layer SHARED ${sources})
 
 target_include_directories(cheeky_layer PUBLIC include/)
+target_include_directories(cheeky_layer PUBLIC external/Vulkan-ValidationLayers/layers/)
 target_include_directories(cheeky_layer PUBLIC ${Vulkan_INCLUDE_DIR} ${OPENSSL_INCLUDE_DIR})
   
 target_link_libraries(cheeky_layer PUBLIC ${Vulkan_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
