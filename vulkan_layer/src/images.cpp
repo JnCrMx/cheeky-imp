@@ -3,6 +3,9 @@
 #include "buffers.hpp"
 #include "utils.hpp"
 
+#include <cstdint>
+#include <memory>
+#include <string>
 #include <vk_format_utils.h>
 #include <algorithm>
 #include <filesystem>
@@ -17,9 +20,17 @@
 #include <stb_image.h>
 #endif
 
+#if defined(USE_IMAGE_TOOLS) && defined(EXPORT_PNG)
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb_image_write.h>
+#endif
+
 using CheekyLayer::logger;
 
 std::map<VkImage, VkImageCreateInfo> images;
+#ifdef USE_IMAGE_TOOLS
+std::map<VkImage, std::unique_ptr<image_tools::image>> topResolutions;
+#endif
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateImage(
 	VkDevice                                    device,
@@ -130,50 +141,87 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBufferToImage(
 			std::ofstream out(global_config["dumpDirectory"]+"/images/"+hash_string+".image", std::ios_base::binary);
 			if(out.good())
 				out.write((char*)data, (size_t)size);
+
+#if defined(USE_IMAGE_TOOLS) && defined(EXPORT_PNG)
+			if(image_tools::is_decompression_supported(imgInfo.format))
+			{
+				std::string dir = global_config["dumpDirectory"]+"/images/png/"+std::to_string(width)+"x"+std::to_string(height)+"/";
+				std::string outputPath = dir+hash_string+".png";
+				if(!std::filesystem::exists(outputPath))
+				{
+					try
+					{
+						image_tools::image image(width, height);
+						image_tools::decompress(imgInfo.format, (uint8_t*)data, image, width, height);
+
+						std::filesystem::create_directories(dir);
+						stbi_write_png(outputPath.c_str(), width, height, 4, image, width*4);
+					}
+					catch(std::exception& ex) { log << " Something went wrong: " << ex.what(); }
+					catch(...) { log << " Something went really wrong"; }
+				}
+			}
+#endif
 		}
 
-		if(global_config.map<bool>("override", CheekyLayer::config::to_bool) && has_override(hash_string))
+		if(global_config.map<bool>("override", CheekyLayer::config::to_bool))
 		{
-			std::ifstream in(global_config["overrideDirectory"]+"/images/"+hash_string+".image", std::ios_base::binary);
-			if(in.good())
+			if(has_override(hash_string))
 			{
-				log << " Found image override!";
-				in.read((char*)data, size);
+				std::ifstream in(global_config["overrideDirectory"]+"/images/"+hash_string+".image", std::ios_base::binary);
+				if(in.good())
+				{
+					log << " Found image override!";
+					in.read((char*)data, size);
+				}
+#ifdef USE_IMAGE_TOOLS
+				else if(image_tools::is_compression_supported(imgInfo.format))
+				{
+					std::string path = global_config["overrideDirectory"]+"/images/"+hash_string+".png";
+					if(std::filesystem::exists(path))
+					{
+						try
+						{
+							int w, h, comp;
+							uint8_t* buf = stbi_load(path.c_str(), &w, &h, &comp, STBI_rgb_alpha);
+
+							image_tools::image image(w, h, buf);
+							std::vector<uint8_t> out;
+
+							image_tools::compress(format, image, out, width, height);
+							std::copy(out.begin(), out.end(), (uint8_t*)data);
+
+							if(pRegions[0].imageSubresource.mipLevel == 0)
+							{
+								topResolutions[dstImage] = std::make_unique<image_tools::image>(image);
+								log << " This seems to be the best resolution?";
+							}
+							free(buf);
+							log << " Found and converted image override to format " << format;
+						}
+						catch(std::exception& ex) { log << " Something went wrong: " << ex.what(); }
+						catch(...) { log << " Something went really wrong"; }
+					}
+				}
+#endif
 			}
 #ifdef USE_IMAGE_TOOLS
-			else if(imgInfo.format == VK_FORMAT_BC1_RGBA_SRGB_BLOCK ||
-					imgInfo.format == VK_FORMAT_BC3_SRGB_BLOCK)
+			else
 			{
-				std::string path = global_config["overrideDirectory"]+"/images/"+hash_string+".png";
-				if(std::filesystem::exists(path))
+				auto it = topResolutions.find(dstImage);
+				if(it != topResolutions.end())
 				{
-					int w, h, comp;
-					uint8_t* buf = stbi_load(path.c_str(), &w, &h, &comp, STBI_rgb_alpha);
-
-					std::vector<unsigned char> imagedata(buf, buf+w*h*4);
-					image_tools::image image(w, h, imagedata);
-					std::vector<uint8_t> out;
-
-					bool ok = true;
-					switch(imgInfo.format)
+					try
 					{
-						case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
-							image_tools::compressBC1(image, out, imgInfo.extent.width, imgInfo.extent.height);
-							break;
-						case VK_FORMAT_BC3_SRGB_BLOCK:
-							image_tools::compressBC3(image, out, imgInfo.extent.width, imgInfo.extent.height);
-							break;
-						default:
-							log << " Cannot convert image override to format " << imgInfo.format;
-							ok = false;
-					}
+						std::vector<uint8_t> out;
 
-					if(ok)
-					{
-						log << " Found and converted image override to format " << imgInfo.format;
+						image_tools::compress(format, *it->second.get(), out, width, height);
 						std::copy(out.begin(), out.end(), (uint8_t*)data);
+
+						log << " Found and converted image override of top resolution to format " << format;
 					}
-					free(buf);
+					catch(std::exception& ex) { log << " Something went wrong: " << ex.what(); }
+					catch(...) { log << " Something went really wrong"; }
 				}
 			}
 #endif

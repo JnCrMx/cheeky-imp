@@ -1,4 +1,6 @@
 cmake_minimum_required (VERSION 3.4)
+include(CMakeDependentOption)
+
 project(vulkan_layer)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -20,6 +22,7 @@ target_link_libraries(cheeky_layer PUBLIC ${Vulkan_LIBRARY} ${OPENSSL_CRYPTO_LIB
 option(CHEEKY_LAYER_SPIRV_CROSS "Decompile shaders with SPIRV-Cross. (very experimental)"   OFF)
 option(CHEEKY_LAYER_GLSLANG     "Compile shaders with glslang. (experimental)"              ON)
 option(CHEEKY_LAYER_IMAGE_TOOLS "Use image_tools to load and convert png images."           ON)
+cmake_dependent_option(CHEEKY_LAYER_EXPORT_PNG "Export images as png using image_tools." ON "CHEEKY_LAYER_IMAGE_TOOLS" OFF)
 
 if(CHEEKY_LAYER_SPIRV_CROSS)
     set(SPIRV_CROSS_EXCEPTIONS_TO_ASSERTIONS OFF CACHE BOOL "")
@@ -64,6 +67,7 @@ endif()
 if(CHEEKY_LAYER_IMAGE_TOOLS)
     set(IMAGE_TOOLS_CLI OFF CACHE BOOL "Build 'pack' and 'unpack' executables")
     set(IMAGE_TOOLS_PIC ON CACHE BOOL "Use -fPIC for compiling the library")
+    set(IMAGE_TOOLS_WITH_VULKAN	ON CACHE BOOL "Integrate with VkFormat")
 
     add_subdirectory(external/image_tools)
 
@@ -71,4 +75,7 @@ if(CHEEKY_LAYER_IMAGE_TOOLS)
 	target_include_directories(cheeky_layer PRIVATE external/stb)
 
     target_compile_definitions(cheeky_layer PUBLIC USE_IMAGE_TOOLS)
+    if(CHEEKY_LAYER_EXPORT_PNG)
+        target_compile_definitions(cheeky_layer PUBLIC EXPORT_PNG)
+    endif()
 endif()
