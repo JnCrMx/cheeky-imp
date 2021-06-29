@@ -11,7 +11,8 @@ namespace image_tools
 		public:
 			typedef unsigned int color;
 			image(int width, int height);
-			image(int w, int h, std::vector<unsigned char> d);
+			image(int w, int h, std::vector<unsigned char>&& d);
+			image(int w, int h, uint8_t* pointer);
 
 			color& at(int x, int y);
 			glm::vec4 scaled(int x, int y, int w, int h) const;

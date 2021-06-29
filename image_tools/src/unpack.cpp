@@ -34,9 +34,17 @@ int main(int argc, char* argv[])
 
 	image image(width, height);
 
+	if(format=="BC1")
+	{
+		decompressBC1(data.data(), image, width, height);
+	}
 	if(format=="BC3")
 	{
 		decompressBC3(data.data(), image, width, height);
+	}
+	if(format=="BC7")
+	{
+		decompressBC7(data.data(), image, width, height, false);
 	}
 
 	stbi_write_png(outputPath.c_str(), width, height, 4, image, width*4);

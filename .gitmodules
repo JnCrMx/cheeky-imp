@@ -16,3 +16,6 @@
 [submodule "external/Vulkan-ValidationLayers"]
 	path = external/Vulkan-ValidationLayers
 	url = https://github.com/KhronosGroup/Vulkan-ValidationLayers
+[submodule "external/bc7enc16"]
+	path = external/bc7enc16
+	url = https://github.com/richgel999/bc7enc16

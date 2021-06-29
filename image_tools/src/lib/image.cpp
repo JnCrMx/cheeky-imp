@@ -12,12 +12,20 @@ namespace image_tools
 		data.resize(w*h);
 	}
 
-	image::image(int w, int h, std::vector<unsigned char> d)
+	image::image(int w, int h, std::vector<unsigned char>&& d)
 	{
 		width = w;
 		height = h;
 
-		data = std::vector<image::color>((image::color*)d.data(), ((image::color*)d.data())+width*height);
+		data.assign(d.data(), d.data()+w*h*4);
+	}
+
+	image::image(int w, int h, uint8_t* pointer)
+	{
+		width = w;
+		height = h;
+
+		data.assign(pointer, pointer+w*h*4);
 	}
 
 	image::color& image::at(int x, int y)

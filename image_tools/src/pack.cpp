@@ -30,9 +30,17 @@ int main(int argc, char* argv[])
 	image image(w, h, data);
 	std::vector<uint8_t> out;
 
-	if(format=="BC3")
+	if(format=="BC1")
+	{
+		compressBC1(image, out, width, height);
+	}
+	else if(format=="BC")
 	{
 		compressBC3(image, out, width, height);
+	}
+	else if(format=="BC7")
+	{
+		compressBC7(image, out, width, height);
 	}
 
 	{

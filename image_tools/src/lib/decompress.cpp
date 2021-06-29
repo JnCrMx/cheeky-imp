@@ -7,6 +7,9 @@
 #include <glm/fwd.hpp>
 #include <iostream>
 
+#include <bc7decomp.h>
+#include <stdexcept>
+
 namespace image_tools
 {
 	void readColorBlock(const uint8_t* in, float out[4][4])
@@ -119,5 +122,39 @@ namespace image_tools
 	void decompressBC3(const uint8_t* in, image& out, int w, int h)
 	{
 		decompressBC13(in, out, w, h, true);
+	}
+
+	void decompressBC7(const uint8_t* in, image& out, int w, int h, bool alpha)
+	{
+		for(int y=0; y<w; y+=4)
+		{
+			for(int x=0; x<w; x+=4)
+			{
+				uint8_t pixbuf[4*4*4];
+				int offset = (y*w + x*4);
+
+				if(!detexDecompressBlockBPTC(in + offset, 0xff, 0x1, pixbuf))
+				{
+					throw std::runtime_error("detexDecompressBlockBPTC returned false");
+				}
+
+				for(int yy=0; yy<4; yy++)
+				{
+					for(int xx=0; xx<4; xx++)
+					{
+						uint8_t r = pixbuf[16*yy + xx*4 + 0];
+						uint8_t g = pixbuf[16*yy + xx*4 + 1];
+						uint8_t b = pixbuf[16*yy + xx*4 + 2];
+						uint8_t a = 0xff;
+						if(alpha)
+						{
+							a = pixbuf[16*yy + xx*4 + 3];
+						}
+
+						out.at(x+xx, y+yy) = (a<<(3*8)) | (b<<(2*8)) | (g<<(1*8)) | (r<<(0*8));
+					}
+				}
+			}
+		}
 	}
 }

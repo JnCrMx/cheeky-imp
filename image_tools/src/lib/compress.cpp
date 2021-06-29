@@ -7,6 +7,7 @@
 #include <iostream>
 #include <algorithm>
 #include <iterator>
+#include <bc7enc16.h>
 
 namespace image_tools
 {
@@ -150,5 +151,45 @@ namespace image_tools
 	void compressBC3(const image& in, std::vector<uint8_t>& out, int w, int h)
 	{
 		compressBC13(in, out, w, h, true);
+	}
+
+	static bool bc7_init = false;
+	void compressBC7(const image &in, std::vector<uint8_t> &out, int w, int h)
+	{
+		out.resize(w * h);
+		std::fill(out.begin(), out.end(), 0x00);
+
+		if(!bc7_init)
+		{
+			bc7enc16_compress_block_init();
+			bc7_init = true;
+		}
+
+		bc7enc16_compress_block_params params;
+		bc7enc16_compress_block_params_init(&params);
+		bc7enc16_compress_block_params_init_perceptual_weights(&params);
+
+		for(int y=0; y<h; y+=4)
+		{
+			for(int x=0; x<w; x+=4)
+			{
+				uint8_t rgba[4*4*4];
+				for(int yy=0; yy<4; yy++)
+				{
+					for(int xx=0; xx<4; xx++)
+					{
+						glm::vec4 v = in.scaled(x+xx, y+yy, w, h);
+						rgba[yy*4*4 + xx*4 + 0] = v.r * 255.0f;
+						rgba[yy*4*4 + xx*4 + 1] = v.g * 255.0f;
+						rgba[yy*4*4 + xx*4 + 2] = v.b * 255.0f;
+						rgba[yy*4*4 + xx*4 + 3] = v.a * 255.0f;
+					}
+				}
+
+				int offset = (y*w + x*4);
+				uint8_t* outPointer = out.data() + offset;
+				bc7enc16_compress_block(outPointer, rgba, &params);
+			}
+		}
 	}
 }
