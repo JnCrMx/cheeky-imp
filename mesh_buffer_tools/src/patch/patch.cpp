@@ -38,6 +38,26 @@ struct bone_weight {
 	float weight = 0.0f;
 };
 
+#ifdef APPROX_UNIQUE
+bool feq(float f1, float f2)
+{
+	return std::abs(f1-f2) < 0.01f;
+}
+
+bool veq2(glm::vec2 v1, glm::vec2 v2)
+{
+	return feq(v1.x, v2.x) && feq(v1.y, v2.y);
+}
+bool veq3(glm::vec3 v1, glm::vec3 v2)
+{
+	return feq(v1.x, v2.x) && feq(v1.y, v2.y) && feq(v1.z, v2.z);
+}
+bool veq4(glm::vec4 v1, glm::vec4 v2)
+{
+	return feq(v1.x, v2.x) && feq(v1.y, v2.y) && feq(v1.z, v2.z) && feq(v1.w, v2.w);
+}
+#endif
+
 struct obj_vertex {
 	glm::vec3 position;
 	glm::vec2 texCoord;
@@ -48,12 +68,21 @@ struct obj_vertex {
 
 	bool operator==(obj_vertex v2)
 	{
+#ifdef APPROX_UNIQUE
+		return
+			veq3(position, v2.position) &&
+			veq2(texCoord, v2.texCoord) &&
+			veq3(normal, v2.normal) &&
+			boneGroups == v2.boneGroups &&
+			veq4(boneWeights, v2.boneWeights);
+#else
 		return
 			position == v2.position &&
-			texCoord == v2.texCoord && 
-			normal == v2.normal && 
+			texCoord == v2.texCoord &&
+			normal == v2.normal &&
 			boneGroups == v2.boneGroups &&
 			boneWeights == v2.boneWeights;
+#endif
 	}
 };
 
@@ -180,7 +209,7 @@ int main(int argc, char *argv[])
 	std::ifstream obj(input_path);
 	if(!obj)
 		throw std::runtime_error("file not found: "+input_path);
-		
+
 	while(std::getline(obj, line))
 	{
 		std::istringstream is(line);
@@ -256,7 +285,7 @@ int main(int argc, char *argv[])
 
 			if(std::abs(sum-1.0f) > 0.001f)
 			{
-				std::cout << "Weight sum is " << sum << ": " << it->second[0].weight << " " << it->second[1].weight 
+				std::cout << "Weight sum is " << sum << ": " << it->second[0].weight << " " << it->second[1].weight
 					<< " " << it->second[2].weight << " " << it->second[3].weight << std::endl;
 			}
 
@@ -278,12 +307,12 @@ int main(int argc, char *argv[])
 	std::cout << indices.size() << " indices and " << uniqueVertices.size() << " vertices found" << std::endl;
 	if(indices.size() > index_count)
 	{
-		std::cerr 	<< "We do not have enough space to fit " << indices.size() 
-					<< " indices, we have only " << index_count << "positions!" << std::endl;
+		std::cerr 	<< "We do not have enough space to fit " << indices.size()
+					<< " indices, we have only " << index_count << " positions!" << std::endl;
 	}
 	if(uniqueVertices.size() > vertexPositions.size())
 	{
-		std::cerr 	<< "We do not have enough space to fit " << uniqueVertices.size() 
+		std::cerr 	<< "We do not have enough space to fit " << uniqueVertices.size()
 					<< " vertices, we have only " << vertexPositions.size() << " positions!" << std::endl;
 	}
 
