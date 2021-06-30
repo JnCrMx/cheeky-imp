@@ -17,7 +17,7 @@ namespace image_tools
 		width = w;
 		height = h;
 
-		data.assign(d.data(), d.data()+w*h*4);
+		data.assign((image::color*)d.data(), ((image::color*)d.data())+w*h);
 	}
 
 	image::image(int w, int h, uint8_t* pointer)
@@ -25,7 +25,7 @@ namespace image_tools
 		width = w;
 		height = h;
 
-		data.assign(pointer, pointer+w*h*4);
+		data.assign((image::color*)pointer, ((image::color*)pointer)+w*h);
 	}
 
 	image::color& image::at(int x, int y)

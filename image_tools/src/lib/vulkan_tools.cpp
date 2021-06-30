@@ -13,8 +13,14 @@ namespace image_tools
 		{
 			case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
 			case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
+			case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
+			case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
 				return true;
 			case VK_FORMAT_BC3_SRGB_BLOCK:
+			case VK_FORMAT_BC3_UNORM_BLOCK:
+				return true;
+			case VK_FORMAT_BC5_UNORM_BLOCK:
+			case VK_FORMAT_BC5_SNORM_BLOCK:
 				return true;
 			case VK_FORMAT_BC7_SRGB_BLOCK:
 				return true;
@@ -33,8 +39,14 @@ namespace image_tools
 		{
 			case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
 			case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
+			case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
+			case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
 				return true;
 			case VK_FORMAT_BC3_SRGB_BLOCK:
+			case VK_FORMAT_BC3_UNORM_BLOCK:
+				return true;
+			case VK_FORMAT_BC5_UNORM_BLOCK:
+			case VK_FORMAT_BC5_SNORM_BLOCK:
 				return true;
 			case VK_FORMAT_BC7_SRGB_BLOCK:
 				return true;
@@ -53,10 +65,17 @@ namespace image_tools
 		{
 			case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
 			case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
+			case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
+			case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
 				compressBC1(in, out, w, h);
 				break;
 			case VK_FORMAT_BC3_SRGB_BLOCK:
+			case VK_FORMAT_BC3_UNORM_BLOCK:
 				compressBC3(in, out, w, h);
+				break;
+			case VK_FORMAT_BC5_UNORM_BLOCK:
+			case VK_FORMAT_BC5_SNORM_BLOCK:
+				compressBC5(in, out, w, h);
 				break;
 			case VK_FORMAT_BC7_SRGB_BLOCK:
 				compressBC7(in, out, w, h);
@@ -76,10 +95,17 @@ namespace image_tools
 		{
 			case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
 			case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
+			case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
+			case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
 				decompressBC1(in, out, w, h);
 				break;
 			case VK_FORMAT_BC3_SRGB_BLOCK:
+			case VK_FORMAT_BC3_UNORM_BLOCK:
 				decompressBC3(in, out, w, h);
+				break;
+			case VK_FORMAT_BC5_UNORM_BLOCK:
+			case VK_FORMAT_BC5_SNORM_BLOCK:
+				decompressBC5(in, out, w, h);
 				break;
 			case VK_FORMAT_BC7_SRGB_BLOCK:
 				decompressBC7(in, out, w, h, false);

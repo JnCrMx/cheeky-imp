@@ -11,6 +11,8 @@
 #include "block_compression.hpp"
 #include "image.hpp"
 
+#include <iostream>
+
 using namespace image_tools;
 
 int main(int argc, char* argv[])
@@ -24,19 +26,21 @@ int main(int argc, char* argv[])
 
 	int w, h, comp;
 	uint8_t* buf = stbi_load(inputPath.c_str(), &w, &h, &comp, STBI_rgb_alpha);
-
-	std::vector<unsigned char> data(buf, buf+w*h*4);
 	
-	image image(w, h, data);
+	image image(w, h, buf);
 	std::vector<uint8_t> out;
 
 	if(format=="BC1")
 	{
 		compressBC1(image, out, width, height);
 	}
-	else if(format=="BC")
+	else if(format=="BC3")
 	{
 		compressBC3(image, out, width, height);
+	}
+	else if(format=="BC5")
+	{
+		compressBC5(image, out, width, height);
 	}
 	else if(format=="BC7")
 	{
