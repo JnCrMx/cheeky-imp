@@ -45,6 +45,9 @@ namespace image_tools
 			case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
 			case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
 				return true;
+			case VK_FORMAT_BC2_SRGB_BLOCK:
+			case VK_FORMAT_BC2_UNORM_BLOCK:
+				return true;
 			case VK_FORMAT_BC3_SRGB_BLOCK:
 			case VK_FORMAT_BC3_UNORM_BLOCK:
 				return true;
@@ -107,6 +110,10 @@ namespace image_tools
 			case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
 			case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
 				decompressBC1(in, out, w, h);
+				break;
+			case VK_FORMAT_BC2_SRGB_BLOCK:
+			case VK_FORMAT_BC2_UNORM_BLOCK:
+				decompressBC2(in, out, w, h);
 				break;
 			case VK_FORMAT_BC3_SRGB_BLOCK:
 			case VK_FORMAT_BC3_UNORM_BLOCK:

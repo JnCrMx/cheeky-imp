@@ -38,6 +38,10 @@ int main(int argc, char* argv[])
 	{
 		decompressBC1(data.data(), image, width, height);
 	}
+	else if(format=="BC2")
+	{
+		decompressBC2(data.data(), image, width, height);
+	}
 	else if(format=="BC3")
 	{
 		decompressBC3(data.data(), image, width, height);

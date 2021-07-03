@@ -119,6 +119,51 @@ namespace image_tools
 		decompressBC13(in, out, w, h, false);
 	}
 
+	void decompressBC2(const uint8_t *in, image &out, int w, int h)
+	{
+		const uint8_t* buf = in;
+		for(int y=0; y<h; y+=4)
+		{
+			for(int x=0; x<w; x+=4)
+			{
+				float alpha[4][4];
+				//TODO: implement alpha lol
+				std::fill(&alpha[0][0], &alpha[4][0], 1.0f);
+				buf += 8;
+
+				unsigned short c0 = ((unsigned short*)(buf))[0];
+				unsigned short c1 = ((unsigned short*)(buf))[1];
+				buf += 4;
+
+				glm::vec3 v0 = color(c0);
+				glm::vec3 v1 = color(c1);
+				glm::vec3 v2, v3;
+				if(c0 > c1)
+				{
+					v2 = (2.0f/3.0f) * v0 + (1.0f/3.0f) * v1;
+					v3 = (1.0f/3.0f) * v0 + (2.0f/3.0f) * v1;
+				}
+				else
+				{
+					v2 = (1.0f/2.0f) * v0 + (1.0f/2.0f) * v1;
+					v3 = glm::vec3(0.0f, 0.0f, 0.0f);
+				}
+				glm::vec3 colors[] = {v0, v1, v2, v3};
+
+				const uint8_t* lookup = buf; buf+=4;
+				for(int yy=0; yy<4; yy++)
+				{
+					uint8_t row = lookup[yy];
+					for(int xx=0; xx<4; xx++)
+					{
+						int index = (row >> (2*xx)) & 0b11;
+						out.at(x+xx, y+yy) = color(glm::vec4(colors[index], alpha[xx][yy]));
+					}
+				}
+			}
+		}
+	}
+
 	void decompressBC3(const uint8_t* in, image& out, int w, int h)
 	{
 		decompressBC13(in, out, w, h, true);
