@@ -94,10 +94,10 @@ namespace image_tools
 					writeColorBlock(alpha, buf);
 					buf += 8;
 				}
-				
+
 				glm::vec4 max = *std::max_element(colors.begin(), colors.end(), [](glm::vec4 a, glm::vec4 b){
 					return shortcolor(a) < shortcolor(b);
-				});			
+				});
 				glm::vec4 min = *std::min_element(colors.begin(), colors.end(), [](glm::vec4 a, glm::vec4 b){
 					return shortcolor(a) < shortcolor(b);
 				});
@@ -153,6 +153,31 @@ namespace image_tools
 		compressBC13(in, out, w, h, true);
 	}
 
+	void compressBC4(const image &in, std::vector<uint8_t> &out, int w, int h)
+	{
+		out.resize(w * h * 0.5);
+		std::fill(out.begin(), out.end(), 0x00);
+
+		uint8_t* buf = out.data();
+		for(int y=0; y<h; y+=4)
+		{
+			for(int x = 0; x < w; x += 4)
+			{
+				std::array<glm::vec4, 16> colors;
+				for(int xx=0; xx<4; xx++)
+					for(int yy=0; yy<4; yy++)
+						colors[4*yy+xx] = in.scaled(x+xx, y+yy, w, h);
+
+				std::array<float, 16> red;
+				std::transform(colors.begin(), colors.end(), red.begin(), [](glm::vec4 color){
+					return color.r;
+				});
+				writeColorBlock(red, buf);
+				buf += 8;
+			}
+		}
+	}
+
 	void compressBC5(const image &in, std::vector<uint8_t> &out, int w, int h)
 	{
 		out.resize(w * h);
@@ -167,7 +192,7 @@ namespace image_tools
 				for(int xx=0; xx<4; xx++)
 					for(int yy=0; yy<4; yy++)
 						colors[4*yy+xx] = in.scaled(x+xx, y+yy, w, h);
-				
+
 				std::array<float, 16> red;
 				std::transform(colors.begin(), colors.end(), red.begin(), [](glm::vec4 color){
 					return color.r;

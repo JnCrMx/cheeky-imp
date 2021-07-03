@@ -38,6 +38,10 @@ int main(int argc, char* argv[])
 	{
 		compressBC3(image, out, width, height);
 	}
+	else if(format=="BC4")
+	{
+		compressBC4(image, out, width, height);
+	}
 	else if(format=="BC5")
 	{
 		compressBC5(image, out, width, height);

@@ -124,6 +124,29 @@ namespace image_tools
 		decompressBC13(in, out, w, h, true);
 	}
 
+	void decompressBC4(const uint8_t *in, image &out, int w, int h)
+	{
+		const uint8_t* buf = in;
+		for(int y=0; y<h; y+=4)
+		{
+			for(int x=0; x<w; x+=4)
+			{
+				float red[4][4];
+
+				readColorBlock(buf, red);
+				buf += 8;
+
+				for(int yy=0; yy<4; yy++)
+				{
+					for(int xx=0; xx<4; xx++)
+					{
+						out.at(x+xx, y+yy) = color(glm::vec4(red[xx][yy], 0.0, 0.0, 1.0));
+					}
+				}
+			}
+		}
+	}
+
 	void decompressBC5(const uint8_t *in, image &out, int w, int h)
 	{
 		const uint8_t* buf = in;
