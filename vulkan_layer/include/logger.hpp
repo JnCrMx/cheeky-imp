@@ -3,6 +3,7 @@
 #include <fstream>
 #include <memory>
 #include <ostream>
+#include <sstream>
 #include <string>
 #include <mutex>
 #include <atomic>
@@ -36,6 +37,10 @@ namespace CheekyLayer
 			active_logger(logger* l) : myLogger(l) {}
 
 			void flush();
+			std::ostream& raw()
+			{
+				return myLogger->out;
+			}
 
 			template<typename T>
 			active_logger& operator<<(T t)
@@ -43,6 +48,7 @@ namespace CheekyLayer
 				myLogger->out << t;
 				return *this;
 			}
+
 			logger& operator<<(struct end_t);
 		private:
 			logger* myLogger;

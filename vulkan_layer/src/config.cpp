@@ -32,32 +32,32 @@ namespace CheekyLayer
 	std::istream& operator>>(std::istream& is, config& config)
 	{
 		std::string line;
-	    while(std::getline(is, line))
-	    {
-	        std::istringstream is_line(line);
-	        std::string key;
-	        if(std::getline(is_line, key, '='))
-	        {
-	            std::string value;
-	            if (key[0] == '#')
-	                continue;
+		while(std::getline(is, line))
+		{
+			std::istringstream is_line(line);
+			std::string key;
+			if(std::getline(is_line, key, '='))
+			{
+				std::string value;
+				if (key[0] == '#')
+					continue;
 
-	            if(std::getline(is_line, value))
-	            {
-	                config.values[key] = value;
-	            }
-	        }
-	    }
+				if(std::getline(is_line, value))
+				{
+					config.values[key] = value;
+				}
+			}
+		}
 
 		return is;
 	}
 
 	const config DEFAULT_CONFIG(std::map<std::string, std::string>({
 		{"dump", "false"},
-	    {"dumpDirectory", "/tmp/vulkan_dump"},
-	    {"override", "true"},
-	    {"overrideDirectory", "./override"},
-	    {"logFile", "cheeky_layer.txt"},
-        {"markFile", "marks.txt"}
+		{"dumpDirectory", "/tmp/vulkan_dump"},
+		{"override", "true"},
+		{"overrideDirectory", "./override"},
+		{"logFile", "cheeky_layer.txt"},
+		{"ruleFile", "rules.txt"}
 	}));
 }

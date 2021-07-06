@@ -3,7 +3,9 @@
 #include <iterator>
 #include <mutex>
 #include <fstream>
+#include <sstream>
 #include <string.h>
+#include <string>
 #include <vulkan/vulkan_core.h>
 #include <memory>
 #include <filesystem>
@@ -13,6 +15,7 @@
 #include "constants.hpp"
 #include "layer.hpp"
 #include "logger.hpp"
+#include "rules/rules.hpp"
 
 using CheekyLayer::logger;
 
@@ -20,6 +23,9 @@ std::mutex global_lock;
 CheekyLayer::config global_config;
 CheekyLayer::logger* logger;
 std::vector<std::string> overrideCache;
+
+std::vector<VkInstance> instances;
+std::vector<std::unique_ptr<CheekyLayer::rule>> rules;
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator,
 		VkInstance *pInstance)
@@ -44,6 +50,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 
 	PFN_vkCreateInstance createFunc = (PFN_vkCreateInstance) gpa(VK_NULL_HANDLE, "vkCreateInstance");
 	VkResult ret = createFunc(pCreateInfo, pAllocator, pInstance);
+	instances.push_back(*pInstance);
 
 	InitInstanceDispatchTable(*pInstance, gpa);
 
@@ -84,14 +91,55 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 		}
 	}
 
+	std::string rulefile = global_config["ruleFile"];
+	std::ifstream rulesIn(rulefile);
+	rules.clear();
+	if(rulesIn.good())
+	{
+		std::string line;
+		int lineNr = 0;
+		while(std::getline(rulesIn, line))
+		{
+			lineNr++;
+			if(!line.starts_with("#") && !line.empty())
+			{
+				try
+				{
+					std::unique_ptr<CheekyLayer::rule> rule = std::make_unique<CheekyLayer::rule>();
+					std::istringstream iss(line);
+					iss >> *rule;
+
+					rules.push_back(std::move(rule));
+				}
+				catch(const std::exception& ex)
+				{
+					*logger << logger::begin << "Error in rulefile " << rulefile << " line " << lineNr << ": " << ex.what() << logger::end;
+				}
+			}
+		}
+	}
+	*logger << logger::begin << "Loaded " << rules.size() << " rules:" << logger::end;
+	for(auto& r : rules)
+	{
+		CheekyLayer::active_logger log = *logger << logger::begin;
+		log << "    ";
+		r->print(log.raw());
+		log << logger::end;
+	}
+
 	return ret;
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyInstance(VkInstance instance, const VkAllocationCallbacks *pAllocator)
 {
-	//instance_dispatch[GetKey(instance)].DestroyInstance(instance, pAllocator);
-
 	scoped_lock l(global_lock);
+
+	auto p = std::find(instances.begin(), instances.end(), instance);
+	if(p != instances.end())
+	{
+		instance_dispatch[GetKey(instance)].DestroyInstance(instance, pAllocator);
+		instances.erase(p);
+	}
 
 	if(instance_dispatch.find(GetKey(instance)) != instance_dispatch.end())
 		instance_dispatch.erase(GetKey(instance));

@@ -1,6 +1,8 @@
 #include "layer.hpp"
 #include "dispatch.hpp"
 #include "buffers.hpp"
+#include "rules/execution_env.hpp"
+#include "rules/rules.hpp"
 #include "utils.hpp"
 
 #include <cstdint>
@@ -135,6 +137,13 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBufferToImage(
 		sha256_string((uint8_t*)data, (size_t)size, hash);
 		std::string hash_string(hash);
 
+		if(pRegions[0].imageSubresource.mipLevel == 0)
+		{
+			CheekyLayer::rule_env.hashes[dstImage] = hash_string;
+			CheekyLayer::local_context ctx = {log};
+			CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Image, dstImage, ctx);
+		}
+
 		log << " hash=" << hash;
 		if(global_config.map<bool>("dump", CheekyLayer::config::to_bool))
 		{
@@ -193,7 +202,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBufferToImage(
 
 							if(pRegions[0].imageSubresource.mipLevel == 0)
 							{
-								topResolutions[dstImage] = std::make_unique<image_tools::image>(image);
+								topResolutions[dstImage] = std::make_unique<image_tools::image>(std::move(image));
 								log << " This seems to be the best resolution?";
 							}
 							free(buf);

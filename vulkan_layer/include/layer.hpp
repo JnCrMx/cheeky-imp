@@ -10,6 +10,7 @@
 
 #include "config.hpp"
 #include "logger.hpp"
+#include "rules/rules.hpp"
 
 #undef VK_LAYER_EXPORT
 #if defined(WIN32)
@@ -25,6 +26,8 @@ extern CheekyLayer::config global_config;
 extern CheekyLayer::logger* logger;
 
 extern std::vector<std::string> overrideCache;
+
+extern std::vector<std::unique_ptr<CheekyLayer::rule>> rules;
 
 // layer.cpp
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceCreateInfo*, const VkAllocationCallbacks*, VkInstance*);
