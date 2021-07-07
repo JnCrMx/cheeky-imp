@@ -157,27 +157,27 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 	}
 	if(global_config.map<bool>("override", CheekyLayer::config::to_bool) && has_override(hash_string))
 	{
-	    std::ifstream in(global_config["overrideDirectory"]+"/shaders/"+hash_string+".spv");
+		std::ifstream in(global_config["overrideDirectory"]+"/shaders/"+hash_string+".spv");
 		if(in.good())
-	    {
-	        in.seekg(0, std::ios::end);
-		    size_t length = in.tellg();
-		    in.seekg(0, std::ios::beg);
+		{
+			in.seekg(0, std::ios::end);
+			size_t length = in.tellg();
+			in.seekg(0, std::ios::beg);
 
-		    log << " found shader override! " << "size=" << length;
+			log << " found shader override! " << "size=" << length;
 
-		    uint8_t *buffer = (uint8_t*) malloc(length);
-		    in.read((char*) buffer, length);
+			uint8_t *buffer = (uint8_t*) malloc(length);
+			in.read((char*) buffer, length);
 
-		    pCreateInfo->pCode = (uint32_t*) buffer;
-		    pCreateInfo->codeSize = length;
+			pCreateInfo->pCode = (uint32_t*) buffer;
+			pCreateInfo->codeSize = length;
 		}
 #ifdef USE_GLSLANG
 		else if((it = shaderCache.find(hash_string)) != shaderCache.end())
 		{
-		    pCreateInfo->pCode = it->second.pointer;
-		    pCreateInfo->codeSize = it->second.size;
-		    log << " found cached shader override! " << "size=" << it->second.size;
+			pCreateInfo->pCode = it->second.pointer;
+			pCreateInfo->codeSize = it->second.size;
+			log << " found cached shader override! " << "size=" << it->second.size;
 		}
 		else
 		{
@@ -208,13 +208,13 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 				if(result)
 				{
 					size_t length = spv.size() * sizeof(uint32_t);
-		    		log << " found and compiled shader override! " << "size=" << length;
+					log << " found and compiled shader override! " << "size=" << length;
 
-		    		uint32_t *buffer = (uint32_t*) malloc(length);
+					uint32_t *buffer = (uint32_t*) malloc(length);
 					std::copy(spv.begin(), spv.end(), buffer);
 					
-		    		pCreateInfo->pCode = buffer;
-		    		pCreateInfo->codeSize = length;
+					pCreateInfo->pCode = buffer;
+					pCreateInfo->codeSize = length;
 
 					shaderCache[hash_string] = {buffer, length};
 				}
@@ -231,9 +231,17 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 
 	if(result == VK_SUCCESS)
 	{
-    	CheekyLayer::rule_env.hashes[(VkHandle)*pShaderModule] = hash_string;
+		VkHandle handle = (VkHandle)*pShaderModule;
+
+		auto p = CheekyLayer::rule_env.hashes.find(handle);
+		if(p != CheekyLayer::rule_env.hashes.end() && hash_string != p->second)
+		{
+			log << " Shader module collision: " << handle << " (formerly known as " << p->second << ") will be replaced";
+		}
+
+		CheekyLayer::rule_env.hashes[handle] = hash_string;
 		CheekyLayer::local_context ctx = {log};
-		CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Shader, (VkHandle)*pShaderModule, ctx);
+		CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Shader, handle, ctx);
 	}
 
 	log << logger::end;

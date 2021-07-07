@@ -7,6 +7,7 @@ struct ShaderInfo
 {
 	VkShaderStageFlagBits stage;
 	VkShaderModule module;
+	std::string hash;
 	std::string name;
 };
 
