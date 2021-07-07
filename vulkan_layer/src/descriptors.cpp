@@ -2,6 +2,7 @@
 #include "dispatch.hpp"
 #include "descriptors.hpp"
 #include "images.hpp"
+#include "draw.hpp"
 #include "rules/rules.hpp"
 #include <vulkan/vulkan_core.h>
 
@@ -27,7 +28,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateDescriptorUpdateTemplate(
 	return r;
 }
 
-CheekyLayer::selector_type from_descriptorType(VkDescriptorType type)
+bool from_descriptorType(VkDescriptorType type, CheekyLayer::selector_type& outType)
 {
 	switch(type)
 	{
@@ -35,9 +36,10 @@ CheekyLayer::selector_type from_descriptorType(VkDescriptorType type)
 		case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
 		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
 		case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
-			return CheekyLayer::selector_type::Image;
+			outType = CheekyLayer::selector_type::Image;
+			return true;
 		default:
-			throw unsupported_descriptor_type_exception(type);
+			return false;
 	}
 }
 
@@ -48,26 +50,26 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_UpdateDescriptorSetWithTemplate(
 	const void*                                 pData)
 {
 	device_dispatch[GetKey(device)].UpdateDescriptorSetWithTemplate(device, descriptorSet, descriptorUpdateTemplate, pData);
+	if(!evalRulesInDraw)
+		return;
 
-	if(descriptorStates.find(descriptorSet) == descriptorStates.end())
-		descriptorStates[descriptorSet] = {};
 	DescriptorState& state = descriptorStates[descriptorSet];
 
-	auto info = updateTemplates[descriptorUpdateTemplate];
+	auto& info = updateTemplates[descriptorUpdateTemplate];
 	for(int i=0; i<info.size(); i++)
 	{
 		VkDescriptorUpdateTemplateEntry& entry = info[i];
 		
-		if(state.bindings.find(entry.dstBinding) == state.bindings.end())
-			state.bindings[entry.dstBinding] = {};
-
+		DescriptorBinding& binding = state.bindings[entry.dstBinding];
 		try
 		{
-			CheekyLayer::selector_type type = from_descriptorType(entry.descriptorType);
-			state.bindings[entry.dstBinding].type = type;
+			CheekyLayer::selector_type type;
+			if(!from_descriptorType(entry.descriptorType, type))
+				continue;
+			binding.type = type;
 
-			if(state.bindings[entry.dstBinding].arrayElements.size() < entry.dstArrayElement + entry.descriptorCount)
-				state.bindings[entry.dstBinding].arrayElements.resize(entry.dstArrayElement + entry.descriptorCount);
+			if(binding.arrayElements.size() < entry.dstArrayElement + entry.descriptorCount)
+				binding.arrayElements.resize(entry.dstArrayElement + entry.descriptorCount);
 			
 			for(int j=0; j<entry.descriptorCount; j++)
 			{
@@ -76,13 +78,9 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_UpdateDescriptorSetWithTemplate(
 				{
 					const VkDescriptorImageInfo* info = (const VkDescriptorImageInfo*) newPtr;
 
-					state.bindings[entry.dstBinding].arrayElements[entry.dstArrayElement + j] = imageViews[info->imageView];
+					binding.arrayElements[entry.dstArrayElement + j] = imageViews[info->imageView];
 				}
 			}
-		}
-		catch(unsupported_descriptor_type_exception& ex)
-		{
-
 		}
 		catch(std::exception& ex)
 		{

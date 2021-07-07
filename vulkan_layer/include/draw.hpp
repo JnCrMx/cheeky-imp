@@ -18,6 +18,19 @@ struct PipelineState
 	std::vector<VkVertexInputAttributeDescription> vertexAttributeDescriptions;
 };
 
+struct QuickDispatch
+{
+	bool filled;
+	PFN_vkCmdDrawIndexed CmdDrawIndexed;
+	PFN_vkCmdBindPipeline CmdBindPipeline;
+	PFN_vkCmdBindDescriptorSets CmdBindDescriptorSets;
+	PFN_vkCmdBindIndexBuffer CmdBindIndexBuffer;
+	PFN_vkCmdBindVertexBuffers CmdBindVertexBuffers;
+	PFN_vkCmdBindVertexBuffers2EXT CmdBindVertexBuffers2EXT;
+	PFN_vkEndCommandBuffer EndCommandBuffer;
+};
+inline QuickDispatch quick_dispatch = {false};
+
 struct CommandBufferState
 {
 	VkDevice device;
@@ -34,3 +47,4 @@ struct CommandBufferState
 
 extern std::map<VkPipeline, PipelineState> pipelineStates;
 extern std::map<VkCommandBuffer, CommandBufferState> commandBufferStates;
+inline bool evalRulesInDraw;
