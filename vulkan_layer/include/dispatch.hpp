@@ -43,15 +43,30 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	\
 	DeviceHook(CreateImage) \
 	DeviceHook(BindImageMemory) \
+	DeviceHook(CreateImageView) \
 	\
 	DeviceHook(CreateBuffer) \
 	DeviceHook(BindBufferMemory) \
 	DeviceHook(MapMemory) \
 	\
 	DeviceHook(CreateShaderModule) \
+	DeviceHook(CreateGraphicsPipelines) \
 	\
 	DeviceHook(CmdCopyBufferToImage) \
-	DeviceHook(CmdCopyBuffer)
+	DeviceHook(CmdCopyBuffer) \
+	DeviceHook(CmdBindDescriptorSets) \
+	DeviceHook(CmdBindPipeline) \
+	DeviceHook(CmdBindVertexBuffers) \
+	DeviceHook(CmdBindVertexBuffers2EXT) \
+	DeviceHook(CmdBindIndexBuffer) \
+	DeviceHook(CmdDrawIndexed) \
+	\
+	DeviceHook(CreateDescriptorUpdateTemplate) \
+	DeviceHook(UpdateDescriptorSetWithTemplate) \
+	\
+	DeviceHook(AllocateCommandBuffers) \
+	DeviceHook(FreeCommandBuffers) \
+	DeviceHook(EndCommandBuffer)
 
 #define InstanceDispatch(name) \
 	dispatchTable.name = (PFN_vk##name)gpa(instance, "vk"#name);
@@ -73,7 +88,8 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	\
 	DeviceDispatch(CreateImage) \
 	DeviceDispatch(GetImageMemoryRequirements) \
-	DeviceDispatch(BindImageMemory)\
+	DeviceDispatch(BindImageMemory) \
+	DeviceDispatch(CreateImageView) \
 	\
 	DeviceDispatch(CreateBuffer) \
 	DeviceDispatch(BindBufferMemory) \
@@ -81,6 +97,20 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	DeviceDispatch(UnmapMemory) \
 	\
 	DeviceDispatch(CreateShaderModule) \
+	DeviceDispatch(CreateGraphicsPipelines) \
 	\
 	DeviceDispatch(CmdCopyBufferToImage) \
-	DeviceDispatch(CmdCopyBuffer)
+	DeviceDispatch(CmdCopyBuffer) \
+	DeviceDispatch(CmdBindDescriptorSets) \
+	DeviceDispatch(CmdBindPipeline) \
+	DeviceDispatch(CmdBindVertexBuffers) \
+	DeviceDispatch(CmdBindVertexBuffers2EXT) \
+	DeviceDispatch(CmdBindIndexBuffer) \
+	DeviceDispatch(CmdDrawIndexed) \
+	\
+	DeviceDispatch(CreateDescriptorUpdateTemplate) \
+	DeviceDispatch(UpdateDescriptorSetWithTemplate) \
+	\
+	DeviceDispatch(AllocateCommandBuffers) \
+	DeviceDispatch(FreeCommandBuffers) \
+	DeviceDispatch(EndCommandBuffer)

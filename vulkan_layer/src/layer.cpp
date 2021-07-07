@@ -15,6 +15,7 @@
 #include "constants.hpp"
 #include "layer.hpp"
 #include "logger.hpp"
+#include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
 
 using CheekyLayer::logger;
@@ -26,6 +27,21 @@ std::vector<std::string> overrideCache;
 
 std::vector<VkInstance> instances;
 std::vector<std::unique_ptr<CheekyLayer::rule>> rules;
+std::map<CheekyLayer::selector_type, bool> has_rules;
+
+void update_has_rules()
+{
+	has_rules[CheekyLayer::selector_type::Buffer] = false;
+	has_rules[CheekyLayer::selector_type::Draw] = false;
+	has_rules[CheekyLayer::selector_type::Image] = false;
+	has_rules[CheekyLayer::selector_type::Shader] = false;
+
+	for(auto& r : rules)
+	{
+		if(r->is_enabled())
+			has_rules[r->get_type()] = true;
+	}
+}
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator,
 		VkInstance *pInstance)
@@ -126,6 +142,10 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 		r->print(log.raw());
 		log << logger::end;
 	}
+	CheekyLayer::rule_disable_callback = [](CheekyLayer::rule* rule){
+		update_has_rules();
+	};
+	update_has_rules();
 
 	return ret;
 }

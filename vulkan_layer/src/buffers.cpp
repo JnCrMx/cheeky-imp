@@ -5,6 +5,7 @@
 #include <vulkan/vulkan_core.h>
 
 using CheekyLayer::logger;
+using CheekyLayer::VkHandle;
 
 std::map<VkBuffer, VkBufferCreateInfo> buffers;
 std::map<VkBuffer, VkDevice> bufferDevices;
@@ -72,6 +73,10 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBuffer(VkCommandBuffer comman
         char hash[65];
         sha256_string((uint8_t*)data, (size_t)size, hash);
         std::string hash_string(hash);
+
+        CheekyLayer::rule_env.hashes[(VkHandle)dstBuffer] = hash_string;
+		CheekyLayer::local_context ctx = {log};
+		CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Buffer, (VkHandle)dstBuffer, ctx);
 
         log << " hash=" << hash;
         if(global_config.map<bool>("dump", CheekyLayer::config::to_bool))

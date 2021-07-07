@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iterator>
 #include <sys/types.h>
+#include <vulkan/vulkan_core.h>
 
 #ifdef USE_SPIRV
 #include "spirv_glsl.hpp"
@@ -21,6 +22,7 @@
 #include <stdexcept>
 
 using CheekyLayer::logger;
+using CheekyLayer::VkHandle;
 
 #ifdef USE_SPIRV
 std::string stage_to_string(spv::ExecutionModel stage)
@@ -224,7 +226,16 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 		}
 #endif
 	}
-	log << logger::end;
 
-	return device_dispatch[GetKey(device)].CreateShaderModule(device, pCreateInfo, pAllocator, pShaderModule);
+	VkResult result = device_dispatch[GetKey(device)].CreateShaderModule(device, pCreateInfo, pAllocator, pShaderModule);
+
+	if(result == VK_SUCCESS)
+	{
+    	CheekyLayer::rule_env.hashes[(VkHandle)*pShaderModule] = hash_string;
+		CheekyLayer::local_context ctx = {log};
+		CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Shader, (VkHandle)*pShaderModule, ctx);
+	}
+
+	log << logger::end;
+	return result;
 }

@@ -4,6 +4,7 @@
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
 #include "utils.hpp"
+#include "images.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -28,8 +29,11 @@
 #endif
 
 using CheekyLayer::logger;
+using CheekyLayer::VkHandle;
 
 std::map<VkImage, VkImageCreateInfo> images;
+std::map<VkImageView, VkImage> imageViews;
+
 #ifdef USE_IMAGE_TOOLS
 std::map<VkImage, std::unique_ptr<image_tools::image>> topResolutions;
 #endif
@@ -62,6 +66,19 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_BindImageMemory(
 	*logger << logger::begin << "BindImageMemory: image=" << image << std::hex << " memory=" << memory << " offset=" << memoryOffset << logger::end;
 
 	return device_dispatch[GetKey(device)].BindImageMemory(device, image, memory, memoryOffset);
+}
+
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateImageView(
+	VkDevice                                    device,
+	const VkImageViewCreateInfo*                pCreateInfo,
+	const VkAllocationCallbacks*                pAllocator,
+	VkImageView*                                pView)
+{
+	VkResult result = device_dispatch[GetKey(device)].CreateImageView(device, pCreateInfo, pAllocator, pView);
+
+	imageViews[*pView] = pCreateInfo->image;
+
+	return result;
 }
 
 static inline bool IsExtentSizeZero(const VkExtent3D* extent) {
@@ -139,9 +156,9 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBufferToImage(
 
 		if(pRegions[0].imageSubresource.mipLevel == 0)
 		{
-			CheekyLayer::rule_env.hashes[dstImage] = hash_string;
+			CheekyLayer::rule_env.hashes[(VkHandle)dstImage] = hash_string;
 			CheekyLayer::local_context ctx = {log};
-			CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Image, dstImage, ctx);
+			CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Image, (VkHandle)dstImage, ctx);
 		}
 
 		log << " hash=" << hash;

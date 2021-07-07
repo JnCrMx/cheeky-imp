@@ -12,6 +12,7 @@
 
 namespace CheekyLayer
 {
+	void skip_ws(std::istream& in);
 	void check_stream(std::istream& in, char expected);
 
 	enum selector_type : int
@@ -27,19 +28,23 @@ namespace CheekyLayer
 	class selector_condition
 	{
 		public:
+			selector_condition(selector_type type) : m_type(type) {}
 			virtual void read(std::istream&) = 0;
-			virtual bool test(selector_type, void*, local_context&) = 0;
+			virtual bool test(selector_type, VkHandle, local_context&) = 0;
 			virtual std::ostream& print(std::ostream& out)
 			{
 				out << "unkownCondition()";
 				return out;
 			};
+		protected:
+			selector_type m_type;
 	};
 
 	template<typename T> std::unique_ptr<selector_condition> default_create_condition(selector_type stype)
 	{
-		return std::make_unique<T>();
+		return std::make_unique<T>(stype);
 	}
+	std::unique_ptr<selector_condition> read_condition(std::istream& in, selector_type type);
 
 	struct condition_factory
 	{
@@ -76,8 +81,9 @@ namespace CheekyLayer
 	class selector
 	{
 		public:
-			bool test(selector_type, void*, local_context&);
+			bool test(selector_type, VkHandle, local_context&);
 			std::ostream& print(std::ostream& out);
+			selector_type get_type() { return m_type; };
 		private:
 			selector_type m_type;
 			std::vector<std::unique_ptr<selector_condition>> m_conditions;
@@ -85,23 +91,27 @@ namespace CheekyLayer
 			friend std::istream& operator>>(std::istream&, rule&);
 	};
 
+	class rule;
 	class action
 	{
 		public:
+			action(selector_type type) : m_type(type) {}
 			virtual void read(std::istream&) = 0;
-			virtual void execute(selector_type, void*, local_context&) = 0;
+			virtual void execute(selector_type, VkHandle, local_context&, rule&) = 0;
 			virtual std::ostream& print(std::ostream& out)
 			{
 				out << "unkownAction()";
 				return out;
 			};
+		protected:
+			selector_type m_type;
 	};
-
 
 	template<typename T> std::unique_ptr<action> default_create_action(selector_type stype)
 	{
-		return std::make_unique<T>();
+		return std::make_unique<T>(stype);
 	}
+	std::unique_ptr<action> read_action(std::istream& in, selector_type type);
 
 	struct action_factory
 	{
@@ -136,16 +146,26 @@ namespace CheekyLayer
 	class rule
 	{
 		public:
-			void execute(selector_type type, void* handle, local_context& ctx);
+			void execute(selector_type type, VkHandle handle, local_context& ctx);
 			std::ostream& print(std::ostream& out);
+			void disable();
+			selector_type get_type() {
+				return m_selector->get_type();
+			}
+			bool is_enabled() {
+				return !m_disabled;
+			}
 		private:
 			std::unique_ptr<selector> m_selector;
 			std::unique_ptr<action> m_action;
+			bool m_disabled = false;
 			friend std::istream& operator>>(std::istream&, rule&);
 	};
 
 	std::istream& operator>>(std::istream&, rule&);
 	std::istream& operator>>(std::istream&, selector&);
 
-	void execute_rules(std::vector<std::unique_ptr<rule>>& rules, selector_type type, void* handle, local_context& ctx);
+	void execute_rules(std::vector<std::unique_ptr<rule>>& rules, selector_type type, VkHandle handle, local_context& ctx);
+
+	inline void (*rule_disable_callback)(rule* rule);
 }

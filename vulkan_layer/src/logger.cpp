@@ -18,7 +18,8 @@ namespace CheekyLayer
 
 	logger& active_logger::operator<<(struct end_t)
 	{
-		myLogger->out << '\n';
+		if(written)
+			myLogger->out << '\n';
 		myLogger->out.flush();
 
 		myLogger->lock.unlock();

@@ -26,6 +26,16 @@ namespace CheekyLayer
 			throw std::runtime_error("expected '"+std::string(1, expected)+"' but got '"+std::string(1, c)+"' instead");
 	}
 
+	std::unique_ptr<action> read_action(std::istream& in, selector_type type)
+	{
+		std::string actionType;
+		if(!std::getline(in, actionType, '('))
+			throw std::runtime_error("cannot read action type");
+		std::unique_ptr<action> cptr = action_factory::make_unique_action(actionType, type);
+		cptr->read(in);
+		return cptr;
+	}
+
 	std::istream& operator>>(std::istream& in, rule& rule)
 	{
 		rule.m_selector = std::make_unique<selector>();
@@ -37,16 +47,23 @@ namespace CheekyLayer
 			throw std::runtime_error("expected '->', but got '"+arrow+"' instead");
 		skip_ws(in);
 
-		std::string actionType;
-		std::getline(in, actionType, '(');
-		rule.m_action = action_factory::make_unique_action(actionType, rule.m_selector->m_type);
-		rule.m_action->read(in);
+		rule.m_action = read_action(in, rule.m_selector->m_type);
 
 		skip_ws(in);
 		if(in.good())
 			throw std::runtime_error("found characters after end of rule");
 
 		return in;
+	}
+
+	std::unique_ptr<selector_condition> read_condition(std::istream& in, selector_type type)
+	{
+		std::string conditionType;
+		if(!std::getline(in, conditionType, '('))
+			throw std::runtime_error("cannot read condition type");
+		std::unique_ptr<selector_condition> cptr = condition_factory::make_unique_condition(conditionType, type);
+		cptr->read(in);
+		return cptr;
 	}
 
 	std::istream& operator>>(std::istream& in, selector& selector)
@@ -58,12 +75,7 @@ namespace CheekyLayer
 
 		while(in.peek() != '}')
 		{
-			std::string conditionType;
-			if(!std::getline(in, conditionType, '('))
-				throw std::runtime_error("cannot read condition type");
-			std::unique_ptr<selector_condition> cptr = condition_factory::make_unique_condition(conditionType, selector.m_type);
-			cptr->read(in);
-			selector.m_conditions.push_back(std::move(cptr));
+			selector.m_conditions.push_back(read_condition(in, selector.m_type));
 
 			skip_ws(in);
 			char seperator = in.peek();
@@ -108,7 +120,7 @@ namespace CheekyLayer
 		}
 	}
 
-	bool selector::test(selector_type type, void *handle, local_context& ctx)
+	bool selector::test(selector_type type, VkHandle handle, local_context& ctx)
 	{
 		if(type != m_type)
 			return false;
@@ -120,12 +132,25 @@ namespace CheekyLayer
 		return true;
 	}
 
-	void rule::execute(selector_type type, void* handle, local_context& ctx)
+	void rule::execute(selector_type type, VkHandle handle, local_context& ctx)
 	{
+		if(m_disabled)
+			return;
+
 		if(m_selector->test(type, handle, ctx))
-			m_action->execute(type, handle, ctx);
+			m_action->execute(type, handle, ctx, *this);
 	}
-	void execute_rules(std::vector<std::unique_ptr<rule>>& rules, selector_type type, void* handle, local_context& ctx)
+
+	void rule::disable()
+	{
+		m_disabled = true;
+		if(rule_disable_callback)
+		{
+			rule_disable_callback(this);
+		}
+	}
+
+	void execute_rules(std::vector<std::unique_ptr<rule>>& rules, selector_type type, VkHandle handle, local_context& ctx)
 	{
 		for(auto& r : rules)
 		{

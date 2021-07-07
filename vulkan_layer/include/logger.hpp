@@ -39,12 +39,14 @@ namespace CheekyLayer
 			void flush();
 			std::ostream& raw()
 			{
+				written = true;
 				return myLogger->out;
 			}
 
 			template<typename T>
 			active_logger& operator<<(T t)
 			{
+				written = true;
 				myLogger->out << t;
 				return *this;
 			}
@@ -52,5 +54,6 @@ namespace CheekyLayer
 			logger& operator<<(struct end_t);
 		private:
 			logger* myLogger;
+			bool written = false;
 	};
 }

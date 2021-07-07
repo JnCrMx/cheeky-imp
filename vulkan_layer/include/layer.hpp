@@ -7,9 +7,11 @@
 
 #include <mutex>
 #include <memory>
+#include <map>
 
 #include "config.hpp"
 #include "logger.hpp"
+#include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
 
 #undef VK_LAYER_EXPORT
@@ -28,6 +30,7 @@ extern CheekyLayer::logger* logger;
 extern std::vector<std::string> overrideCache;
 
 extern std::vector<std::unique_ptr<CheekyLayer::rule>> rules;
+extern std::map<CheekyLayer::selector_type, bool> has_rules;
 
 // layer.cpp
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceCreateInfo*, const VkAllocationCallbacks*, VkInstance*);
@@ -46,6 +49,7 @@ VK_LAYER_EXPORT PFN_vkVoidFunction VKAPI_CALL CheekyLayer_GetInstanceProcAddr(Vk
 // images.cpp
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateImage(VkDevice, const VkImageCreateInfo*, const VkAllocationCallbacks*, VkImage*);
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_BindImageMemory(VkDevice, VkImage, VkDeviceMemory, VkDeviceSize);
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateImageView(VkDevice, const VkImageViewCreateInfo*, const VkAllocationCallbacks*, VkImageView*);
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBufferToImage(VkCommandBuffer, VkBuffer, VkImage, VkImageLayout, uint32_t, const VkBufferImageCopy*);
 
 // buffers.cpp
@@ -56,3 +60,19 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBuffer(VkCommandBuffer, VkBuf
 
 // shaders.cpp
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice, VkShaderModuleCreateInfo*, VkAllocationCallbacks*, VkShaderModule*);
+
+// descriptors.cpp
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateDescriptorUpdateTemplate(VkDevice, const VkDescriptorUpdateTemplateCreateInfo*, const VkAllocationCallbacks*, VkDescriptorUpdateTemplate*);
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_UpdateDescriptorSetWithTemplate(VkDevice, VkDescriptorSet, VkDescriptorUpdateTemplate, const void*);
+
+// draw.cpp
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_AllocateCommandBuffers(VkDevice, const VkCommandBufferAllocateInfo*, VkCommandBuffer*);
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_FreeCommandBuffers(VkDevice, VkCommandPool, uint32_t, const VkCommandBuffer*);
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateGraphicsPipelines(VkDevice, VkPipelineCache, uint32_t, const VkGraphicsPipelineCreateInfo*, const VkAllocationCallbacks*, VkPipeline*);
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindDescriptorSets(VkCommandBuffer, VkPipelineBindPoint, VkPipelineLayout, uint32_t, uint32_t, const VkDescriptorSet*, uint32_t, const uint32_t*);
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindPipeline(VkCommandBuffer, VkPipelineBindPoint, VkPipeline);
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindVertexBuffers(VkCommandBuffer, uint32_t, uint32_t, const VkBuffer*, const VkDeviceSize*);
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindVertexBuffers2EXT(VkCommandBuffer, uint32_t, uint32_t, const VkBuffer*, const VkDeviceSize*, const VkDeviceSize*, const VkDeviceSize*);
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindIndexBuffer(VkCommandBuffer, VkBuffer, VkDeviceSize, VkIndexType);
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(VkCommandBuffer, uint32_t, uint32_t, uint32_t, int32_t, uint32_t);
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_EndCommandBuffer(VkCommandBuffer);
