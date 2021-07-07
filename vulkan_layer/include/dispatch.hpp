@@ -8,6 +8,8 @@
 #include <map>
 #include <string.h>
 
+#include "layer.hpp"
+
 template<typename DispatchableType>
 void* GetKey(DispatchableType inst)
 {
@@ -16,6 +18,9 @@ void* GetKey(DispatchableType inst)
 
 extern std::map<void*, VkLayerInstanceDispatchTable> instance_dispatch;
 extern std::map<void*, VkLayerDispatchTable> device_dispatch;
+
+inline bool layer_disabled = false;
+inline bool hook_draw_calls = false;
 
 void InitInstanceDispatchTable(VkInstance instance, PFN_vkGetInstanceProcAddr gpa);
 void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
@@ -54,19 +59,22 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	\
 	DeviceHook(CmdCopyBufferToImage) \
 	DeviceHook(CmdCopyBuffer) \
-	DeviceHook(CmdBindDescriptorSets) \
-	DeviceHook(CmdBindPipeline) \
-	DeviceHook(CmdBindVertexBuffers) \
-	DeviceHook(CmdBindVertexBuffers2EXT) \
-	DeviceHook(CmdBindIndexBuffer) \
-	DeviceHook(CmdDrawIndexed) \
-	\
-	DeviceHook(CreateDescriptorUpdateTemplate) \
-	DeviceHook(UpdateDescriptorSetWithTemplate) \
-	\
-	DeviceHook(AllocateCommandBuffers) \
-	DeviceHook(FreeCommandBuffers) \
-	DeviceHook(EndCommandBuffer)
+	if(hook_draw_calls) \
+	{\
+		DeviceHook(CmdBindDescriptorSets) \
+		DeviceHook(CmdBindPipeline) \
+		DeviceHook(CmdBindVertexBuffers) \
+		DeviceHook(CmdBindVertexBuffers2EXT) \
+		DeviceHook(CmdBindIndexBuffer) \
+		DeviceHook(CmdDrawIndexed) \
+		\
+		DeviceHook(CreateDescriptorUpdateTemplate) \
+		DeviceHook(UpdateDescriptorSetWithTemplate) \
+		\
+		DeviceHook(AllocateCommandBuffers) \
+		DeviceHook(FreeCommandBuffers) \
+		DeviceHook(EndCommandBuffer) \
+	}\
 
 #define InstanceDispatch(name) \
 	dispatchTable.name = (PFN_vk##name)gpa(instance, "vk"#name);

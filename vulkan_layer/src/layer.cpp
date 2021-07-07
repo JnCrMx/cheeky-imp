@@ -17,6 +17,7 @@
 #include "logger.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
+#include "draw.hpp"
 
 using CheekyLayer::logger;
 
@@ -41,6 +42,8 @@ void update_has_rules()
 		if(r->is_enabled())
 			has_rules[r->get_type()] = true;
 	}
+
+	evalRulesInDraw = has_rules[CheekyLayer::selector_type::Draw];
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator,
@@ -82,10 +85,30 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 	}
 	catch(std::exception&) {}
 
-	std::ofstream out(global_config["logFile"]);
+	std::string applicationName = "unknown";
+	std::string engineName = "unknown";
+	if(pCreateInfo->pApplicationInfo && pCreateInfo->pApplicationInfo->pApplicationName)
+		applicationName = pCreateInfo->pApplicationInfo->pApplicationName;
+	if(pCreateInfo->pApplicationInfo && pCreateInfo->pApplicationInfo->pEngineName)
+		engineName = pCreateInfo->pApplicationInfo->pEngineName;
+
+	std::string logfile = global_config["logFile"];
+	if(!global_config["application"].empty())
+	{
+		if(global_config["application"] != applicationName)
+		{
+			layer_disabled = true;
+			logfile = "/dev/null";
+		}
+	}
+	hook_draw_calls = global_config.map<bool>("hookDraw", CheekyLayer::config::to_bool);
+
+	std::ofstream out(logfile);
 	logger = new CheekyLayer::logger(out);
 
-	*logger << logger::begin << "Hello from " << CheekyLayer::Contants::LAYER_NAME << logger::end;
+	*logger << logger::begin << "Hello from " << CheekyLayer::Contants::LAYER_NAME 
+		<< " for application " << applicationName 
+		<< " using engine " << engineName << logger::end;
 	*logger << logger::begin << "CreateInstance: " << *pInstance << logger::end;
 
 	for(std::string type : {"images", "buffers", "shaders"})
@@ -157,10 +180,10 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyInstance(VkInstance instance,
 	auto p = std::find(instances.begin(), instances.end(), instance);
 	if(p != instances.end())
 	{
-		instance_dispatch[GetKey(instance)].DestroyInstance(instance, pAllocator);
 		instances.erase(p);
 	}
 
+	instance_dispatch[GetKey(instance)].DestroyInstance(instance, pAllocator);
 	if(instance_dispatch.find(GetKey(instance)) != instance_dispatch.end())
 		instance_dispatch.erase(GetKey(instance));
 

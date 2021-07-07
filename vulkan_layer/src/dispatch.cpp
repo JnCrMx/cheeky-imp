@@ -16,7 +16,12 @@ std::map<void*, VkLayerDispatchTable> device_dispatch;
 
 VK_LAYER_EXPORT PFN_vkVoidFunction VKAPI_CALL CheekyLayer_GetDeviceProcAddr(VkDevice device, const char *pName)
 {
-	DeviceHooks();
+	DeviceHook(DestroyDevice);
+
+	if(!layer_disabled)
+	{
+		DeviceHooks();
+	}
 
 	{
 		scoped_lock l(global_lock);
@@ -26,7 +31,14 @@ VK_LAYER_EXPORT PFN_vkVoidFunction VKAPI_CALL CheekyLayer_GetDeviceProcAddr(VkDe
 
 VK_LAYER_EXPORT PFN_vkVoidFunction VKAPI_CALL CheekyLayer_GetInstanceProcAddr(VkInstance instance, const char *pName)
 {
-	InstanceHooks();
+	InstanceHook(CreateInstance);
+	InstanceHook(CreateDevice);
+	InstanceHook(DestroyInstance);
+
+	if(!layer_disabled)
+	{
+		InstanceHooks();
+	}
 
 	{
 		scoped_lock l(global_lock);

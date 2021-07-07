@@ -58,6 +58,8 @@ namespace CheekyLayer
 		{"override", "true"},
 		{"overrideDirectory", "./override"},
 		{"logFile", "cheeky_layer.txt"},
-		{"ruleFile", "rules.txt"}
+		{"ruleFile", "rules.txt"},
+		{"hookDraw", "false"},
+		{"application", ""}
 	}));
 }
