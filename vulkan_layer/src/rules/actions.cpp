@@ -14,6 +14,7 @@
 namespace CheekyLayer
 {
 	action_register<mark_action> mark_action::reg("mark");
+	action_register<unmark_action> unmark_action::reg("unmark");
 	action_register<verbose_action> verbose_action::reg("verbose");
 	action_register<sequence_action> sequence_action::reg("seq");
 	action_register<each_action> each_action::reg("each");
@@ -23,7 +24,7 @@ namespace CheekyLayer
 
 	void mark_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule&)
 	{
-		rule_env.marks[(VkHandle)handle] = m_mark;
+		rule_env.marks[(VkHandle)handle].push_back(m_mark);
 		ctx.logger << " Marked " << to_string(type) << " " << handle << " as \"" << m_mark << "\" ";
 	}
 
@@ -35,6 +36,38 @@ namespace CheekyLayer
 	std::ostream& mark_action::print(std::ostream& out)
 	{
 		out << "mark(" << m_mark << ")";
+		return out;
+	}
+
+	void unmark_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule&)
+	{
+		if(m_clear)
+		{
+			rule_env.marks[(VkHandle)handle].clear();
+			ctx.logger << " Cleared marks of " << to_string(type) << " " << handle;
+		}
+		else
+		{
+			auto& marks = rule_env.marks[(VkHandle)handle];
+			auto p = std::find(marks.begin(), marks.end(), m_mark);
+			if(p != marks.end())
+			{
+				marks.erase(p);
+				ctx.logger << " Unmarked " << to_string(type) << " " << handle << " as \"" << m_mark << "\" ";
+			}
+		}
+	}
+
+	void unmark_action::read(std::istream& in)
+	{
+		std::getline(in, m_mark, ')');
+		if(m_mark == "*")
+			m_clear = true;
+	}
+
+	std::ostream& unmark_action::print(std::ostream& out)
+	{
+		out << "unmark(" << (m_clear ? "*" : m_mark) << ")";
 		return out;
 	}
 

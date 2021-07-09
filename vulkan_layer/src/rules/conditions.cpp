@@ -39,7 +39,7 @@ namespace CheekyLayer
 		auto p = rule_env.marks.find(handle);
 		if(p == rule_env.marks.end())
 			return false;
-		return p->second == m_mark;
+		return std::find(p->second.begin(), p->second.end(), m_mark) != p->second.end();
 	}
 
 	void mark_condition::read(std::istream& in)

@@ -23,7 +23,7 @@ namespace CheekyLayer
 	class global_context
 	{
 		public:
-			std::map<VkHandle, std::string> marks;
+			std::map<VkHandle, std::vector<std::string>> marks;
 			std::map<VkHandle, std::string> hashes;
 
 			std::map<VkCommandBuffer, std::vector<std::function<void(local_context&)>>> on_EndCommandBuffer;

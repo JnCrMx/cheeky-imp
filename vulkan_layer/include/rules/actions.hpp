@@ -20,6 +20,20 @@ namespace CheekyLayer
 			static action_register<mark_action> reg;
 	};
 
+	class unmark_action : public action
+	{
+		public:
+			unmark_action(selector_type type) : action(type) {}
+			virtual void read(std::istream&);
+			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			std::string m_mark;
+			bool m_clear = false;
+
+			static action_register<unmark_action> reg;
+	};
+
 	class verbose_action : public action
 	{
 		public:
