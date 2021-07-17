@@ -1,0 +1,3 @@
+add_executable(test_reflection reflection.cpp)
+target_link_libraries(test_reflection PUBLIC cheeky_layer)
+add_test(reflection test_reflection)

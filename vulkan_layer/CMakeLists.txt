@@ -11,6 +11,10 @@ find_package(OpenSSL REQUIRED)
 
 file(GLOB_RECURSE sources src/**.cpp external/Vulkan-ValidationLayers/layers/vk_format_utils.cpp)
 
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/vkreflectionmap.cpp
+    COMMAND PYTHONPATH=/usr/share/vulkan/registry/ python ${CMAKE_CURRENT_SOURCE_DIR}/generate_reflection.py > ${CMAKE_CURRENT_BINARY_DIR}/vkreflectionmap.cpp)
+list(APPEND sources ${CMAKE_CURRENT_BINARY_DIR}/vkreflectionmap.cpp)
+
 add_library(cheeky_layer SHARED ${sources})
 
 target_include_directories(cheeky_layer PUBLIC include/)
@@ -79,3 +83,6 @@ if(CHEEKY_LAYER_IMAGE_TOOLS)
         target_compile_definitions(cheeky_layer PUBLIC EXPORT_PNG)
     endif()
 endif()
+
+enable_testing()
+add_subdirectory(test)
