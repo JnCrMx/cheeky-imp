@@ -8,8 +8,10 @@
 #include <iterator>
 #include <memory>
 #include <ostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <regex>
 
 namespace CheekyLayer
 {
@@ -21,6 +23,7 @@ namespace CheekyLayer
 	action_register<on_action> on_action::reg("on");
 	action_register<disable_action> disable_action::reg("disable");
 	action_register<cancel_action> cancel_action::reg("cancel");
+	action_register<log_action> log_action::reg("log");
 
 	void mark_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule&)
 	{
@@ -252,6 +255,55 @@ namespace CheekyLayer
 	std::ostream& cancel_action::print(std::ostream& out)
 	{
 		out << "cancel()";
+		return out;
+	}
+
+	void log_action::execute(selector_type stype, VkHandle handle, local_context& ctx, rule&)
+	{
+		std::string s = m_text;
+
+		s = std::regex_replace(s, std::regex("\\$type"), to_string(stype));
+
+		{
+			std::stringstream oss;
+			oss << handle;
+			s = std::regex_replace(s, std::regex("\\$handle"), oss.str());
+		}
+
+		{
+			auto p = rule_env.marks.find(handle);
+			if(p != rule_env.marks.find(handle))
+			{
+				auto& v = p->second;
+
+				std::stringstream oss;
+				oss << "[";
+				for(int i=0; i<v.size(); i++)
+				{
+					s = std::regex_replace(s, std::regex("\\$marks\\["+std::to_string(i)+"\\]"), v[i]);
+					oss << v[i] << (i == v.size()-1 ? "]" : ",");
+				}
+				s = std::regex_replace(s, std::regex("\\$marks\\[\\*\\]"), oss.str());
+			}
+		}
+
+		ctx.logger << s;
+	}
+
+	void log_action::read(std::istream& in)
+	{
+		std::getline(in, m_text, ')');
+		m_text = std::regex_replace(m_text, std::regex("\\$\\]"), ")");
+		m_text = std::regex_replace(m_text, std::regex("\\$\\["), "(");
+	}
+
+	std::ostream& log_action::print(std::ostream& out)
+	{
+		std::string s = m_text;
+		s = std::regex_replace(s, std::regex("\\)"), "$]");
+		s = std::regex_replace(s, std::regex("\\("), "$[");
+
+		out << "log(" << s << ")";
 		return out;
 	}
 }

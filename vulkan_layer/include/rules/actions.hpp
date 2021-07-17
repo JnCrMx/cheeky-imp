@@ -144,4 +144,17 @@ namespace CheekyLayer
 
 			static action_register<cancel_action> reg;
 	};
+
+	class log_action : public action
+	{
+		public:
+			log_action(selector_type type) : action(type) {}
+			virtual void read(std::istream&);
+			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			std::string m_text;
+
+			static action_register<log_action> reg;
+	};
 }
