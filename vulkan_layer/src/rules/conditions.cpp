@@ -69,6 +69,12 @@ namespace CheekyLayer
 			});
 			list.push_back({selector_type::Buffer, ctx.info->draw.indexBuffer});
 		}
+		if(stype == selector_type::Pipeline)
+		{
+			std::transform(ctx.info->pipeline.shaderStages.begin(), ctx.info->pipeline.shaderStages.end(), std::back_inserter(list), [](auto h){
+				return std::pair{selector_type::Shader, h};
+			});
+		}
 
 		for(auto [stype2, handle2] : list)
 		{

@@ -2,6 +2,7 @@
 
 #include "rules.hpp"
 #include "rules/execution_env.hpp"
+#include <istream>
 #include <memory>
 #include <stdexcept>
 
@@ -156,5 +157,19 @@ namespace CheekyLayer
 			std::string m_text;
 
 			static action_register<log_action> reg;
+	};
+
+	class override_action : public action
+	{
+		public:
+			override_action(selector_type type) : action(type) {}
+			virtual void read(std::istream&);
+			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			std::string m_key;
+			std::string m_value;
+
+			static action_register<override_action> reg;
 	};
 }

@@ -100,6 +100,8 @@ namespace CheekyLayer
 			return selector_type::Shader;
 		if(s=="draw")
 			return selector_type::Draw;
+		if(s=="pipeline")
+			return selector_type::Pipeline;
 		throw std::runtime_error("unknown selector_type \""+s+"\"");
 	}
 
@@ -115,6 +117,8 @@ namespace CheekyLayer
 				return "shader";
 			case selector_type::Draw:
 				return "draw";
+			case selector_type::Pipeline:
+				return "pipeline";
 			default:
 				return "unknown" + std::to_string((int)type);
 		}

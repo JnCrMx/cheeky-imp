@@ -40,8 +40,8 @@ namespace CheekyLayer
 	{
 		public:
 			with_condition(selector_type type) : selector_condition(type) {
-				if(type != selector_type::Draw)
-					throw std::runtime_error("the \"with\" condition is only supported for draw selectors, but not for "+to_string(type)+" selectors");
+				if(type != selector_type::Draw && type != selector_type::Pipeline)
+					throw std::runtime_error("the \"with\" condition is only supported for draw and pipeline selectors, but not for "+to_string(type)+" selectors");
 			}
 			virtual void read(std::istream&);
 			virtual bool test(selector_type, VkHandle, local_context&);

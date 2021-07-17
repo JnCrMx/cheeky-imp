@@ -77,6 +77,29 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateGraphicsPipelines(
     const VkAllocationCallbacks*                pAllocator,
     VkPipeline*                                 pPipelines)
 {
+	CheekyLayer::active_logger log = *logger << logger::begin;
+	for(int i=0; i<createInfoCount; i++)
+	{
+		VkGraphicsPipelineCreateInfo* info = const_cast<VkGraphicsPipelineCreateInfo*>(pCreateInfos+i);
+
+		std::vector<VkShaderModule> shaderStages;
+		std::transform(info->pStages, info->pStages+info->stageCount, std::back_inserter(shaderStages), [](VkPipelineShaderStageCreateInfo s){
+			return s.module;
+		});
+
+		VkPipelineDepthStencilStateCreateInfo* depth = const_cast<VkPipelineDepthStencilStateCreateInfo*>(info->pDepthStencilState);
+
+		CheekyLayer::pipeline_info pinfo = {shaderStages};
+		CheekyLayer::additional_info info2 = { .pipeline = pinfo };
+
+		CheekyLayer::local_context ctx = { .logger = log, .info = &info2 };
+		CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Pipeline, VK_NULL_HANDLE, ctx);
+
+		if(ctx.overrides.contains("pDepthStencilState->depthTestEnable"))
+			depth->depthTestEnable = ctx.overrides["pDepthStencilState->depthTestEnable"] == "true";
+	}
+	log << logger::end;
+
     VkResult result = device_dispatch[GetKey(device)].CreateGraphicsPipelines(device, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines);
 
 	if(result == VK_SUCCESS)

@@ -49,9 +49,15 @@ namespace CheekyLayer
 		VkBuffer indexBuffer;
 	};
 
+	struct pipeline_info
+	{
+		std::vector<VkShaderModule>& shaderStages;
+	};
+
 	union additional_info
 	{
 		draw_info draw;
+		pipeline_info pipeline;
 	};
 
 	struct local_context
@@ -61,5 +67,6 @@ namespace CheekyLayer
 		additional_info* info;
 		VkCommandBuffer commandBuffer;
 		bool canceled = false;
+		std::map<std::string, std::string> overrides;
 	};
 }

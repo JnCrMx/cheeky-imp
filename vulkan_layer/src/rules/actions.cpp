@@ -24,6 +24,7 @@ namespace CheekyLayer
 	action_register<disable_action> disable_action::reg("disable");
 	action_register<cancel_action> cancel_action::reg("cancel");
 	action_register<log_action> log_action::reg("log");
+	action_register<override_action> override_action::reg("override");
 
 	void mark_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule&)
 	{
@@ -304,6 +305,24 @@ namespace CheekyLayer
 		s = std::regex_replace(s, std::regex("\\("), "$[");
 
 		out << "log(" << s << ")";
+		return out;
+	}
+
+	void override_action::execute(selector_type, VkHandle, local_context& ctx, rule &)
+	{
+		ctx.overrides[m_key] = m_value;
+	}
+
+	void override_action::read(std::istream& in)
+	{
+		std::getline(in, m_key, ',');
+		skip_ws(in);
+		std::getline(in, m_value, ')');
+	}
+
+	std::ostream& override_action::print(std::ostream& out)
+	{
+		out << "override(" << m_key << ", " << m_value << ")";
 		return out;
 	}
 }
