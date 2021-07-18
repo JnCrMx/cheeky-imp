@@ -1,3 +1,7 @@
 add_executable(test_reflection reflection.cpp)
 target_link_libraries(test_reflection PUBLIC cheeky_layer)
 add_test(reflection test_reflection)
+
+add_executable(struct_tree struct_tree.cpp)
+target_link_libraries(struct_tree PUBLIC cheeky_layer)
+add_test(struct_tree struct_tree VkGraphicsPipelineCreateInfo)

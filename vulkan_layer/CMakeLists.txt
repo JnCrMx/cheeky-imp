@@ -12,6 +12,7 @@ find_package(OpenSSL REQUIRED)
 file(GLOB_RECURSE sources src/**.cpp external/Vulkan-ValidationLayers/layers/vk_format_utils.cpp)
 
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/vkreflectionmap.cpp
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/generate_reflection.py
     COMMAND PYTHONPATH=/usr/share/vulkan/registry/ python ${CMAKE_CURRENT_SOURCE_DIR}/generate_reflection.py > ${CMAKE_CURRENT_BINARY_DIR}/vkreflectionmap.cpp)
 list(APPEND sources ${CMAKE_CURRENT_BINARY_DIR}/vkreflectionmap.cpp)
 

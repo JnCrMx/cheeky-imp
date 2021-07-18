@@ -1,4 +1,4 @@
-#!/usr/bin/env python 
+#!/usr/bin/env python
 
 import reg
 
@@ -15,9 +15,9 @@ for (name, description) in vkreg.typedict.items():
         continue
     if 'structextends' in description.elem.attrib:
         continue
-    if name[-1].isupper():
+    if name[-1].isupper() and not name[-2].isdigit():
         continue
-    
+
     print(f"\t{{\n\t\t\"{name}\",\n\t\tstd::map<std::string, VkReflectInfo>{{")
     for member in description.getMembers():
         mType=member[0].text
@@ -30,9 +30,10 @@ for (name, description) in vkreg.typedict.items():
             mPointer = "true"
         else:
             mPointer = "false"
-        
+
         print(f"\t\t\t{{\"{mName}\", VkReflectInfo{{ .name = \"{mName}\", .type = \"{mType}\", .pointer = {mPointer}, .offset = offsetof({name}, {mName}) }}}},")
         
     print("\t\t}\n\t},")
 print("};");
+
 print("}}");
