@@ -5,12 +5,9 @@
 #include "descriptors.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
-#include <iomanip>
-#include <iterator>
-#include <vulkan/vulkan_core.h>
 
+#include <iomanip>
 #include <vulkan/vulkan.hpp>
-#include <vulkan/vulkan_enums.hpp>
 
 using CheekyLayer::logger;
 using CheekyLayer::VkHandle;
