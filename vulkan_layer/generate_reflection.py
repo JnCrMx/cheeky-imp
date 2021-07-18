@@ -32,7 +32,33 @@ for (name, description) in vkreg.typedict.items():
             mPointer = "false"
 
         print(f"\t\t\t{{\"{mName}\", VkReflectInfo{{ .name = \"{mName}\", .type = \"{mType}\", .pointer = {mPointer}, .offset = offsetof({name}, {mName}) }}}},")
-        
+
+    print("\t\t}\n\t},")
+print("};");
+
+
+print("enum_map enum_reflection_map = {");
+for enum in vkreg.tree.findall("enums"):
+    name=enum.attrib["name"]
+    if name == "VkStructureType":
+        continue
+    if name == "API Constants":
+        continue
+    if name == "VkResult":
+        continue
+    if name[-1].isupper():
+        continue
+
+    print(f"\t{{\n\t\t\"{name}\",\n\t\tstd::map<std::string, VkEnumEntry>{{")
+    for val in enum.findall(".//enum"):
+        if "protect" in val.attrib:
+            continue
+        vName = val.attrib["name"]
+        if "RESERVED" in vName:
+            continue
+        if vName.endswith("_EXT"):
+            continue
+        print(f"\t\t\t{{\"{vName}\", VkEnumEntry{{ .name = \"{vName}\", .value = {vName}}}}},")
     print("\t\t}\n\t},")
 print("};");
 

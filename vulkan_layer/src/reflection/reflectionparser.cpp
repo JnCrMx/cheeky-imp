@@ -13,6 +13,8 @@ namespace CheekyLayer { namespace reflection {
 			return true;
 		if(type=="VkBool32")
 			return true;
+		if(enum_reflection_map.contains(type)) // all enums can be returned as an uint32_t
+			return true;
 		return false;
 	}
 
@@ -22,6 +24,8 @@ namespace CheekyLayer { namespace reflection {
 			return *((uint32_t*)p);
 		if(type=="VkBool32")
 			return *((VkBool32*)p);
+		if(enum_reflection_map.contains(type)) // all enums can be returned as an uint32_t
+			return *((uint32_t*)p);
 		throw std::runtime_error("cannot create type \""+type+"\"");
 	}
 
@@ -31,6 +35,8 @@ namespace CheekyLayer { namespace reflection {
 			*((uint32_t*)p) = std::any_cast<uint32_t>(value);
 		else if(type=="VkBool32")
 			*((VkBool32*)p) = std::any_cast<VkBool32>(value);
+		else if(enum_reflection_map.contains(type)) // all enums can be set as an uint32_t
+			*((uint32_t*)p) = std::any_cast<uint32_t>(value);
 		else
 			throw std::runtime_error("cannot set type \""+type+"\"");
 	}
@@ -51,7 +57,7 @@ namespace CheekyLayer { namespace reflection {
 		if(min == std::string::npos)
 		{
 			if(!is_primitive(info.type))
-				throw std::runtime_error("cannot return non-primitive type \""+info.type+"\"");
+				throw std::runtime_error("cannot return non-primitive and non-enum type \""+info.type+"\"");
 			return create_type(op, info.type);
 		}
 		else if(a < b)
@@ -87,8 +93,6 @@ namespace CheekyLayer { namespace reflection {
 		
 		if(min == std::string::npos)
 		{
-			if(!is_primitive(info.type))
-				throw std::runtime_error("cannot return non-primitive type \""+info.type+"\"");
 			return info.type;
 		}
 		else if(a < b)
@@ -125,7 +129,7 @@ namespace CheekyLayer { namespace reflection {
 		if(min == std::string::npos)
 		{
 			if(!is_primitive(info.type))
-				throw std::runtime_error("cannot assign non-primitive type \""+info.type+"\"");
+				throw std::runtime_error("cannot assign non-primitive and non-enum type \""+info.type+"\"");
 			set_type(op, info.type, value);
 		}
 		else if(a < b)
@@ -147,7 +151,7 @@ namespace CheekyLayer { namespace reflection {
 		}
 	}
 
-	std::any parse_rvalue(std::string expression, const void* p, std::string type)
+	std::any parse_rvalue(std::string expression, const void* p, std::string type, std::string dtype)
 	{
 		try
 		{
@@ -157,7 +161,24 @@ namespace CheekyLayer { namespace reflection {
 		}
 		catch (const std::invalid_argument& ex) {}
 
-		throw std::runtime_error("cannot parse expression \""+expression+"\"");
+		if(dtype=="VkBool32")
+		{
+			if(expression=="VK_TRUE")
+				return (VkBool32) VK_TRUE;
+			if(expression=="VK_FALSE")
+				return (VkBool32) VK_FALSE;
+		}
+
+		if(enum_reflection_map.contains(dtype))
+		{
+			auto& submap = enum_reflection_map[dtype];
+			if(submap.contains(expression))
+			{
+				return submap[expression].value;
+			}
+		}
+
+		throw std::runtime_error("cannot parse expression \""+expression+"\" for type \""+dtype+"\"");
 	}
 
 	std::any convert(std::any in, std::string type)
@@ -168,6 +189,13 @@ namespace CheekyLayer { namespace reflection {
 				return (uint32_t)std::any_cast<long>(in);
 			if(type=="float")
 				return (float)std::any_cast<long>(in);
+		}
+		if(in.type() == typeid(uint32_t))
+		{
+			if(type=="uint32_t" || type=="VkBool32")
+				return in;
+			if(enum_reflection_map.contains(type)) // all enums are uint32_t by default I hope
+				return in;
 		}
 
 		throw std::runtime_error("cannot convert from type \""+std::string(in.type().name())+"\" to type \""+type+"\"");
@@ -184,7 +212,7 @@ namespace CheekyLayer { namespace reflection {
 
 		std::string ltype = parse_get_type(left, type);
 
-		std::any rvalue = parse_rvalue(right, p, type);
+		std::any rvalue = parse_rvalue(right, p, type, ltype);
 		std::any converted = convert(rvalue, ltype);
 		parse_set(left, p, type, converted);
 	}

@@ -5,3 +5,7 @@ add_test(reflection test_reflection)
 add_executable(struct_tree struct_tree.cpp)
 target_link_libraries(struct_tree PUBLIC cheeky_layer)
 add_test(struct_tree struct_tree VkGraphicsPipelineCreateInfo)
+
+add_executable(test_enum_reflection enum_reflection.cpp)
+target_link_libraries(test_enum_reflection PUBLIC cheeky_layer)
+add_test(enum_reflection test_enum_reflection)
