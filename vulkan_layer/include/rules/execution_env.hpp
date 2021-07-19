@@ -67,6 +67,6 @@ namespace CheekyLayer
 		additional_info* info;
 		VkCommandBuffer commandBuffer;
 		bool canceled = false;
-		std::map<std::string, std::string> overrides;
+		std::vector<std::string> overrides;
 	};
 }

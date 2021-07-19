@@ -310,19 +310,17 @@ namespace CheekyLayer
 
 	void override_action::execute(selector_type, VkHandle, local_context& ctx, rule &)
 	{
-		ctx.overrides[m_key] = m_value;
+		ctx.overrides.push_back(m_expression);
 	}
 
 	void override_action::read(std::istream& in)
 	{
-		std::getline(in, m_key, ',');
-		skip_ws(in);
-		std::getline(in, m_value, ')');
+		std::getline(in, m_expression, ')');
 	}
 
 	std::ostream& override_action::print(std::ostream& out)
 	{
-		out << "override(" << m_key << ", " << m_value << ")";
+		out << "override(" << m_expression << ")";
 		return out;
 	}
 }

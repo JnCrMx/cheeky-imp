@@ -3,6 +3,7 @@
 #include "layer.hpp"
 #include "logger.hpp"
 #include "descriptors.hpp"
+#include "reflection/reflectionparser.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
 
@@ -84,16 +85,23 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateGraphicsPipelines(
 			return s.module;
 		});
 
-		VkPipelineDepthStencilStateCreateInfo* depth = const_cast<VkPipelineDepthStencilStateCreateInfo*>(info->pDepthStencilState);
-
 		CheekyLayer::pipeline_info pinfo = {shaderStages};
 		CheekyLayer::additional_info info2 = { .pipeline = pinfo };
 
 		CheekyLayer::local_context ctx = { .logger = log, .info = &info2 };
 		CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Pipeline, VK_NULL_HANDLE, ctx);
 
-		if(ctx.overrides.contains("pDepthStencilState->depthTestEnable"))
-			depth->depthTestEnable = ctx.overrides["pDepthStencilState->depthTestEnable"] == "true";
+		for(auto o : ctx.overrides)
+		{
+			try
+			{
+				CheekyLayer::reflection::parse_assign(o, info, "VkGraphicsPipelineCreateInfo");
+			}
+			catch(const std::exception& e)
+			{
+				log << "Failed to process override \"" << o << "\": " << e.what();
+			}
+		}
 	}
 	log << logger::end;
 

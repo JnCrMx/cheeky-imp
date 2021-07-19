@@ -167,8 +167,7 @@ namespace CheekyLayer
 			virtual void execute(selector_type, VkHandle, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
-			std::string m_key;
-			std::string m_value;
+			std::string m_expression;
 
 			static action_register<override_action> reg;
 	};
