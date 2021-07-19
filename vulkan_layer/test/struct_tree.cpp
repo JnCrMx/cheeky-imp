@@ -64,7 +64,9 @@ void dump_struct(std::ostream& out, std::string name, int level = 0, uint64_t la
 			out << "─";
 		out << "─";
 
-		out << std::left << std::setw(50-level*2) << info.name << " : " << info.type;
+		out << std::left << std::setfill(' ') << std::setw(50-level*2) << info.name
+			<< " @ 0x" << std::right << std::setfill('0') << std::setw(2) << std::hex << info.offset
+			<< " : " << info.type;
 		if(info.pointer)
 			out << "*";
 		out << std::endl;

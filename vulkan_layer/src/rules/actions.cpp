@@ -123,8 +123,10 @@ namespace CheekyLayer
 		for(int i=0; i<m_actions.size(); i++)
 		{
 			m_actions[i]->print(out);
-			out << (i==m_actions.size()-1 ? ")" : ", ");
+			if(i != m_actions.size()-1)
+				out << ", ";
 		}
+		out << ")";
 		return out;
 	}
 

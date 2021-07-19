@@ -1,0 +1,4 @@
+image{} -> log(Lorem ipsum)overflow
+image{} -> seq(
+image{with(image{})} -> seq()
+image{not()} -> seq()
