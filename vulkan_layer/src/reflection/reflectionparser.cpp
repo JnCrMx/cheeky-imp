@@ -229,10 +229,10 @@ namespace CheekyLayer { namespace reflection {
 	std::string enum_to_string(uint32_t value, std::string type)
 	{
 		auto& a = enum_reflection_map[type];
-		for(auto it = a.begin(); it != a.end(); it++)
+		for(auto [k, v] : a)
 		{
-			if(it->second.value == value)
-				return it->second.name;
+			if(v.value == value)
+				return v.name;
 		}
 
 		return "unknown " + type + " " + std::to_string(value);

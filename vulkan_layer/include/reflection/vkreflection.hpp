@@ -2,7 +2,7 @@
 
 #include <cstdint>
 #include <string>
-#include <map>
+#include <unordered_map>
 #include <vulkan/vulkan.h>
 
 namespace CheekyLayer { namespace reflection {
@@ -20,8 +20,11 @@ namespace CheekyLayer { namespace reflection {
 		uint32_t value;
 	};
 
-	typedef std::map<std::string, std::map<std::string, VkReflectInfo>> reflection_map;
-	typedef std::map<std::string, std::map<std::string, VkEnumEntry>> enum_map;
+	typedef std::unordered_map<std::string, VkReflectInfo> inner_reflection_map;
+	typedef std::unordered_map<std::string, VkEnumEntry> inner_enum_map;
+
+	typedef std::unordered_map<std::string, inner_reflection_map> reflection_map;
+	typedef std::unordered_map<std::string, inner_enum_map> enum_map;
 
 	extern reflection_map struct_reflection_map;
 	extern enum_map enum_reflection_map;

@@ -15,7 +15,7 @@ namespace CheekyLayer { namespace reflection {
     #define VK_CMD_DRAW_INDEXED \
     { \
         "VkCmdDrawIndexed", \
-		std::map<std::string, VkReflectInfo>{ \
+		inner_reflection_map{ \
 			{"indexCount", VkReflectInfo{ .name = "indexCount", .type = "uint32_t", .pointer = false, .offset = offsetof(VkCmdDrawIndexed, indexCount) }}, \
 			{"instanceCount", VkReflectInfo{ .name = "instanceCount", .type = "uint32_t", .pointer = false, .offset = offsetof(VkCmdDrawIndexed, instanceCount) }}, \
 			{"firstIndex", VkReflectInfo{ .name = "firstIndex", .type = "uint32_t", .pointer = false, .offset = offsetof(VkCmdDrawIndexed, firstIndex) }}, \

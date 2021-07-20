@@ -19,7 +19,7 @@ for (name, description) in vkreg.typedict.items():
     if name[-1].isupper() and not name[-2].isdigit():
         continue
 
-    print(f"\t{{\n\t\t\"{name}\",\n\t\tstd::map<std::string, VkReflectInfo>{{")
+    print(f"\t{{\n\t\t\"{name}\",\n\t\tinner_reflection_map{{")
     for member in description.getMembers():
         mType=member[0].text
         mName=member[1].text
@@ -51,7 +51,7 @@ for enum in vkreg.tree.findall("enums"):
     if name[-1].isupper():
         continue
 
-    print(f"\t{{\n\t\t\"{name}\",\n\t\tstd::map<std::string, VkEnumEntry>{{")
+    print(f"\t{{\n\t\t\"{name}\",\n\t\tinner_enum_map{{")
     for val in enum.findall(".//enum"):
         if "protect" in val.attrib:
             continue
