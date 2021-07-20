@@ -27,3 +27,7 @@ foreach(RULE ${RULES_FAIL})
     set_tests_properties(rule_parser_fail_${COUNTER} PROPERTIES WILL_FAIL TRUE)
     MATH(EXPR COUNTER "${COUNTER}+1")
 endforeach()
+
+add_executable(test_custom_structs custom_structs.cpp)
+target_link_libraries(test_custom_structs PUBLIC cheeky_layer)
+add_test(custom_structs test_custom_structs)

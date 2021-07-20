@@ -5,9 +5,10 @@ import reg
 vkreg = reg.Registry()
 vkreg.loadFile("/usr/share/vulkan/registry/vk.xml")
 
-print("#include \"reflection/vkreflection.hpp\"");
-print("namespace CheekyLayer { namespace reflection {");
-print("reflection_map struct_reflection_map = {");
+print("#include \"reflection/vkreflection.hpp\"")
+print("#include \"reflection/custom_structs.hpp\"")
+print("namespace CheekyLayer { namespace reflection {")
+print("reflection_map struct_reflection_map = {")
 for (name, description) in vkreg.typedict.items():
     if not 'category' in description.elem.attrib:
         continue
@@ -34,6 +35,7 @@ for (name, description) in vkreg.typedict.items():
         print(f"\t\t\t{{\"{mName}\", VkReflectInfo{{ .name = \"{mName}\", .type = \"{mType}\", .pointer = {mPointer}, .offset = offsetof({name}, {mName}) }}}},")
 
     print("\t\t}\n\t},")
+print("\tVK_CUSTOM_STRUCTS")
 print("};");
 
 
