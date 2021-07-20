@@ -1,8 +1,11 @@
 #include "reflection/reflectionparser.hpp"
+#include "reflection/vkreflection.hpp"
 
+#include <any>
 #include <cstdint>
 #include <iostream>
 #include <stdexcept>
+#include <stdint.h>
 #include <string>
 #include <vulkan/vulkan_core.h>
 
@@ -10,6 +13,8 @@ namespace CheekyLayer { namespace reflection {
 	bool is_primitive(std::string type)
 	{
 		if(type=="uint32_t")
+			return true;
+		if(type=="int32_t")
 			return true;
 		if(type=="VkBool32")
 			return true;
@@ -22,6 +27,8 @@ namespace CheekyLayer { namespace reflection {
 	{
 		if(type=="uint32_t")
 			return *((uint32_t*)p);
+		if(type=="int32_t")
+			return *((int32_t*)p);
 		if(type=="VkBool32")
 			return *((VkBool32*)p);
 		if(enum_reflection_map.contains(type)) // all enums can be returned as an uint32_t
@@ -33,6 +40,8 @@ namespace CheekyLayer { namespace reflection {
 	{
 		if(type=="uint32_t")
 			*((uint32_t*)p) = std::any_cast<uint32_t>(value);
+		else if(type=="int32_t")
+			*((int32_t*)p) = std::any_cast<int32_t>(value);
 		else if(type=="VkBool32")
 			*((VkBool32*)p) = std::any_cast<VkBool32>(value);
 		else if(enum_reflection_map.contains(type)) // all enums can be set as an uint32_t
@@ -52,7 +61,7 @@ namespace CheekyLayer { namespace reflection {
 		VkReflectInfo info = struct_reflection_map[type][first];
 		if(info.name != first)
 			throw std::runtime_error("cannot find member \""+first+"\" for type \""+type+"\"");
-		
+
 		const void* op = ((const uint8_t*)p) + info.offset;
 		if(min == std::string::npos)
 		{
@@ -73,7 +82,7 @@ namespace CheekyLayer { namespace reflection {
 		{
 			if(info.pointer)
 				throw std::runtime_error("path refered to pointer member \""+info.name+"\" of type \""+type+"\" with '.'");
-			
+
 			std::string rest = path.substr(min+1);
 			return parse_get(rest, op, info.type);
 		}
@@ -90,7 +99,7 @@ namespace CheekyLayer { namespace reflection {
 		VkReflectInfo info = struct_reflection_map[type][first];
 		if(info.name != first)
 			throw std::runtime_error("cannot find member \""+first+"\" for type \""+type+"\"");
-		
+
 		if(min == std::string::npos)
 		{
 			return info.type;
@@ -107,7 +116,7 @@ namespace CheekyLayer { namespace reflection {
 		{
 			if(info.pointer)
 				throw std::runtime_error("path refered to pointer member \""+info.name+"\" of type \""+type+"\" with '.'");
-			
+
 			std::string rest = path.substr(min+1);
 			return parse_get_type(rest, info.type);
 		}
@@ -124,7 +133,7 @@ namespace CheekyLayer { namespace reflection {
 		VkReflectInfo info = struct_reflection_map[type][first];
 		if(info.name != first)
 			throw std::runtime_error("cannot find member \""+first+"\" for type \""+type+"\"");
-		
+
 		void* op = ((uint8_t*)p) + info.offset;
 		if(min == std::string::npos)
 		{
@@ -145,7 +154,7 @@ namespace CheekyLayer { namespace reflection {
 		{
 			if(info.pointer)
 				throw std::runtime_error("path refered to pointer member \""+info.name+"\" of type \""+type+"\" with '.'");
-			
+
 			std::string rest = path.substr(min+1);
 			parse_set(rest, op, info.type, value);
 		}
@@ -215,5 +224,34 @@ namespace CheekyLayer { namespace reflection {
 		std::any rvalue = parse_rvalue(right, p, type, ltype);
 		std::any converted = convert(rvalue, ltype);
 		parse_set(left, p, type, converted);
+	}
+
+	std::string enum_to_string(uint32_t value, std::string type)
+	{
+		auto& a = enum_reflection_map[type];
+		for(auto it = a.begin(); it != a.end(); it++)
+		{
+			if(it->second.value == value)
+				return it->second.name;
+		}
+
+		return "unknown " + type + " " + std::to_string(value);
+	}
+
+	std::string parse_get_string(std::string path, const void* p, std::string type)
+	{
+		std::string rtype = parse_get_type(path, type);
+		std::any value = parse_get(path, p, type);
+
+		if(rtype=="uint32_t")
+			return std::to_string(std::any_cast<uint32_t>(value));
+		if(rtype=="int32_t")
+			return std::to_string(std::any_cast<int32_t>(value));
+		if(rtype=="VkBool32")
+			return std::any_cast<VkBool32>(value) == VK_TRUE ? "VK_TRUE" : "VK_FALSE";
+		if(enum_reflection_map.contains(rtype))
+			return enum_to_string(std::any_cast<uint32_t>(value), rtype);
+
+		throw std::runtime_error("cannot make a string out of type \""+rtype+"\"");
 	}
 }}

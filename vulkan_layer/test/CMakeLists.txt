@@ -31,3 +31,7 @@ endforeach()
 add_executable(test_custom_structs custom_structs.cpp)
 target_link_libraries(test_custom_structs PUBLIC cheeky_layer)
 add_test(custom_structs test_custom_structs)
+
+add_executable(test_reflection_string reflection_string.cpp)
+target_link_libraries(test_reflection_string PUBLIC cheeky_layer)
+add_test(reflection_string test_reflection_string)
