@@ -9,6 +9,7 @@
 #include <string>
 #include <map>
 #include <functional>
+#include <variant>
 
 namespace CheekyLayer
 {
@@ -141,6 +142,69 @@ namespace CheekyLayer
 		struct action_register : action_factory { 
     		action_register(std::string const& s) { 
         		getMap()->insert(std::make_pair(s, &default_create_action<T>));
+    	}
+	};
+
+	enum data_type : int
+	{
+		String,
+		Raw,
+		Handle,
+		Number
+	};
+	std::string to_string(data_type);
+
+	using data_value = std::variant<std::string, std::vector<uint8_t>, VkHandle, double>;
+
+	class data
+	{
+		public:
+			data(selector_type type) : m_type(type) {}
+			virtual void read(std::istream&) = 0;
+			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&) = 0;
+			virtual bool supports(selector_type, data_type) = 0;
+			virtual std::ostream& print(std::ostream& out)
+			{
+				out << "unkownData()";
+				return out;
+			};
+		protected:
+			selector_type m_type;
+	};
+
+	template<typename T> std::unique_ptr<data> default_create_data(selector_type stype)
+	{
+		return std::make_unique<T>(stype);
+	}
+	std::unique_ptr<data> read_data(std::istream& in, selector_type type);
+
+	struct data_factory
+	{
+    	typedef std::map<std::string, std::unique_ptr<data>(*)(selector_type stype)> map_type;
+
+		public:
+			static std::unique_ptr<data> make_unique_data(std::string const& s, selector_type stype)
+			{
+	        	map_type::iterator it = getMap()->find(s);
+    	    	if(it == getMap()->end())
+        	    	throw std::runtime_error("unknown data type '"+s+"' for selector type "+to_string(stype));
+	        	return it->second(stype);
+    		}
+
+		protected:
+    		static map_type * getMap() {
+        		if(!map) { map = new map_type; } 
+	        	return map; 
+    		}
+
+		private:
+    		static map_type * map;
+	};
+
+	template<typename T>
+		struct data_register : data_factory { 
+    		data_register(std::string const& s) { 
+        		getMap()->insert(std::make_pair(s, &default_create_data<T>));
     	}
 	};
 

@@ -52,6 +52,7 @@ namespace CheekyLayer
 	struct pipeline_info
 	{
 		std::vector<VkShaderModule>& shaderStages;
+		const VkGraphicsPipelineCreateInfo* info;
 	};
 
 	union additional_info

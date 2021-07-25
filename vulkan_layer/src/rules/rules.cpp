@@ -12,6 +12,7 @@ namespace CheekyLayer
 {
 	condition_factory::map_type* condition_factory::map = NULL;
 	action_factory::map_type* action_factory::map = NULL;
+	data_factory::map_type* data_factory::map = NULL;
 
 	void skip_ws(std::istream& in)
 	{
@@ -62,6 +63,16 @@ namespace CheekyLayer
 		if(!std::getline(in, conditionType, '('))
 			throw std::runtime_error("cannot read condition type");
 		std::unique_ptr<selector_condition> cptr = condition_factory::make_unique_condition(conditionType, type);
+		cptr->read(in);
+		return cptr;
+	}
+
+	std::unique_ptr<data> read_data(std::istream& in, selector_type type)
+	{
+		std::string dataType;
+		if(!std::getline(in, dataType, '('))
+			throw std::runtime_error("cannot read data type");
+		std::unique_ptr<data> cptr = data_factory::make_unique_data(dataType, type);
 		cptr->read(in);
 		return cptr;
 	}
@@ -119,6 +130,23 @@ namespace CheekyLayer
 				return "draw";
 			case selector_type::Pipeline:
 				return "pipeline";
+			default:
+				return "unknown" + std::to_string((int)type);
+		}
+	}
+
+	std::string to_string(data_type type)
+	{
+		switch(type)
+		{
+			case data_type::String:
+				return "string";
+			case data_type::Raw:
+				return "raw";
+			case data_type::Handle:
+				return "handle";
+			case data_type::Number:
+				return "number";
 			default:
 				return "unknown" + std::to_string((int)type);
 		}

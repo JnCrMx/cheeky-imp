@@ -159,6 +159,19 @@ namespace CheekyLayer
 			static action_register<log_action> reg;
 	};
 
+	class log_extended_action : public action
+	{
+		public:
+			log_extended_action(selector_type type) : action(type) {}
+			virtual void read(std::istream&);
+			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			std::unique_ptr<data> m_data;
+
+			static action_register<log_extended_action> reg;
+	};
+
 	class override_action : public action
 	{
 		public:

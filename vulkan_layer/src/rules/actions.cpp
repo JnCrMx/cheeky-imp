@@ -24,6 +24,7 @@ namespace CheekyLayer
 	action_register<disable_action> disable_action::reg("disable");
 	action_register<cancel_action> cancel_action::reg("cancel");
 	action_register<log_action> log_action::reg("log");
+	action_register<log_extended_action> log_extended_action::reg("logx");
 	action_register<override_action> override_action::reg("override");
 
 	void mark_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule&)
@@ -307,6 +308,28 @@ namespace CheekyLayer
 		s = std::regex_replace(s, std::regex("\\("), "$[");
 
 		out << "log(" << s << ")";
+		return out;
+	}
+
+	void log_extended_action::execute(selector_type stype, VkHandle handle, local_context& ctx, rule& rule)
+	{
+		ctx.logger << std::get<std::string>(m_data->get(stype, data_type::String, handle, ctx, rule));
+	}
+
+	void log_extended_action::read(std::istream& in)
+	{
+		m_data = read_data(in, m_type);
+		check_stream(in, ')');
+
+		if(!m_data->supports(m_type, data_type::String))
+			throw std::runtime_error("data does not support strings");
+	}
+
+	std::ostream& log_extended_action::print(std::ostream& out)
+	{
+		out << "logx(";
+		m_data->print(out);
+		out << ")";
 		return out;
 	}
 

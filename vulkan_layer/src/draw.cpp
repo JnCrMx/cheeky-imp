@@ -85,7 +85,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateGraphicsPipelines(
 			return s.module;
 		});
 
-		CheekyLayer::pipeline_info pinfo = {shaderStages};
+		CheekyLayer::pipeline_info pinfo = {shaderStages, info};
 		CheekyLayer::additional_info info2 = { .pipeline = pinfo };
 
 		CheekyLayer::local_context ctx = { .logger = log, .info = &info2 };
