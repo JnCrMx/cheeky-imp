@@ -151,7 +151,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 		}
 		catch(std::runtime_error& ex)
 		{
-			log << " Cannot decompile: " << ex.what();
+			log << logger::error << "Cannot decompile: " << ex.what();
 		}
 #endif
 	}
@@ -220,7 +220,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 				}
 				else
 				{
-					log << " compilation failed: " << message;
+					log << logger::error << "compilation failed: " << message;
 				}
 			}
 		}

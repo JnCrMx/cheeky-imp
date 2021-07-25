@@ -126,7 +126,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 		}
 		catch (std::filesystem::filesystem_error& ex)
 		{
-			*logger << logger::begin << "Cannot find overrides for " << type << ": " << ex.what() << logger::end;
+			*logger << logger::begin << logger::error << "Cannot find overrides for " << type << ": " << ex.what() << logger::end;
 		}
 	}
 
@@ -152,7 +152,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 				}
 				catch(const std::exception& ex)
 				{
-					*logger << logger::begin << "Error in rulefile " << rulefile << " line " << lineNr << ": " << ex.what() << logger::end;
+					*logger << logger::begin << logger::error << "Error in rulefile " << rulefile << " line " << lineNr << ": " << ex.what() << logger::end;
 				}
 			}
 		}

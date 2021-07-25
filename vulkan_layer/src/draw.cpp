@@ -99,7 +99,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateGraphicsPipelines(
 			}
 			catch(const std::exception& e)
 			{
-				log << "Failed to process override \"" << o << "\": " << e.what();
+				log << logger::error << "Failed to process override \"" << o << "\": " << e.what();
 			}
 		}
 	}

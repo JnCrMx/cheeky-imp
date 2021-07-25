@@ -38,7 +38,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_BindBufferMemory(
     }
     catch(const std::exception& ex)
     {
-        *logger << logger::begin << "ERROR in BindBufferMemory: " << ex.what() << logger::end;
+        *logger << logger::begin << logger::error << "BindBufferMemory: " << ex.what() << logger::end;
     }
     return VK_ERROR_UNKNOWN;
 }
@@ -101,7 +101,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBuffer(VkCommandBuffer comman
     }
     else
     {
-        log << " Cannot map memory " << ret;
+        log << logger::error << " Cannot map memory " << ret;
     }
    	log << logger::end;
 

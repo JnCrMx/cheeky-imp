@@ -16,6 +16,12 @@ namespace CheekyLayer
 		lock.unlock();
 	}
 
+	active_logger& active_logger::operator<<(struct error_t)
+	{
+		*this << "error: ";
+		return *this;
+	}
+
 	logger& active_logger::operator<<(struct end_t)
 	{
 		if(written)

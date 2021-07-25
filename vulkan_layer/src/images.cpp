@@ -183,8 +183,8 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBufferToImage(
 						std::filesystem::create_directories(dir);
 						stbi_write_png(outputPath.c_str(), width, height, 4, image, width*4);
 					}
-					catch(std::exception& ex) { log << " Something went wrong: " << ex.what(); }
-					catch(...) { log << " Something went really wrong"; }
+					catch(std::exception& ex) { log << logger::error << " Something went wrong: " << ex.what(); }
+					catch(...) { log << logger::error << " Something went really wrong"; }
 				}
 			}
 #endif
@@ -225,8 +225,8 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBufferToImage(
 							free(buf);
 							log << " Found and converted image override to format " << format;
 						}
-						catch(std::exception& ex) { log << " Something went wrong: " << ex.what(); }
-						catch(...) { log << " Something went really wrong"; }
+						catch(std::exception& ex) { log << logger::error << " Something went wrong: " << ex.what(); }
+						catch(...) { log << logger::error << " Something went really wrong"; }
 					}
 				}
 #endif
@@ -246,8 +246,8 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBufferToImage(
 
 						log << " Found and converted image override of top resolution to format " << format;
 					}
-					catch(std::exception& ex) { log << " Something went wrong: " << ex.what(); }
-					catch(...) { log << " Something went really wrong"; }
+					catch(std::exception& ex) { log << logger::error << " Something went wrong: " << ex.what(); }
+					catch(...) { log << logger::error << " Something went really wrong"; }
 				}
 			}
 #endif
@@ -257,7 +257,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBufferToImage(
 	}
 	else
 	{
-		log << " Cannot map memory " << ret;
+		log << logger::error << " Cannot map memory " << ret;
 	}
 	log << logger::end;
 

@@ -84,7 +84,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_UpdateDescriptorSetWithTemplate(
 		}
 		catch(std::exception& ex)
 		{
-			*logger << logger::begin << "UpdateDescriptorSetWithTemplate: error: " << ex.what() << logger::end;
+			*logger << logger::begin << logger::error << "UpdateDescriptorSetWithTemplate: " << ex.what() << logger::end;
 		}
 	}
 }
