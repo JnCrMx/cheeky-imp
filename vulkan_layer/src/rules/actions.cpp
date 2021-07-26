@@ -1,9 +1,11 @@
 #include "rules/actions.hpp"
+#include "dispatch.hpp"
 #include "logger.hpp"
 #include "layer.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
 #include "utils.hpp"
+#include "images.hpp"
 
 #include <cstdint>
 #include <cstring>
@@ -14,10 +16,21 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 #include <sys/socket.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_structs.hpp>
+
+#ifdef USE_IMAGE_TOOLS
+#include <block_compression.hpp>
+#include <image.hpp>
+
+#include <stb_image.h>
+#endif
 
 namespace CheekyLayer
 {
@@ -34,6 +47,8 @@ namespace CheekyLayer
 	action_register<override_action> override_action::reg("override");
 	action_register<socket_action> socket_action::reg("socket");
 	action_register<write_action> write_action::reg("write");
+	action_register<store_action> store_action::reg("store");
+	action_register<overload_action> overload_action::reg("overload");
 
 	void mark_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule&)
 	{
@@ -175,7 +190,7 @@ namespace CheekyLayer
 		selector_type type = m_selector->get_type();
 		if(type != selector_type::Image && type != selector_type::Buffer && type != selector_type::Shader)
 			throw std::runtime_error("unsupported selector type "+to_string(type)+" only image, buffer and shader selectors are supported");
-		
+
 		skip_ws(in);
 		check_stream(in, ',');
 		skip_ws(in);
@@ -413,7 +428,7 @@ namespace CheekyLayer
 	{
 		if(!rule_env.fds.count(m_fd))
 			throw std::runtime_error("file descriptor with name "+m_fd+" does not exists");
-		
+
 		file_descriptor& fd = rule_env.fds[m_fd];
 
 		if(m_data->supports(stype, data_type::Raw))
@@ -450,6 +465,269 @@ namespace CheekyLayer
 	{
 		out << "write(" << m_fd << ", ";
 		m_data->print(out);
+		out << ")";
+		return out;
+	}
+
+	void store_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule &)
+	{
+		rule_env.handles[m_name] = { handle , type, ctx.device };
+	}
+
+	void store_action::read(std::istream& in)
+	{
+		std::getline(in, m_name, ')');
+	}
+
+	std::ostream& store_action::print(std::ostream& out)
+	{
+		out << "store(" << m_name << ")";
+		return out;
+	}
+
+	void overload_action::execute(selector_type stype, VkHandle handle, local_context& ctx, rule& rule)
+	{
+		if(!rule_env.handles.count(m_target))
+			throw std::runtime_error("stored handle with name "+m_target+" does not exists");
+
+		if(m_mode == mode::Data)
+		{
+			std::vector<uint8_t> data = std::get<std::vector<uint8_t>>(m_data->get(stype, data_type::Raw, handle, ctx, rule));
+			std::thread t(&overload_action::work, this, data);
+			rule_env.threads.push_back(std::move(t));
+		}
+		else
+		{
+			std::thread t(&overload_action::work, this, std::vector<uint8_t>{});
+			rule_env.threads.push_back(std::move(t));
+		}
+	}
+
+	void overload_action::work(std::vector<uint8_t> optData)
+	{
+		stored_handle& h = rule_env.handles[m_target];
+
+		VkResult result;
+		std::vector<uint8_t> data(16);
+		std::vector<VkDeviceSize> offsets;
+
+		if(m_mode == mode::Data)
+		{
+			data = optData;
+		}
+		else
+		{
+#ifdef USE_IMAGE_TOOLS
+			bool imageTools = true;
+#else
+			bool imageTools = false;
+#endif
+			if(h.type == selector_type::Image && m_filename.ends_with(".png") && imageTools)
+			{
+				VkImageCreateInfo imgInfo = images[(VkImage)h.handle];
+
+				int w, h, comp;
+				uint8_t* buf = stbi_load(m_filename.c_str(), &w, &h, &comp, STBI_rgb_alpha);
+				image_tools::image image(w, h, buf);
+
+				if(imgInfo.mipLevels <= 1)
+				{
+					offsets.push_back(0);
+					image_tools::compress(imgInfo.format, image, data, imgInfo.extent.width, imgInfo.extent.height);
+				}
+				else
+				{
+					data.clear();
+					for(int i=0; i<imgInfo.mipLevels; i++)
+					{
+						offsets.push_back(data.size());
+
+						std::vector<uint8_t> v;
+						image_tools::compress(imgInfo.format, image, v, imgInfo.extent.width / (1<<i), imgInfo.extent.height / (1<<i));
+						std::copy(v.begin(), v.end(), std::back_inserter(data));
+					}
+				}
+
+				free(buf);
+			}
+			else
+			{
+				std::ifstream in(m_filename, std::ios_base::binary | std::ios_base::ate);
+
+				auto size = in.tellg();
+				data.resize(size);
+				in.seekg(0);
+				in.read((char*)data.data(), size);
+			}
+		}
+
+		VkBufferCreateInfo bufferInfo;
+		bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferInfo.pNext = nullptr;
+		bufferInfo.flags = 0;
+		bufferInfo.size = data.size();
+		bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+		bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		bufferInfo.queueFamilyIndexCount = 0;
+		bufferInfo.pQueueFamilyIndices = nullptr;
+		VkBuffer buffer;
+		if((result = device_dispatch[GetKey(h.device)].CreateBuffer(h.device, &bufferInfo, nullptr, &buffer)) != VK_SUCCESS)
+			throw std::runtime_error("failed to create staging buffer: "+vk::to_string((vk::Result)result));
+
+		VkMemoryRequirements requirements;
+		device_dispatch[GetKey(h.device)].GetBufferMemoryRequirements(h.device, buffer, &requirements);
+
+		VkMemoryAllocateInfo allocateInfo;
+		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocateInfo.pNext = nullptr;
+		allocateInfo.memoryTypeIndex = findMemoryType(deviceInfos[h.device].memory, requirements.memoryTypeBits,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		allocateInfo.allocationSize = requirements.size;
+		VkDeviceMemory memory;
+		if(device_dispatch[GetKey(h.device)].AllocateMemory(h.device, &allocateInfo, nullptr, &memory) != VK_SUCCESS)
+			throw std::runtime_error("failed to allocate memory for staging buffer");
+
+		if(device_dispatch[GetKey(h.device)].BindBufferMemory(h.device, buffer, memory, 0) != VK_SUCCESS)
+			throw std::runtime_error("failed to bind memory to staging buffer");
+
+		void* bufferPointer;
+		if(device_dispatch[GetKey(h.device)].MapMemory(h.device, memory, 0, data.size(), 0, &bufferPointer) != VK_SUCCESS)
+			throw std::runtime_error("failed to map staging memory");
+		memcpy(bufferPointer, data.data(), data.size());
+		device_dispatch[GetKey(h.device)].UnmapMemory(h.device, memory);
+
+		{
+			scoped_lock l(transfer_lock);
+
+			VkCommandBuffer commandBuffer = transferCommandBuffers[h.device];
+			if(commandBuffer == VK_NULL_HANDLE)
+				throw std::runtime_error("command buffer is NULL");
+
+			if(device_dispatch[GetKey(h.device)].ResetCommandBuffer(commandBuffer, 0) != VK_SUCCESS)
+				throw std::runtime_error("failed to reset command buffer");
+
+			VkCommandBufferBeginInfo beginInfo;
+			beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+			beginInfo.pNext = nullptr;
+			beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+			beginInfo.pInheritanceInfo = nullptr;
+			if(device_dispatch[GetKey(h.device)].BeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
+				throw std::runtime_error("failed to begin the command buffer");
+
+			if(h.type == selector_type::Buffer)
+			{
+				VkBufferCopy copyRegion{};
+				copyRegion.srcOffset = 0; // Optional
+				copyRegion.dstOffset = 0; // Optional
+				copyRegion.size = data.size();
+				device_dispatch[GetKey(h.device)].CmdCopyBuffer(commandBuffer, buffer, (VkBuffer)h.handle, 1, &copyRegion);
+			}
+			else if(h.type == selector_type::Image)
+			{
+				VkImageCreateInfo imgInfo = images[(VkImage)h.handle];
+
+				VkImageMemoryBarrier memoryBarrier{};
+				memoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+				memoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+				memoryBarrier.image = (VkImage) h.handle;
+				memoryBarrier.srcAccessMask = 0;
+				memoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+				memoryBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+				memoryBarrier.subresourceRange.layerCount = imgInfo.arrayLayers;
+				memoryBarrier.subresourceRange.levelCount = imgInfo.mipLevels;
+				memoryBarrier.subresourceRange.baseArrayLayer = 0;
+				memoryBarrier.subresourceRange.baseMipLevel = 0;
+				memoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+				memoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+				memoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+				memoryBarrier.pNext = nullptr;
+
+				device_dispatch[GetKey(h.device)].CmdPipelineBarrier(commandBuffer,
+					VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &memoryBarrier);
+
+				std::vector<VkBufferImageCopy> copies(imgInfo.mipLevels);
+				for(int i=0; i<imgInfo.mipLevels; i++)
+				{
+					VkBufferImageCopy copy{};
+					copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+					copy.imageSubresource.baseArrayLayer = 0;
+					copy.imageSubresource.layerCount = 1;
+					copy.imageSubresource.mipLevel = i;
+					copy.imageExtent = { .width = imgInfo.extent.width / (1<<i), .height = imgInfo.extent.height / (1<<i), .depth = 1 };
+					copy.bufferOffset = offsets[i];
+
+					copies[i] = copy;
+				}
+				device_dispatch[GetKey(h.device)].CmdCopyBufferToImage(commandBuffer, buffer, (VkImage)h.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+					copies.size(), copies.data());
+			}
+
+			if(device_dispatch[GetKey(h.device)].EndCommandBuffer(commandBuffer) != VK_SUCCESS)
+				throw std::runtime_error("failed to end command buffer");
+
+			VkQueue queue = transferQueues[h.device];
+			if(queue == VK_NULL_HANDLE)
+				throw std::runtime_error("command buffer is NULL");
+
+			if(device_dispatch[GetKey(h.device)].QueueWaitIdle(queue) != VK_SUCCESS)
+				throw std::runtime_error("cannot wait for queue to be idle before copying");
+
+			VkSubmitInfo submitInfo{};
+			submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+			submitInfo.commandBufferCount = 1;
+			submitInfo.pCommandBuffers = &commandBuffer;
+			if(device_dispatch[GetKey(h.device)].QueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS)
+				throw std::runtime_error("failed to submit command buffer");
+
+			if(device_dispatch[GetKey(h.device)].QueueWaitIdle(queue) != VK_SUCCESS)
+				throw std::runtime_error("cannot wait for queue to be idle after copying");
+
+			device_dispatch[GetKey(h.device)].DestroyBuffer(h.device, buffer, nullptr);
+			device_dispatch[GetKey(h.device)].FreeMemory(h.device, memory, nullptr);
+		}
+	}
+
+	void overload_action::read(std::istream& in)
+	{
+		std::getline(in, m_target, ',');
+		skip_ws(in);
+
+		std::string mode;
+		std::getline(in, mode, ',');
+		skip_ws(in);
+		if(mode == "File")
+		{
+			m_mode = mode::File;
+
+			std::getline(in, m_filename, ')');
+		}
+		else if(mode == "Data")
+		{
+			m_mode = mode::Data;
+
+			m_data = read_data(in, m_type);
+			check_stream(in, ')');
+
+			if(!m_data->supports(m_type, data_type::String) && !m_data->supports(m_type, data_type::Raw))
+				throw std::runtime_error("data does not support strings or raw data");
+		}
+		else
+			throw std::runtime_error("mode "+mode+" is not supported, must be either File or Data");
+	}
+
+	std::ostream& overload_action::print(std::ostream& out)
+	{
+		out << "overload(" << m_target << ", ";
+		switch(m_mode)
+		{
+			case File:
+				out << "File, " << m_filename;
+				break;
+			case Data:
+				out << "Data, ";
+				m_data->print(out);
+				break;
+		}
 		out << ")";
 		return out;
 	}

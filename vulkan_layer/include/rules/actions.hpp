@@ -236,4 +236,40 @@ namespace CheekyLayer
 
 			static action_register<write_action> reg;
 	};
+
+	class store_action : public action
+	{
+		public:
+			store_action(selector_type type) : action(type) {}
+			virtual void read(std::istream&);
+			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			std::string m_name;
+
+			static action_register<store_action> reg;
+	};
+
+	class overload_action : public action
+	{
+		enum mode {
+			File,
+			Data
+		};
+
+		public:
+			overload_action(selector_type type) : action(type) {}
+			virtual void read(std::istream&);
+			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual std::ostream& print(std::ostream&);
+
+			void work(std::vector<uint8_t> optData);
+		private:
+			std::string m_target;
+			mode m_mode;
+			std::string m_filename;
+			std::unique_ptr<data> m_data;
+
+			static action_register<overload_action> reg;
+	};
 }

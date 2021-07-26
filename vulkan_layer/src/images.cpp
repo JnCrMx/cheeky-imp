@@ -131,7 +131,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBufferToImage(
 	CheekyLayer::active_logger log = *logger << logger::begin;
 	log << "CmdCopyBufferToImage: src=" << srcBuffer << " @ " << std::hex << pRegions[0].bufferOffset << std::dec
 			<< " (" << pRegions[0].bufferRowLength << "x" << pRegions[0].bufferImageHeight
-			<< ") dst=" << dstImage <<
+			<< " # " << pRegions[0].imageSubresource.mipLevel << ") dst=" << dstImage <<
 			" @ " << width << "x" << height << "#" << pRegions[0].imageExtent.depth;
 
 	VkDevice device = bufferDevices[srcBuffer];
@@ -157,7 +157,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBufferToImage(
 		if(pRegions[0].imageSubresource.mipLevel == 0)
 		{
 			CheekyLayer::rule_env.hashes[(VkHandle)dstImage] = hash_string;
-			CheekyLayer::local_context ctx = {log};
+			CheekyLayer::local_context ctx = { .logger = log, .device = device };
 			CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Image, (VkHandle)dstImage, ctx);
 		}
 

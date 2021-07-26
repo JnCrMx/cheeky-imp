@@ -75,7 +75,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBuffer(VkCommandBuffer comman
         std::string hash_string(hash);
 
         CheekyLayer::rule_env.hashes[(VkHandle)dstBuffer] = hash_string;
-		CheekyLayer::local_context ctx = {log};
+		CheekyLayer::local_context ctx = { .logger = log, .device = device};
 		CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Buffer, (VkHandle)dstBuffer, ctx);
 
         log << " hash=" << hash;

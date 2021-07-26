@@ -8,6 +8,7 @@
 #include <vector>
 #include <optional>
 #include <functional>
+#include <thread>
 #include <vulkan/vulkan_core.h>
 
 namespace CheekyLayer
@@ -37,6 +38,13 @@ namespace CheekyLayer
 		}
 	};
 
+	struct stored_handle
+	{
+		VkHandle handle;
+		selector_type type;
+		VkDevice device;
+	};
+
 	class global_context
 	{
 		public:
@@ -56,6 +64,9 @@ namespace CheekyLayer
 			}
 
 			std::map<std::string, file_descriptor> fds;
+			std::map<std::string, stored_handle> handles;
+
+			std::vector<std::thread> threads;
 	};
 
 	inline global_context rule_env;
@@ -86,6 +97,7 @@ namespace CheekyLayer
 		std::optional<std::function<void(active_logger)>> printVerbose;
 		additional_info* info;
 		VkCommandBuffer commandBuffer;
+		VkDevice device;
 		bool canceled = false;
 		std::vector<std::string> overrides;
 	};

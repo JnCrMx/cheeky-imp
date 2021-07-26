@@ -15,3 +15,4 @@ pipeline{} -> logx(concat(string(Depth:), vkstruct(pDepthStencilState->depthTest
 init{} -> socket(socket, TCP, localhost, 1337)
 init{} -> seq(socket(socket, TCP, localhost, 1337), write(socket, string(Hello World)))
 pipeline{} -> write(socket, concat(string(pDepthStencilState->depthTestEnable:), vkstruct(pDepthStencilState->depthTestEnable), string(\n)))
+image{} -> seq(store(test), overload(test, File, test.png))

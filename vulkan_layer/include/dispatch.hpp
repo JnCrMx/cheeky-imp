@@ -46,6 +46,8 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	DeviceHook(GetDeviceProcAddr) \
 	DeviceHook(DestroyDevice) \
 	\
+	DeviceHook(GetDeviceQueue) \
+	\
 	DeviceHook(CreateImage) \
 	DeviceHook(BindImageMemory) \
 	DeviceHook(CreateImageView) \
@@ -86,11 +88,18 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	InstanceDispatch(DestroyInstance) \
 	InstanceDispatch(EnumerateDeviceExtensionProperties) \
 	InstanceDispatch(GetPhysicalDeviceMemoryProperties) \
-	InstanceDispatch(GetPhysicalDeviceProperties)
+	InstanceDispatch(GetPhysicalDeviceProperties) \
+	InstanceDispatch(GetPhysicalDeviceQueueFamilyProperties)
 
 #define InitDeviceDispatch() \
 	DeviceDispatch(GetDeviceProcAddr) \
 	DeviceDispatch(DestroyDevice) \
+	\
+	DeviceDispatch(GetDeviceQueue) \
+	DeviceDispatch(CreateCommandPool) \
+	DeviceDispatch(DestroyCommandPool) \
+	DeviceDispatch(QueueSubmit) \
+	DeviceDispatch(QueueWaitIdle) \
 	\
 	DeviceDispatch(CreateShaderModule) \
 	\
@@ -100,7 +109,11 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	DeviceDispatch(CreateImageView) \
 	\
 	DeviceDispatch(CreateBuffer) \
+	DeviceDispatch(DestroyBuffer) \
+	DeviceDispatch(GetBufferMemoryRequirements) \
 	DeviceDispatch(BindBufferMemory) \
+	DeviceDispatch(AllocateMemory) \
+	DeviceDispatch(FreeMemory) \
 	DeviceDispatch(MapMemory) \
 	DeviceDispatch(UnmapMemory) \
 	\
@@ -115,10 +128,13 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	DeviceDispatch(CmdBindVertexBuffers2EXT) \
 	DeviceDispatch(CmdBindIndexBuffer) \
 	DeviceDispatch(CmdDrawIndexed) \
+	DeviceDispatch(CmdPipelineBarrier) \
 	\
 	DeviceDispatch(CreateDescriptorUpdateTemplate) \
 	DeviceDispatch(UpdateDescriptorSetWithTemplate) \
 	\
 	DeviceDispatch(AllocateCommandBuffers) \
 	DeviceDispatch(FreeCommandBuffers) \
+	DeviceDispatch(ResetCommandBuffer) \
+	DeviceDispatch(BeginCommandBuffer) \
 	DeviceDispatch(EndCommandBuffer)

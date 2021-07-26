@@ -36,3 +36,17 @@ void replace(std::string& string, const std::string search, const std::string re
 		pos += replacement.length();
 	}
 }
+
+uint32_t findMemoryType(VkPhysicalDeviceMemoryProperties memProperties, uint32_t typeFilter, VkMemoryPropertyFlags properties)
+{
+	for(uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
+	{
+		if((typeFilter & (1 << i)) &&
+				(memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+		{
+			return i;
+		}
+	}
+
+	throw std::runtime_error("failed to find suitable memory type!");
+}

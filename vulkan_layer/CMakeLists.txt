@@ -8,6 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Vulkan REQUIRED FATAL_ERROR)
 find_package(OpenSSL REQUIRED)
+find_package(Threads REQUIRED)
 
 file(GLOB_RECURSE sources src/**.cpp external/Vulkan-ValidationLayers/layers/vk_format_utils.cpp)
 
@@ -23,6 +24,7 @@ target_include_directories(cheeky_layer PUBLIC external/Vulkan-ValidationLayers/
 target_include_directories(cheeky_layer PUBLIC ${Vulkan_INCLUDE_DIR} ${OPENSSL_INCLUDE_DIR})
   
 target_link_libraries(cheeky_layer PUBLIC ${Vulkan_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
+target_link_libraries(cheeky_layer PRIVATE Threads::Threads)
 
 option(CHEEKY_LAYER_SPIRV_CROSS "Decompile shaders with SPIRV-Cross. (very experimental)"   OFF)
 option(CHEEKY_LAYER_GLSLANG     "Compile shaders with glslang. (experimental)"              ON)

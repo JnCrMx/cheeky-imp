@@ -8,6 +8,7 @@
 #include <mutex>
 #include <memory>
 #include <map>
+#include <vulkan/vulkan_core.h>
 
 #include "config.hpp"
 #include "logger.hpp"
@@ -22,6 +23,7 @@
 #endif
 
 extern std::mutex global_lock;
+extern std::mutex transfer_lock;
 typedef std::lock_guard<std::mutex> scoped_lock;
 
 extern CheekyLayer::config global_config;
@@ -32,10 +34,22 @@ extern std::vector<std::string> overrideCache;
 extern std::vector<std::unique_ptr<CheekyLayer::rule>> rules;
 extern std::map<CheekyLayer::selector_type, bool> has_rules;
 
+extern std::map<VkDevice, VkQueue> transferQueues;
+extern std::map<VkDevice, VkCommandPool> transferPools;
+extern std::map<VkDevice, VkCommandBuffer> transferCommandBuffers;
+
+struct VkDeviceInfo {
+    VkPhysicalDeviceProperties general;
+    VkPhysicalDeviceMemoryProperties memory;
+    std::vector<VkQueueFamilyProperties> queueFamilies;
+};
+extern std::map<VkDevice, VkDeviceInfo> deviceInfos;
+
 // layer.cpp
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceCreateInfo*, const VkAllocationCallbacks*, VkInstance*);
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyInstance(VkInstance, const VkAllocationCallbacks*);
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateDevice(VkPhysicalDevice, const VkDeviceCreateInfo*, const VkAllocationCallbacks*, VkDevice*);
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_GetDeviceQueue(VkDevice, uint32_t, uint32_t, VkQueue*);
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyDevice(VkDevice, const VkAllocationCallbacks*);
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_EnumerateInstanceLayerProperties(uint32_t*, VkLayerProperties*);
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_EnumerateDeviceLayerProperties(VkPhysicalDevice, uint32_t*, VkLayerProperties*);
