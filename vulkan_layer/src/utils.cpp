@@ -24,3 +24,15 @@ bool has_override(std::string hash)
 {
 	return std::find(overrideCache.begin(), overrideCache.end(), hash) != overrideCache.end();
 }
+
+void replace(std::string& string, const std::string search, const std::string replacement)
+{
+	if(search.empty())
+		return;
+	std::string::size_type pos = 0;
+	while((pos = string.find(search, pos)) != std::string::npos)
+	{
+		string.replace(pos, search.length(), replacement);
+		pos += replacement.length();
+	}
+}

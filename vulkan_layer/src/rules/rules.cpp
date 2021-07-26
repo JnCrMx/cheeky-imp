@@ -113,6 +113,8 @@ namespace CheekyLayer
 			return selector_type::Draw;
 		if(s=="pipeline")
 			return selector_type::Pipeline;
+		if(s=="init")
+			return selector_type::Init;
 		throw std::runtime_error("unknown selector_type \""+s+"\"");
 	}
 
@@ -130,6 +132,8 @@ namespace CheekyLayer
 				return "draw";
 			case selector_type::Pipeline:
 				return "pipeline";
+			case selector_type::Init:
+				return "init";
 			default:
 				return "unknown" + std::to_string((int)type);
 		}
@@ -192,7 +196,7 @@ namespace CheekyLayer
 			}
 			catch(std::runtime_error& ex)
 			{
-				ctx.logger << "Failed to execute a rule: " << ex.what();
+				ctx.logger << logger::error << "Failed to execute a rule: " << ex.what();
 			}
 		}
 	}

@@ -2,6 +2,7 @@
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
 #include "reflection/reflectionparser.hpp"
+#include "utils.hpp"
 
 #include <algorithm>
 #include <any>
@@ -24,13 +25,17 @@ namespace CheekyLayer
 
 	data_value string_data::get(selector_type, data_type type, VkHandle, local_context &, rule &)
 	{
+		std::string s = m_string;
+		replace(s, "$]", ")");
+		replace(s, "$[", "(");
+		replace(s, "\\n", "\n");
 		switch(type)
 		{
 			case data_type::String:
-				return m_string;
+				return s;
 			case data_type::Raw: {
-				std::vector<uint8_t> v(m_string.size());
-				std::transform(m_string.begin(), m_string.end(), v.begin(), [](char a) {return (uint8_t)a;});
+				std::vector<uint8_t> v(s.size());
+				std::transform(s.begin(), s.end(), v.begin(), [](char a) {return (uint8_t)a;});
 				return v; }
 			default:
 				throw std::runtime_error("cannot return data type "+to_string(type));

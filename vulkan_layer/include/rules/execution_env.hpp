@@ -1,5 +1,6 @@
 #pragma once
 
+#include <sys/socket.h>
 #include <vulkan/vulkan.h>
 #include "logger.hpp"
 #include <map>
@@ -20,6 +21,22 @@ namespace CheekyLayer
 	enum selector_type : int;
 	struct local_context;
 
+	enum socket_type
+	{
+		TCP,
+		UDP
+	};
+
+	struct file_descriptor
+	{
+		int fd;
+
+		void close()
+		{
+			::close(fd);
+		}
+	};
+
 	class global_context
 	{
 		public:
@@ -37,6 +54,8 @@ namespace CheekyLayer
 			{
 				on_QueueSubmit[commandBuffer].push_back(function);
 			}
+
+			std::map<std::string, file_descriptor> fds;
 	};
 
 	inline global_context rule_env;

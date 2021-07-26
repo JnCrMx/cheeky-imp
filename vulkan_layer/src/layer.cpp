@@ -170,6 +170,21 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 	};
 	update_has_rules();
 
+	// close all file descriptors when creating a new instance
+	for(auto [name, fd] : CheekyLayer::rule_env.fds)
+	{
+		fd.close();
+	}
+	CheekyLayer::rule_env.fds.clear();
+
+	if(!layer_disabled)
+	{
+		CheekyLayer::active_logger log = *logger << logger::begin;
+		CheekyLayer::local_context ctx = { .logger = log };
+		CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Init, VK_NULL_HANDLE, ctx);
+		log << logger::end;
+	}
+
 	return ret;
 }
 
@@ -188,6 +203,12 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyInstance(VkInstance instance,
 		instance_dispatch.erase(GetKey(instance));
 
 	*logger << logger::begin << "DestroyInstance: " << instance << logger::end;
+
+	for(auto [name, fd] : CheekyLayer::rule_env.fds)
+	{
+		fd.close();
+	}
+	CheekyLayer::rule_env.fds.clear();
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,

@@ -3,7 +3,10 @@
 #include "layer.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
+#include "utils.hpp"
 
+#include <cstdint>
+#include <cstring>
 #include <istream>
 #include <iterator>
 #include <memory>
@@ -11,7 +14,10 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <regex>
+
+#include <sys/socket.h>
+#include <netdb.h>
+#include <netinet/in.h>
 
 namespace CheekyLayer
 {
@@ -26,6 +32,8 @@ namespace CheekyLayer
 	action_register<log_action> log_action::reg("log");
 	action_register<log_extended_action> log_extended_action::reg("logx");
 	action_register<override_action> override_action::reg("override");
+	action_register<socket_action> socket_action::reg("socket");
+	action_register<write_action> write_action::reg("write");
 
 	void mark_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule&)
 	{
@@ -265,13 +273,15 @@ namespace CheekyLayer
 	void log_action::execute(selector_type stype, VkHandle handle, local_context& ctx, rule&)
 	{
 		std::string s = m_text;
+		replace(s, "$]", ")");
+		replace(s, "$[", "(");
 
-		s = std::regex_replace(s, std::regex("\\$type"), to_string(stype));
+		replace(s, "$type", to_string(stype));
 
 		{
 			std::stringstream oss;
 			oss << handle;
-			s = std::regex_replace(s, std::regex("\\$handle"), oss.str());
+			replace(s, "$handle", oss.str());
 		}
 
 		{
@@ -284,10 +294,10 @@ namespace CheekyLayer
 				oss << "[";
 				for(int i=0; i<v.size(); i++)
 				{
-					s = std::regex_replace(s, std::regex("\\$marks\\["+std::to_string(i)+"\\]"), v[i]);
+					replace(s, "$marks["+std::to_string(i)+"]", v[i]);
 					oss << v[i] << (i == v.size()-1 ? "]" : ",");
 				}
-				s = std::regex_replace(s, std::regex("\\$marks\\[\\*\\]"), oss.str());
+				replace(s, "$marks[*]", oss.str());
 			}
 		}
 
@@ -297,17 +307,11 @@ namespace CheekyLayer
 	void log_action::read(std::istream& in)
 	{
 		std::getline(in, m_text, ')');
-		m_text = std::regex_replace(m_text, std::regex("\\$\\]"), ")");
-		m_text = std::regex_replace(m_text, std::regex("\\$\\["), "(");
 	}
 
 	std::ostream& log_action::print(std::ostream& out)
 	{
-		std::string s = m_text;
-		s = std::regex_replace(s, std::regex("\\)"), "$]");
-		s = std::regex_replace(s, std::regex("\\("), "$[");
-
-		out << "log(" << s << ")";
+		out << "log(" << m_text << ")";
 		return out;
 	}
 
@@ -346,6 +350,107 @@ namespace CheekyLayer
 	std::ostream& override_action::print(std::ostream& out)
 	{
 		out << "override(" << m_expression << ")";
+		return out;
+	}
+
+	void socket_action::execute(selector_type, VkHandle, local_context &, rule &)
+	{
+		if(rule_env.fds.count(m_name))
+			throw std::runtime_error("file descriptor with name "+m_name+" already exists");
+
+		int fd = socket(AF_INET, m_socketType == TCP ? SOCK_STREAM : SOCK_DGRAM, 0);
+		if(fd < 0)
+		{
+			throw std::runtime_error("cannot open socket of type " + socket_type_to_string(m_socketType) + ": " + strerror(errno));
+		}
+
+		struct hostent* hp = gethostbyname(m_host.c_str());
+		if(hp == NULL)
+		{
+			close(fd);
+			throw std::runtime_error("unknown host");
+		}
+
+		struct sockaddr_in addr;
+		addr.sin_family = AF_INET;
+		bcopy(hp->h_addr, &addr.sin_addr, hp->h_length);
+		addr.sin_port = htons(m_port);
+
+		if(connect(fd, (sockaddr*)&addr, sizeof(struct sockaddr_in)) < 0)
+		{
+			close(fd);
+			throw std::runtime_error("failed to connect to " + m_host + ":" + std::to_string(m_port) + ": " + strerror(errno));
+		}
+		rule_env.fds[m_name] = { fd };
+	}
+
+	void socket_action::read(std::istream& in)
+	{
+		std::getline(in, m_name, ',');
+		skip_ws(in);
+
+		std::string type;
+		std::getline(in, type, ',');
+		m_socketType = socket_type_from_string(type);
+		skip_ws(in);
+
+		std::getline(in, m_host, ',');
+		skip_ws(in);
+
+		in >> m_port;
+		skip_ws(in);
+
+		check_stream(in, ')');
+	}
+
+	std::ostream& socket_action::print(std::ostream& out)
+	{
+		out << "socket(" << m_name << ", " << socket_type_to_string(m_socketType) << ", " << m_host << ", " << m_port << ")";
+		return out;
+	}
+
+	void write_action::execute(selector_type stype, VkHandle handle, local_context& ctx, rule& rule)
+	{
+		if(!rule_env.fds.count(m_fd))
+			throw std::runtime_error("file descriptor with name "+m_fd+" does not exists");
+		
+		file_descriptor& fd = rule_env.fds[m_fd];
+
+		if(m_data->supports(stype, data_type::Raw))
+		{
+			data_value val = m_data->get(stype, data_type::Raw, handle, ctx, rule);
+			auto& v = std::get<std::vector<uint8_t>>(val);
+			if(write(fd.fd, v.data(), v.size()) < 0)
+				throw std::runtime_error("failed to send data to file descriptor \""+m_fd+"\": " + strerror(errno));
+		}
+		else if(m_data->supports(stype, data_type::String))
+		{
+			data_value val = m_data->get(stype, data_type::String, handle, ctx, rule);
+			auto& v = std::get<std::string>(val);
+			if(write(fd.fd, v.data(), v.size()) < 0)
+				throw std::runtime_error("failed to write data to file descriptor \""+m_fd+"\": " + strerror(errno));
+		}
+		else
+			throw std::runtime_error("no suitable data type available");
+	}
+
+	void write_action::read(std::istream& in)
+	{
+		std::getline(in, m_fd, ',');
+		skip_ws(in);
+
+		m_data = read_data(in, m_type);
+		check_stream(in, ')');
+
+		if(!m_data->supports(m_type, data_type::String) && !m_data->supports(m_type, data_type::Raw))
+			throw std::runtime_error("data does not support strings or raw data");
+	}
+
+	std::ostream& write_action::print(std::ostream& out)
+	{
+		out << "write(" << m_fd << ", ";
+		m_data->print(out);
+		out << ")";
 		return out;
 	}
 }
