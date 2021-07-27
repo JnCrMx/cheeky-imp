@@ -18,6 +18,7 @@ namespace CheekyLayer
 			std::string m_string;
 
 			static data_register<string_data> reg;
+			static data_register<string_data> reg2;
 	};
 
 	class concat_data : public data

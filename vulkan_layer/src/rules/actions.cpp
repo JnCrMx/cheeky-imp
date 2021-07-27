@@ -493,17 +493,23 @@ namespace CheekyLayer
 		if(m_mode == mode::Data)
 		{
 			std::vector<uint8_t> data = std::get<std::vector<uint8_t>>(m_data->get(stype, data_type::Raw, handle, ctx, rule));
-			std::thread t(&overload_action::work, this, data);
+			std::thread t(&overload_action::work, this, std::string{}, data);
+			rule_env.threads.push_back(std::move(t));
+		}
+		else if(m_mode == mode::FileFromData)
+		{
+			std::string filename = std::get<std::string>(m_data->get(stype, data_type::String, handle, ctx, rule));
+			std::thread t(&overload_action::work, this, filename, std::vector<uint8_t>{});
 			rule_env.threads.push_back(std::move(t));
 		}
 		else
 		{
-			std::thread t(&overload_action::work, this, std::vector<uint8_t>{});
+			std::thread t(&overload_action::work, this, m_filename, std::vector<uint8_t>{});
 			rule_env.threads.push_back(std::move(t));
 		}
 	}
 
-	void overload_action::work(std::vector<uint8_t> optData)
+	void overload_action::work(std::string optFilename, std::vector<uint8_t> optData)
 	{
 		stored_handle& h = rule_env.handles[m_target];
 
@@ -522,12 +528,12 @@ namespace CheekyLayer
 #else
 			bool imageTools = false;
 #endif
-			if(h.type == selector_type::Image && m_filename.ends_with(".png") && imageTools)
+			if(h.type == selector_type::Image && optFilename.ends_with(".png") && imageTools)
 			{
 				VkImageCreateInfo imgInfo = images[(VkImage)h.handle];
 
 				int w, h, comp;
-				uint8_t* buf = stbi_load(m_filename.c_str(), &w, &h, &comp, STBI_rgb_alpha);
+				uint8_t* buf = stbi_load(optFilename.c_str(), &w, &h, &comp, STBI_rgb_alpha);
 				image_tools::image image(w, h, buf);
 
 				if(imgInfo.mipLevels <= 1)
@@ -550,9 +556,30 @@ namespace CheekyLayer
 
 				free(buf);
 			}
+			else if(h.type == selector_type::Image && optFilename.find("${mip}") != std::string::npos)
+			{
+				VkImageCreateInfo imgInfo = images[(VkImage)h.handle];
+				data.clear();
+				for(int i=0; i<imgInfo.mipLevels; i++)
+				{
+					auto offset = data.size();
+					offsets.push_back(offset);
+
+					std::string filename = optFilename;
+					replace(filename, "${mip}", std::to_string(i));
+					std::ifstream in(filename, std::ios_base::binary | std::ios_base::ate);
+
+					auto size = in.tellg();
+					data.resize(data.size()+size);
+					in.seekg(0);
+					in.read((char*)(data.data() + offset), size);
+				}
+			}
 			else
 			{
-				std::ifstream in(m_filename, std::ios_base::binary | std::ios_base::ate);
+				offsets.push_back(0);
+
+				std::ifstream in(optFilename, std::ios_base::binary | std::ios_base::ate);
 
 				auto size = in.tellg();
 				data.resize(size);
@@ -645,8 +672,8 @@ namespace CheekyLayer
 				device_dispatch[GetKey(h.device)].CmdPipelineBarrier(commandBuffer,
 					VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &memoryBarrier);
 
-				std::vector<VkBufferImageCopy> copies(imgInfo.mipLevels);
-				for(int i=0; i<imgInfo.mipLevels; i++)
+				std::vector<VkBufferImageCopy> copies(offsets.size());
+				for(int i=0; i<copies.size(); i++)
 				{
 					VkBufferImageCopy copy{};
 					copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -701,6 +728,16 @@ namespace CheekyLayer
 
 			std::getline(in, m_filename, ')');
 		}
+		else if(mode == "FileFromData")
+		{
+			m_mode = mode::FileFromData;
+
+			m_data = read_data(in, m_type);
+			check_stream(in, ')');
+
+			if(!m_data->supports(m_type, data_type::String))
+				throw std::runtime_error("data does not support string data");
+		}
 		else if(mode == "Data")
 		{
 			m_mode = mode::Data;
@@ -708,8 +745,8 @@ namespace CheekyLayer
 			m_data = read_data(in, m_type);
 			check_stream(in, ')');
 
-			if(!m_data->supports(m_type, data_type::String) && !m_data->supports(m_type, data_type::Raw))
-				throw std::runtime_error("data does not support strings or raw data");
+			if(!m_data->supports(m_type, data_type::Raw))
+				throw std::runtime_error("data does not support raw data");
 		}
 		else
 			throw std::runtime_error("mode "+mode+" is not supported, must be either File or Data");
@@ -722,6 +759,10 @@ namespace CheekyLayer
 		{
 			case File:
 				out << "File, " << m_filename;
+				break;
+			case FileFromData:
+				out << "FileFromData, ";
+				m_data->print(out);
 				break;
 			case Data:
 				out << "Data, ";

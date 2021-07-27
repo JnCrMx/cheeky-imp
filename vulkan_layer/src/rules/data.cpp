@@ -15,6 +15,7 @@
 namespace CheekyLayer
 {
 	data_register<string_data> string_data::reg("string");
+	data_register<string_data> string_data::reg2("s");
 	data_register<concat_data> concat_data::reg("concat");
 	data_register<vkstruct_data> vkstruct_data::reg("vkstruct");
 

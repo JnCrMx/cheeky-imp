@@ -254,6 +254,7 @@ namespace CheekyLayer
 	{
 		enum mode {
 			File,
+			FileFromData,
 			Data
 		};
 
@@ -263,7 +264,7 @@ namespace CheekyLayer
 			virtual void execute(selector_type, VkHandle, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 
-			void work(std::vector<uint8_t> optData);
+			void work(std::string optFilename, std::vector<uint8_t> optData);
 		private:
 			std::string m_target;
 			mode m_mode;
