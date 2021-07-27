@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+#include <memory>
 #include <sys/socket.h>
 #include <vulkan/vulkan.h>
 #include "logger.hpp"
@@ -10,6 +12,7 @@
 #include <functional>
 #include <thread>
 #include <vulkan/vulkan_core.h>
+#include "rules/ipc.hpp"
 
 namespace CheekyLayer
 {
@@ -21,22 +24,6 @@ namespace CheekyLayer
 
 	enum selector_type : int;
 	struct local_context;
-
-	enum socket_type
-	{
-		TCP,
-		UDP
-	};
-
-	struct file_descriptor
-	{
-		int fd;
-
-		void close()
-		{
-			::close(fd);
-		}
-	};
 
 	struct stored_handle
 	{
@@ -63,7 +50,7 @@ namespace CheekyLayer
 				on_QueueSubmit[commandBuffer].push_back(function);
 			}
 
-			std::map<std::string, file_descriptor> fds;
+			std::map<std::string, std::unique_ptr<ipc::file_descriptor>> fds;
 			std::map<std::string, stored_handle> handles;
 
 			std::vector<std::thread> threads;
@@ -85,10 +72,18 @@ namespace CheekyLayer
 		const VkGraphicsPipelineCreateInfo* info;
 	};
 
+	struct receive_info
+	{
+		ipc::socket* socket;
+		uint8_t* buffer;
+		size_t size;
+	};
+
 	union additional_info
 	{
 		draw_info draw;
 		pipeline_info pipeline;
+		receive_info receive;
 	};
 
 	struct local_context

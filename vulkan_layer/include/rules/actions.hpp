@@ -193,32 +193,13 @@ namespace CheekyLayer
 			virtual void execute(selector_type, VkHandle, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		protected:
-			socket_type socket_type_from_string(std::string s)
-			{
-				if(s=="TCP")
-					return TCP;
-				if(s=="UDP")
-					return UDP;
-				throw std::runtime_error("unsupported socket_type: "+s);
-			}
-
-			std::string socket_type_to_string(socket_type e)
-			{
-				switch(e)
-				{
-					case TCP:
-						return "TCP";
-					case UDP:
-						return "UDP";
-					default:
-						return "unknown";
-				}
-			}
+			
 		private:
 			std::string m_name;
-			socket_type m_socketType;
+			ipc::socket::socket_type m_socketType;
 			std::string m_host;
 			int m_port;
+			ipc::socket::protocol_type m_protocol;
 
 			static action_register<socket_action> reg;
 	};

@@ -115,6 +115,8 @@ namespace CheekyLayer
 			return selector_type::Pipeline;
 		if(s=="init")
 			return selector_type::Init;
+		if(s=="receive")
+			return selector_type::Receive;
 		throw std::runtime_error("unknown selector_type \""+s+"\"");
 	}
 
@@ -134,6 +136,8 @@ namespace CheekyLayer
 				return "pipeline";
 			case selector_type::Init:
 				return "init";
+			case selector_type::Receive:
+				return "receive";
 			default:
 				return "unknown" + std::to_string((int)type);
 		}

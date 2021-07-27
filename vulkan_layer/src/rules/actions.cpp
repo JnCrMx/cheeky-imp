@@ -21,6 +21,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <vector>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_structs.hpp>
@@ -373,30 +374,8 @@ namespace CheekyLayer
 		if(rule_env.fds.count(m_name))
 			throw std::runtime_error("file descriptor with name "+m_name+" already exists");
 
-		int fd = socket(AF_INET, m_socketType == TCP ? SOCK_STREAM : SOCK_DGRAM, 0);
-		if(fd < 0)
-		{
-			throw std::runtime_error("cannot open socket of type " + socket_type_to_string(m_socketType) + ": " + strerror(errno));
-		}
-
-		struct hostent* hp = gethostbyname(m_host.c_str());
-		if(hp == NULL)
-		{
-			close(fd);
-			throw std::runtime_error("unknown host");
-		}
-
-		struct sockaddr_in addr;
-		addr.sin_family = AF_INET;
-		bcopy(hp->h_addr, &addr.sin_addr, hp->h_length);
-		addr.sin_port = htons(m_port);
-
-		if(connect(fd, (sockaddr*)&addr, sizeof(struct sockaddr_in)) < 0)
-		{
-			close(fd);
-			throw std::runtime_error("failed to connect to " + m_host + ":" + std::to_string(m_port) + ": " + strerror(errno));
-		}
-		rule_env.fds[m_name] = { fd };
+		rule_env.fds[m_name] = std::make_unique<ipc::socket>(m_socketType, m_host, m_port, ipc::socket::protocol_type::Raw);
+		rule_env.fds[m_name]->m_name = m_name;
 	}
 
 	void socket_action::read(std::istream& in)
@@ -406,7 +385,7 @@ namespace CheekyLayer
 
 		std::string type;
 		std::getline(in, type, ',');
-		m_socketType = socket_type_from_string(type);
+		m_socketType = ipc::socket::socket_type_from_string(type);
 		skip_ws(in);
 
 		std::getline(in, m_host, ',');
@@ -414,13 +393,18 @@ namespace CheekyLayer
 
 		in >> m_port;
 		skip_ws(in);
+		check_stream(in, ',');
+		skip_ws(in);
 
-		check_stream(in, ')');
+		std::string protocol;
+		std::getline(in, protocol, ')');
+		m_protocol = ipc::socket::protocol_type_from_string(protocol);
 	}
 
 	std::ostream& socket_action::print(std::ostream& out)
 	{
-		out << "socket(" << m_name << ", " << socket_type_to_string(m_socketType) << ", " << m_host << ", " << m_port << ")";
+		out << "socket(" << m_name << ", " << ipc::socket::socket_type_to_string(m_socketType) << ", " << m_host << ", " << m_port
+			<< ", " << ipc::socket::protocol_type_to_string(m_protocol) << ")";
 		return out;
 	}
 
@@ -429,20 +413,21 @@ namespace CheekyLayer
 		if(!rule_env.fds.count(m_fd))
 			throw std::runtime_error("file descriptor with name "+m_fd+" does not exists");
 
-		file_descriptor& fd = rule_env.fds[m_fd];
+		auto& fd = rule_env.fds[m_fd];
 
 		if(m_data->supports(stype, data_type::Raw))
 		{
 			data_value val = m_data->get(stype, data_type::Raw, handle, ctx, rule);
 			auto& v = std::get<std::vector<uint8_t>>(val);
-			if(write(fd.fd, v.data(), v.size()) < 0)
+			if(fd->write(v) < 0)
 				throw std::runtime_error("failed to send data to file descriptor \""+m_fd+"\": " + strerror(errno));
 		}
 		else if(m_data->supports(stype, data_type::String))
 		{
 			data_value val = m_data->get(stype, data_type::String, handle, ctx, rule);
-			auto& v = std::get<std::string>(val);
-			if(write(fd.fd, v.data(), v.size()) < 0)
+			auto& s = std::get<std::string>(val);
+			std::vector<uint8_t> v(s.begin(), s.end());
+			if(fd->write(v) < 0)
 				throw std::runtime_error("failed to write data to file descriptor \""+m_fd+"\": " + strerror(errno));
 		}
 		else

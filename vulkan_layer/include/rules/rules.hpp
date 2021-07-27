@@ -23,7 +23,8 @@ namespace CheekyLayer
 		Shader,
 		Draw,
 		Pipeline,
-		Init
+		Init,
+		Receive
 	};
 	selector_type from_string(std::string);
 	std::string to_string(selector_type);

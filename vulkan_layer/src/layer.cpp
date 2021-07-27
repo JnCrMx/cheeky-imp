@@ -178,9 +178,9 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 	update_has_rules();
 
 	// close all file descriptors when creating a new instance
-	for(auto [name, fd] : CheekyLayer::rule_env.fds)
+	for(auto& [name, fd] : CheekyLayer::rule_env.fds)
 	{
-		fd.close();
+		fd->close();
 	}
 	CheekyLayer::rule_env.fds.clear();
 
@@ -211,9 +211,9 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyInstance(VkInstance instance,
 
 	*logger << logger::begin << "DestroyInstance: " << instance << logger::end;
 
-	for(auto [name, fd] : CheekyLayer::rule_env.fds)
+	for(auto& [name, fd] : CheekyLayer::rule_env.fds)
 	{
-		fd.close();
+		fd->close();
 	}
 	CheekyLayer::rule_env.fds.clear();
 	CheekyLayer::rule_env.threads.clear();
