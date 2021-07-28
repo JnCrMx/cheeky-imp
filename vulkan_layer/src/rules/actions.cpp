@@ -734,7 +734,7 @@ namespace CheekyLayer
 				throw std::runtime_error("data does not support raw data");
 		}
 		else
-			throw std::runtime_error("mode "+mode+" is not supported, must be either File or Data");
+			throw std::runtime_error("mode "+mode+" is not supported, must be either File, FileFromData or Data");
 	}
 
 	std::ostream& overload_action::print(std::ostream& out)

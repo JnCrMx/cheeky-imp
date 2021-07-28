@@ -155,6 +155,7 @@ namespace CheekyLayer
 		Number
 	};
 	std::string to_string(data_type);
+	data_type data_type_from_string(std::string);
 
 	using data_value = std::variant<std::string, std::vector<uint8_t>, VkHandle, double>;
 

@@ -196,30 +196,74 @@ namespace CheekyLayer { namespace ipc
 		}
 		else if(m_protocol == protocol_type::LengthPrefixed)
 		{
-			size_t n;
-			size_t size;
-			while((n = read(m_fd, &size, sizeof(size))) > 0)
+			while(true)
 			{
-				if(n != 4)
-					continue;
-				uint8_t* buffer = new uint8_t[size];
+				struct pollfd pfd = { m_fd, POLLIN , 0 };
+				if(poll(&pfd, 1, 100) > 0)
+				{
+					size_t n; // unsigned is ok here, as we do no <> comparison
+					size_t size;
+					if((n = read(m_fd, &size, sizeof(size))) == sizeof(size))
+					{
+						uint8_t* buffer = new uint8_t[size];
 
-				n = read(m_fd, buffer, size);
+						n = read(m_fd, buffer, size);
 				
-				active_logger log = *::logger << logger::begin;
+						active_logger log = *::logger << logger::begin;
 
-				receive_info info = { .socket = this, .buffer = buffer, .size = n };
-				additional_info info2 = { .receive = info };
-				local_context ctx = { .logger = log, .info = &info2 };
+						receive_info info = { .socket = this, .buffer = buffer, .size = n };
+						additional_info info2 = { .receive = info };
+						local_context ctx = { .logger = log, .info = &info2 };
 
-				execute_rules(rules, selector_type::Receive, 0, ctx);
+						execute_rules(rules, selector_type::Receive, 0, ctx);
 
-				log << logger::end;
+						log << logger::end;
+					}
+				}
+				else
+				{
+					if(exit.wait_for(std::chrono::milliseconds(1)) == std::future_status::ready)
+						break;
+				}
 			}
 		}
 		else if(m_protocol == protocol_type::Lines)
 		{
-			// TODO: scan for new lines
+			std::string buffer = "";
+			while(true)
+			{
+				struct pollfd pfd = { m_fd, POLLIN , 0 };
+				if(poll(&pfd, 1, 100) > 0)
+				{
+					char buf[RECEIVE_BUFFER_SIZE];
+					size_t n = read(m_fd, buf, RECEIVE_BUFFER_SIZE);
+					auto pos = std::find(buf, buf+RECEIVE_BUFFER_SIZE, '\n');
+					if(pos != (buf+RECEIVE_BUFFER_SIZE))
+					{
+						std::string data = buffer + std::string(buf, std::distance(buf, pos));
+						buffer = std::string(pos, std::distance(pos, buf+n));
+
+						active_logger log = *::logger << logger::begin;
+
+						receive_info info = { .socket = this, .buffer = (uint8_t*)data.data(), .size = data.size() };
+						additional_info info2 = { .receive = info };
+						local_context ctx = { .logger = log, .info = &info2 };
+
+						execute_rules(rules, selector_type::Receive, 0, ctx);
+
+						log << logger::end;
+					}
+					else
+					{
+						buffer += std::string(buf, buf + n);
+					}
+				}
+				else
+				{
+					if(exit.wait_for(std::chrono::milliseconds(1)) == std::future_status::ready)
+						break;
+				}
+			}
 		}
 		if(::logger)
 			*::logger << logger::begin << "receiving thread for fd \"" << m_name << "\" exited" << logger::end;

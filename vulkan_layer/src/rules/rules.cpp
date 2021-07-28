@@ -160,6 +160,19 @@ namespace CheekyLayer
 		}
 	}
 
+	data_type data_type_from_string(std::string s)
+	{
+		if(s=="string")
+			return data_type::String;
+		if(s=="raw")
+			return data_type::Raw;
+		if(s=="handle")
+			return data_type::Handle;
+		if(s=="number")
+			return data_type::Number;
+		throw std::runtime_error("unknown data_type \""+s+"\"");
+	}
+
 	bool selector::test(selector_type type, VkHandle handle, local_context& ctx)
 	{
 		if(type != m_type)
