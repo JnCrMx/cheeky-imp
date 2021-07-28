@@ -18,3 +18,7 @@ pipeline{} -> write(socket, concat(string(pDepthStencilState->depthTestEnable:),
 image{} -> seq(store(test), overload(test, File, test.png))
 image{} -> seq(store(test), overload(test, FileFromData, string(test.png)))
 receive{} -> log(Test)
+receive{} -> write(socket, received())
+receive{} -> write(socket, convert(raw, string, received()))
+receive{} -> write(socket, strclean(convert(raw, string, received())))
+image{compare(string(123), ==, string(123))} -> seq()

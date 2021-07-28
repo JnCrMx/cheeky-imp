@@ -77,4 +77,33 @@ namespace CheekyLayer
 
     		static condition_register<or_condition> reg;
 	};
+
+	class compare_condition : public selector_condition
+	{
+		enum comparison_operator
+		{
+			Equal,
+			NotEqual,
+			LessThan,
+			LessThanOrEqual,
+			GreaterThan,
+			GreaterThanOrEqual
+		};
+
+		public:
+			compare_condition(selector_type type) : selector_condition(type) {}
+			virtual void read(std::istream&);
+			virtual bool test(selector_type, VkHandle, local_context&);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			std::unique_ptr<data> m_left;
+			comparison_operator m_op;
+			data_type m_dtype;
+			std::unique_ptr<data> m_right;
+
+			static std::string op_to_string(comparison_operator op);
+			static comparison_operator op_from_string(std::string s);
+
+    		static condition_register<compare_condition> reg;
+	};
 }

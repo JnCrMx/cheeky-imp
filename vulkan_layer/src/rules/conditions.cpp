@@ -1,6 +1,8 @@
 #include "rules/conditions.hpp"
 #include "rules/rules.hpp"
 #include "rules/execution_env.hpp"
+#include <compare>
+#include <cstddef>
 #include <memory>
 #include <ostream>
 #include <stdexcept>
@@ -14,6 +16,7 @@ namespace CheekyLayer
 	condition_register<with_condition> with_condition::reg("with");
 	condition_register<not_condition> not_condition::reg("not");
 	condition_register<or_condition> or_condition::reg("or");
+	condition_register<compare_condition> compare_condition::reg("compare");
 
 	bool hash_condition::test(selector_type stype, VkHandle handle, local_context&)
 	{
@@ -159,6 +162,113 @@ namespace CheekyLayer
 			m_conditions[i]->print(out);
 			out << (i==m_conditions.size()-1 ? ")" : ", ");
 		}
+		return out;
+	}
+
+	bool compare_condition::test(selector_type type, VkHandle handle, local_context& ctx)
+	{
+		rule dummy{};
+		data_value v1 = m_left->get(type, m_dtype, handle, ctx, dummy);
+		data_value v2 = m_left->get(type, m_dtype, handle, ctx, dummy);
+
+		std::partial_ordering result = std::partial_ordering::unordered;
+		switch(m_dtype)
+		{
+			case data_type::Number:
+				result = std::get<double>(v1) <=> std::get<double>(v2);
+				break;
+			case data_type::String:
+				result = std::get<std::string>(v1) <=> std::get<std::string>(v2);
+				break;
+			default:
+				break;
+		}
+
+		switch(m_op)
+		{
+			case comparison_operator::LessThan:
+				return result == std::partial_ordering::less;
+			case comparison_operator::LessThanOrEqual:
+				return result == std::partial_ordering::less || result == std::partial_ordering::equivalent;
+			case comparison_operator::Equal:
+				return result == std::partial_ordering::equivalent;
+			case comparison_operator::GreaterThanOrEqual:
+				return result == std::partial_ordering::greater || result == std::partial_ordering::equivalent;
+			case comparison_operator::GreaterThan:
+				return result == std::partial_ordering::greater;
+			case comparison_operator::NotEqual:
+				return result == std::partial_ordering::greater || result == std::partial_ordering::less;
+		}
+		return false;
+	}
+
+	std::string compare_condition::op_to_string(comparison_operator op)
+	{
+		switch(op)
+		{
+			case LessThan:
+				return "<";
+			case LessThanOrEqual:
+				return "<=";
+			case Equal:
+				return "==";
+			case NotEqual:
+				return "!=";
+			case GreaterThanOrEqual:
+				return ">=";
+			case GreaterThan:
+				return ">";
+			default:
+				return "unknown";
+		}
+	}
+
+	compare_condition::comparison_operator compare_condition::op_from_string(std::string s)
+	{
+		if(s=="<" || s=="Less" || s=="L" || s=="LT" || s=="LessThan")
+			return LessThan;
+		if(s=="<=" || s=="=<" || s=="LessOrEqual" || s == "LE" || s=="LessThanOrEqual")
+			return LessThanOrEqual;
+		if(s=="==" || s=="=" || s=="Equal" || s=="EQ" || s=="EqualTo")
+			return Equal;
+		if(s==">=" || s=="=>" || s=="GreaterOrEqual" || s=="GE" || s=="GreaterThanOrEqual")
+			return GreaterThanOrEqual;
+		if(s==">" || s=="Greater" || s=="G" || s=="GT" || s=="GreaterThan")
+			return GreaterThan;
+		if(s=="!=" || s=="<>" || s=="NotEqual" || s=="NE" || s=="NotEqualTo")
+			return NotEqual;
+		throw std::runtime_error("unknown comparison_operator \""+s+"\"");
+	}
+
+	void compare_condition::read(std::istream& in)
+	{
+		m_left = read_data(in, m_type);
+		check_stream(in, ',');
+		skip_ws(in);
+
+		std::string op;
+		std::getline(in, op, ',');
+		m_op = op_from_string(op);
+		skip_ws(in);
+
+		m_right = read_data(in, m_type);
+		check_stream(in, ')');
+
+		if(m_left->supports(m_type, data_type::Number) && m_right->supports(m_type, data_type::Number))
+			m_dtype = data_type::Number;
+		else if(m_left->supports(m_type, data_type::String) && m_right->supports(m_type, data_type::String))
+			m_dtype = data_type::String;
+		else 
+			throw std::runtime_error("only numbers and strings can be compared");
+	}
+
+	std::ostream& compare_condition::print(std::ostream& out)
+	{
+		out << "compare(";
+		m_left->print(out);
+		out << ", " << op_to_string(m_op) << ", ";
+		m_right->print(out);
+		out << ")";
 		return out;
 	}
 }
