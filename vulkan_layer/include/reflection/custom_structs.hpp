@@ -15,12 +15,14 @@ namespace CheekyLayer { namespace reflection {
     #define VK_CMD_DRAW_INDEXED \
     { \
         "VkCmdDrawIndexed", \
-		inner_reflection_map{ \
-			{"indexCount", VkReflectInfo{ .name = "indexCount", .type = "uint32_t", .pointer = false, .offset = offsetof(VkCmdDrawIndexed, indexCount) }}, \
-			{"instanceCount", VkReflectInfo{ .name = "instanceCount", .type = "uint32_t", .pointer = false, .offset = offsetof(VkCmdDrawIndexed, instanceCount) }}, \
-			{"firstIndex", VkReflectInfo{ .name = "firstIndex", .type = "uint32_t", .pointer = false, .offset = offsetof(VkCmdDrawIndexed, firstIndex) }}, \
-			{"vertexOffset", VkReflectInfo{ .name = "vertexOffset", .type = "int32_t", .pointer = false, .offset = offsetof(VkCmdDrawIndexed, vertexOffset) }}, \
-			{"firstInstance", VkReflectInfo{ .name = "firstInstance", .type = "uint32_t", .pointer = false, .offset = offsetof(VkCmdDrawIndexed, firstInstance) }}, \
+        VkTypeInfo{ \
+		    .members = inner_reflection_map{ \
+		    	{"indexCount", VkReflectInfo{ .name = "indexCount", .type = "uint32_t", .pointer = false, .offset = offsetof(VkCmdDrawIndexed, indexCount) }}, \
+		    	{"instanceCount", VkReflectInfo{ .name = "instanceCount", .type = "uint32_t", .pointer = false, .offset = offsetof(VkCmdDrawIndexed, instanceCount) }}, \
+		    	{"firstIndex", VkReflectInfo{ .name = "firstIndex", .type = "uint32_t", .pointer = false, .offset = offsetof(VkCmdDrawIndexed, firstIndex) }}, \
+		    	{"vertexOffset", VkReflectInfo{ .name = "vertexOffset", .type = "int32_t", .pointer = false, .offset = offsetof(VkCmdDrawIndexed, vertexOffset) }}, \
+		    	{"firstInstance", VkReflectInfo{ .name = "firstInstance", .type = "uint32_t", .pointer = false, .offset = offsetof(VkCmdDrawIndexed, firstInstance) }}, \
+            } \
         } \
     }
 

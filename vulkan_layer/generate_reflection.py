@@ -19,7 +19,10 @@ for (name, description) in vkreg.typedict.items():
     if name[-1].isupper() and not name[-2].isdigit():
         continue
 
-    print(f"\t{{\n\t\t\"{name}\",\n\t\tinner_reflection_map{{")
+    print(f"\t{{\n\t\t\"{name}\",\n\t\tVkTypeInfo{{")
+    print(f"\t\t\t.name = \"{name}\",")
+    print(f"\t\t\t.size = sizeof({name}),")
+    print(f"\t\t\t.members = inner_reflection_map{{")
     for member in description.getMembers():
         mType=member[0].text
         mName=member[1].text
@@ -31,10 +34,18 @@ for (name, description) in vkreg.typedict.items():
             mPointer = "true"
         else:
             mPointer = "false"
+        mArray = 'len' in member.attrib;
+        if mArray:
+            mArray = "true"
+            mArrayLen = member.attrib['len'];
+            mArrayInfo = f", .arrayLength = \"{mArrayLen}\""
+        else:
+            mArray = "false"
+            mArrayInfo = ""
 
-        print(f"\t\t\t{{\"{mName}\", VkReflectInfo{{ .name = \"{mName}\", .type = \"{mType}\", .pointer = {mPointer}, .offset = offsetof({name}, {mName}) }}}},")
+        print(f"\t\t\t\t{{\"{mName}\", VkReflectInfo{{ .name = \"{mName}\", .type = \"{mType}\", .pointer = {mPointer}, .array = {mArray}{mArrayInfo}, .offset = offsetof({name}, {mName}) }}}},")
 
-    print("\t\t}\n\t},")
+    print("\t\t\t}\n\t\t}\n\t},")
 print("\tVK_CUSTOM_STRUCTS")
 print("};");
 

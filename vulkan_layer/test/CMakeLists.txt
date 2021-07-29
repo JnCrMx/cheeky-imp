@@ -35,3 +35,7 @@ add_test(custom_structs test_custom_structs)
 add_executable(test_reflection_string reflection_string.cpp)
 target_link_libraries(test_reflection_string PUBLIC cheeky_layer)
 add_test(reflection_string test_reflection_string)
+
+add_executable(test_reflection_array reflection_array.cpp)
+target_link_libraries(test_reflection_array PUBLIC cheeky_layer)
+add_test(reflection_array test_reflection_array)

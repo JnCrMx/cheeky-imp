@@ -28,7 +28,7 @@ void dump_struct(std::ostream& out, std::string name, int level = 0, uint64_t la
 	auto& a = struct_reflection_map[name];
 
 	std::vector<VkReflectInfo> vec;
-	for(auto it = a.begin(); it != a.end(); it++)
+	for(auto it = a.members.begin(); it != a.members.end(); it++)
 	{
 		vec.push_back(it->second);
 	}

@@ -54,11 +54,12 @@ namespace CheekyLayer { namespace reflection {
 	{
 		auto a = path.find("->");
 		auto b = path.find(".");
-		auto min = std::min(a, b);
+		auto c = path.find("[");
+		auto min = std::min(a, std::min(b, c));
 
 		std::string first = path.substr(0, min);
 
-		VkReflectInfo info = struct_reflection_map[type][first];
+		VkReflectInfo info = struct_reflection_map[type].members[first];
 		if(info.name != first)
 			throw std::runtime_error("cannot find member \""+first+"\" for type \""+type+"\"");
 
@@ -69,7 +70,7 @@ namespace CheekyLayer { namespace reflection {
 				throw std::runtime_error("cannot return non-primitive and non-enum type \""+info.type+"\"");
 			return create_type(op, info.type);
 		}
-		else if(a < b)
+		else if(a < b && a < c)
 		{
 			if(!info.pointer)
 				throw std::runtime_error("path refered to non-pointer member \""+info.name+"\" of type \""+type+"\"with '->'");
@@ -78,7 +79,7 @@ namespace CheekyLayer { namespace reflection {
 			std::string rest = path.substr(min+2);
 			return parse_get(rest, np, info.type);
 		}
-		else
+		else if(b < a && b < c)
 		{
 			if(info.pointer)
 				throw std::runtime_error("path refered to pointer member \""+info.name+"\" of type \""+type+"\" with '.'");
@@ -86,17 +87,37 @@ namespace CheekyLayer { namespace reflection {
 			std::string rest = path.substr(min+1);
 			return parse_get(rest, op, info.type);
 		}
+		else if(c < a && c < b)
+		{
+			if(!info.array)
+				throw std::runtime_error("path refered to non-array member with \""+info.name+"\" of type \""+type+"\" with '[i]'");
+			auto e = path.find("]", c);
+
+			int i = std::stoi(path.substr(c+1, e-c-1));
+			int length = std::any_cast<uint32_t>(parse_get(info.arrayLength, p, type));
+
+			if(i >= length)
+				throw std::runtime_error("array index "+std::to_string(i)+" for member \""+info.name+"\" exceeds its length of "
+					+std::to_string(length)+" which can be found in member \""+info.arrayLength+"\"");
+			
+			const void* np = *((const void**)op);
+			const void* ap = ((uint8_t*)np) + i * struct_reflection_map[info.type].size;
+			std::string rest = path.substr(e+2);
+			return parse_get(rest, ap, info.type);
+		}
+		else std::abort();
 	}
 
 	std::string parse_get_type(std::string path, std::string type)
 	{
 		auto a = path.find("->");
 		auto b = path.find(".");
-		auto min = std::min(a, b);
+		auto c = path.find("[");
+		auto min = std::min(a, std::min(b, c));
 
 		std::string first = path.substr(0, min);
 
-		VkReflectInfo info = struct_reflection_map[type][first];
+		VkReflectInfo info = struct_reflection_map[type].members[first];
 		if(info.name != first)
 			throw std::runtime_error("cannot find member \""+first+"\" for type \""+type+"\"");
 
@@ -104,7 +125,7 @@ namespace CheekyLayer { namespace reflection {
 		{
 			return info.type;
 		}
-		else if(a < b)
+		else if(a < b && a < c)
 		{
 			if(!info.pointer)
 				throw std::runtime_error("path refered to non-pointer member \""+info.name+"\" of type \""+type+"\"with '->'");
@@ -112,7 +133,7 @@ namespace CheekyLayer { namespace reflection {
 			std::string rest = path.substr(min+2);
 			return parse_get_type(rest, info.type);
 		}
-		else
+		else if(b < a && b < c)
 		{
 			if(info.pointer)
 				throw std::runtime_error("path refered to pointer member \""+info.name+"\" of type \""+type+"\" with '.'");
@@ -120,17 +141,28 @@ namespace CheekyLayer { namespace reflection {
 			std::string rest = path.substr(min+1);
 			return parse_get_type(rest, info.type);
 		}
+		else if(c < a && c < b)
+		{
+			if(!info.array)
+				throw std::runtime_error("path refered to non-array member with \""+info.name+"\" of type \""+type+"\" with '[i]'");
+			auto e = path.find("]", c);
+
+			std::string rest = path.substr(e+2);
+			return parse_get_type(rest, info.type);
+		}
+		else std::abort();
 	}
 
 	void parse_set(std::string path, void* p, std::string type, std::any value)
 	{
 		auto a = path.find("->");
 		auto b = path.find(".");
-		auto min = std::min(a, b);
+		auto c = path.find("[");
+		auto min = std::min(a, std::min(b, c));
 
 		std::string first = path.substr(0, min);
 
-		VkReflectInfo info = struct_reflection_map[type][first];
+		VkReflectInfo info = struct_reflection_map[type].members[first];
 		if(info.name != first)
 			throw std::runtime_error("cannot find member \""+first+"\" for type \""+type+"\"");
 
@@ -141,7 +173,7 @@ namespace CheekyLayer { namespace reflection {
 				throw std::runtime_error("cannot assign non-primitive and non-enum type \""+info.type+"\"");
 			set_type(op, info.type, value);
 		}
-		else if(a < b)
+		else if(a < b && a < c)
 		{
 			if(!info.pointer)
 				throw std::runtime_error("path refered to non-pointer member \""+info.name+"\" of type \""+type+"\"with '->'");
@@ -150,7 +182,7 @@ namespace CheekyLayer { namespace reflection {
 			std::string rest = path.substr(min+2);
 			parse_set(rest, np, info.type, value);
 		}
-		else
+		else if(b < a && b < c)
 		{
 			if(info.pointer)
 				throw std::runtime_error("path refered to pointer member \""+info.name+"\" of type \""+type+"\" with '.'");
@@ -158,6 +190,25 @@ namespace CheekyLayer { namespace reflection {
 			std::string rest = path.substr(min+1);
 			parse_set(rest, op, info.type, value);
 		}
+		else if(c < a && c < b)
+		{
+			if(!info.array)
+				throw std::runtime_error("path refered to non-array member with \""+info.name+"\" of type \""+type+"\" with '[i]'");
+			auto e = path.find("]", c);
+
+			int i = std::stoi(path.substr(c+1, e-c-1));
+			int length = std::any_cast<uint32_t>(parse_get(info.arrayLength, p, type));
+
+			if(i >= length)
+				throw std::runtime_error("array index "+std::to_string(i)+" for member \""+info.name+"\" exceeds its length of "
+					+std::to_string(length)+" which can be found in member \""+info.arrayLength+"\"");
+			
+			void* np = *((void**)op);
+			void* ap = ((uint8_t*)np) + i * struct_reflection_map[info.type].size;
+			std::string rest = path.substr(e+2);
+			return parse_set(rest, ap, info.type, value);
+		}
+		else std::abort();
 	}
 
 	std::any parse_rvalue(std::string expression, const void* p, std::string type, std::string dtype)
