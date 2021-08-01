@@ -256,4 +256,20 @@ namespace CheekyLayer
 
 			static action_register<overload_action> reg;
 	};
+
+	class preload_action : public action
+	{
+		public:
+			preload_action(selector_type type) : action(type) {}
+			virtual void read(std::istream&);
+			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual std::ostream& print(std::ostream&);
+
+			void work(std::string optFilename);
+		private:
+			std::string m_target;
+			std::unique_ptr<data> m_filename;
+
+			static action_register<preload_action> reg;
+	};
 }

@@ -52,6 +52,7 @@ namespace CheekyLayer
 	action_register<write_action> write_action::reg("write");
 	action_register<store_action> store_action::reg("store");
 	action_register<overload_action> overload_action::reg("overload");
+	action_register<preload_action> preload_action::reg("preload");
 
 	void mark_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule&)
 	{
@@ -508,6 +509,26 @@ namespace CheekyLayer
 			*::logger << logger::begin << logger::error << " overload failed: " << ex.what() << logger::end;
 		}
 	}
+
+#ifdef USE_IMAGE_TOOLS
+	bool imageTools = true;
+#else
+	bool imageTools = false;
+#endif
+	// cache for preloading (must be kinda specific, because format, extent and mipLevels must match)
+	struct image_key
+	{
+		std::string filename;
+		VkFormat format;
+		uint32_t width;
+		uint32_t height;
+		uint32_t mipLevels;
+    	bool operator<(const image_key& other) const
+		{
+			return std::tie(filename, format, width, height, mipLevels) < std::tie(other.filename, other.format, other.width, other.height, other.mipLevels);
+		}
+	};
+	std::map<image_key, std::pair<std::vector<uint8_t>, std::vector<VkDeviceSize>>> imageFileCache;
 	void overload_action::work(std::string optFilename, std::vector<uint8_t> optData)
 	{
 		stored_handle& h = rule_env.handles[m_target];
@@ -516,44 +537,49 @@ namespace CheekyLayer
 		std::vector<uint8_t> data(16);
 		std::vector<VkDeviceSize> offsets;
 
+		auto t0 = std::chrono::high_resolution_clock::now();
 		if(m_mode == mode::Data)
 		{
 			data = optData;
 		}
 		else
 		{
-#ifdef USE_IMAGE_TOOLS
-			bool imageTools = true;
-#else
-			bool imageTools = false;
-#endif
 			if(h.type == selector_type::Image && optFilename.ends_with(".png") && imageTools)
 			{
 				VkImageCreateInfo imgInfo = images[(VkImage)h.handle];
-
-				int w, h, comp;
-				uint8_t* buf = stbi_load(optFilename.c_str(), &w, &h, &comp, STBI_rgb_alpha);
-				image_tools::image image(w, h, buf);
-
-				if(imgInfo.mipLevels <= 1)
+				decltype(imageFileCache.begin()->first) cacheKey = {optFilename, imgInfo.format, imgInfo.extent.width, imgInfo.extent.height, imgInfo.mipLevels};
+				if(imageFileCache.contains(cacheKey))
 				{
-					offsets.push_back(0);
-					image_tools::compress(imgInfo.format, image, data, imgInfo.extent.width, imgInfo.extent.height);
+					data = imageFileCache[cacheKey].first;
+					offsets = imageFileCache[cacheKey].second;
 				}
 				else
 				{
-					data.clear();
-					for(int i=0; i<imgInfo.mipLevels; i++)
+					int w, h, comp;
+					uint8_t* buf = stbi_load(optFilename.c_str(), &w, &h, &comp, STBI_rgb_alpha);
+					image_tools::image image(w, h, buf);
+
+					if(imgInfo.mipLevels <= 1)
 					{
-						offsets.push_back(data.size());
-
-						std::vector<uint8_t> v;
-						image_tools::compress(imgInfo.format, image, v, imgInfo.extent.width / (1<<i), imgInfo.extent.height / (1<<i));
-						std::copy(v.begin(), v.end(), std::back_inserter(data));
+						offsets.push_back(0);
+						image_tools::compress(imgInfo.format, image, data, imgInfo.extent.width, imgInfo.extent.height);
 					}
-				}
+					else
+					{
+						data.clear();
+						for(int i=0; i<imgInfo.mipLevels; i++)
+						{
+							offsets.push_back(data.size());
 
-				free(buf);
+							std::vector<uint8_t> v;
+							image_tools::compress(imgInfo.format, image, v, imgInfo.extent.width / (1<<i), imgInfo.extent.height / (1<<i));
+							std::copy(v.begin(), v.end(), std::back_inserter(data));
+						}
+					}
+
+					stbi_image_free(buf);
+					imageFileCache[cacheKey] = {data, offsets}; // do we want to store here? it needs so much RAM T_T
+				}
 			}
 			else if(h.type == selector_type::Image && optFilename.find("${mip}") != std::string::npos)
 			{
@@ -586,6 +612,7 @@ namespace CheekyLayer
 				in.read((char*)data.data(), size);
 			}
 		}
+		auto tDataReady = std::chrono::high_resolution_clock::now();
 
 		VkBufferCreateInfo bufferInfo;
 		bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -621,6 +648,8 @@ namespace CheekyLayer
 			throw std::runtime_error("failed to map staging memory");
 		memcpy(bufferPointer, data.data(), data.size());
 		device_dispatch[GetKey(h.device)].UnmapMemory(h.device, memory);
+
+		auto tStagingReady = std::chrono::high_resolution_clock::now();
 
 		{
 			scoped_lock l(transfer_lock);
@@ -691,12 +720,15 @@ namespace CheekyLayer
 			if(device_dispatch[GetKey(h.device)].EndCommandBuffer(commandBuffer) != VK_SUCCESS)
 				throw std::runtime_error("failed to end command buffer");
 
+			auto tCommandReady = std::chrono::high_resolution_clock::now();
+
 			VkQueue queue = transferQueues[h.device];
 			if(queue == VK_NULL_HANDLE)
 				throw std::runtime_error("command buffer is NULL");
 
 			if(device_dispatch[GetKey(h.device)].QueueWaitIdle(queue) != VK_SUCCESS)
 				throw std::runtime_error("cannot wait for queue to be idle before copying");
+			auto tIdle1 = std::chrono::high_resolution_clock::now();
 
 			VkSubmitInfo submitInfo{};
 			submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -707,9 +739,18 @@ namespace CheekyLayer
 
 			if(device_dispatch[GetKey(h.device)].QueueWaitIdle(queue) != VK_SUCCESS)
 				throw std::runtime_error("cannot wait for queue to be idle after copying");
+			auto tIdle2 = std::chrono::high_resolution_clock::now();
 
 			device_dispatch[GetKey(h.device)].DestroyBuffer(h.device, buffer, nullptr);
 			device_dispatch[GetKey(h.device)].FreeMemory(h.device, memory, nullptr);
+
+			*::logger << logger::begin << "overload timing:\n"
+				<< "\t" << "image load: " << std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(tDataReady - t0).count()) << "ms\n"
+				<< "\t" << "staging buffer: " << std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(tStagingReady - tDataReady).count()) << "ms\n"
+				<< "\t" << "command buffer: " << std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(tCommandReady - tStagingReady).count()) << "ms\n"
+				<< "\t" << "queue wait: " << std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(tIdle1 - tCommandReady).count()) << "ms\n"
+				<< "\t" << "copy operation: " << std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(tIdle2 - tIdle1).count()) << "ms"
+				<< logger::end;
 		}
 	}
 
@@ -768,6 +809,84 @@ namespace CheekyLayer
 				m_data->print(out);
 				break;
 		}
+		out << ")";
+		return out;
+	}
+
+	void preload_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule& rule)
+	{
+		std::string filename = std::get<std::string>(m_filename->get(type, data_type::String, handle, ctx, rule));
+		std::thread t(&preload_action::work, this, filename);
+		rule_env.threads.push_back(std::move(t));
+	}
+
+	void preload_action::work(std::string optFilename)
+	{
+		stored_handle& h = rule_env.handles[m_target];
+		try
+		{
+			if(h.type == selector_type::Image && optFilename.ends_with(".png") && imageTools)
+			{
+				VkImageCreateInfo imgInfo = images[(VkImage)h.handle];
+				decltype(imageFileCache.begin()->first) cacheKey = {optFilename, imgInfo.format, imgInfo.extent.width, imgInfo.extent.height, imgInfo.mipLevels};
+				if(imageFileCache.contains(cacheKey))
+				{
+					return;
+				}
+				else
+				{
+					std::vector<uint8_t> data;
+					std::vector<VkDeviceSize> offsets;
+
+					int w, h, comp;
+					uint8_t* buf = stbi_load(optFilename.c_str(), &w, &h, &comp, STBI_rgb_alpha);
+					image_tools::image image(w, h, buf);
+
+					if(imgInfo.mipLevels <= 1)
+					{
+						offsets.push_back(0);
+						image_tools::compress(imgInfo.format, image, data, imgInfo.extent.width, imgInfo.extent.height);
+					}
+					else
+					{
+						data.clear();
+						for(int i=0; i<imgInfo.mipLevels; i++)
+						{
+							offsets.push_back(data.size());
+
+							std::vector<uint8_t> v;
+							image_tools::compress(imgInfo.format, image, v, imgInfo.extent.width / (1<<i), imgInfo.extent.height / (1<<i));
+							std::copy(v.begin(), v.end(), std::back_inserter(data));
+						}
+					}
+
+					stbi_image_free(buf);
+					imageFileCache[cacheKey] = {data, offsets};
+				}
+			}
+		}
+		catch(const std::exception& ex)
+		{
+			*::logger << logger::begin << logger::error << " preload failed: " << ex.what() << logger::end;
+		}
+	}
+
+	void preload_action::read(std::istream& in)
+	{
+		std::getline(in, m_target, ',');
+		skip_ws(in);
+
+		m_filename = read_data(in, m_type);
+		check_stream(in, ')');
+
+		if(!m_filename->supports(m_type, data_type::String))
+			throw std::runtime_error("data does not support string data");
+	}
+
+	std::ostream& preload_action::print(std::ostream& out)
+	{
+		out << "preload(" << m_target << ", ";
+		m_filename->print(out);
 		out << ")";
 		return out;
 	}
