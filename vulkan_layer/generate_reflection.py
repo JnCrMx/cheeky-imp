@@ -37,7 +37,7 @@ for (name, description) in vkreg.typedict.items():
         mArray = 'len' in member.attrib;
         if mArray:
             mArray = "true"
-            mArrayLen = member.attrib['len'];
+            mArrayLen = member.attrib['len'].replace("\\", "\\\\")
             mArrayInfo = f", .arrayLength = \"{mArrayLen}\""
         else:
             mArray = "false"

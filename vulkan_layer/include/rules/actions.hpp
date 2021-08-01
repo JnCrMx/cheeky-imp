@@ -2,6 +2,7 @@
 
 #include "rules.hpp"
 #include "rules/execution_env.hpp"
+#include <cstdint>
 #include <istream>
 #include <memory>
 #include <stdexcept>
@@ -245,6 +246,7 @@ namespace CheekyLayer
 			virtual void execute(selector_type, VkHandle, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 
+			void workTry(std::string optFilename, std::vector<uint8_t> optData);
 			void work(std::string optFilename, std::vector<uint8_t> optData);
 		private:
 			std::string m_target;

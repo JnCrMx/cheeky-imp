@@ -241,7 +241,7 @@ namespace CheekyLayer { namespace ipc
 					if(pos != (buf+RECEIVE_BUFFER_SIZE))
 					{
 						std::string data = buffer + std::string(buf, std::distance(buf, pos));
-						buffer = std::string(pos, std::distance(pos, buf+n));
+						buffer = std::string(pos+1, std::distance(pos, buf+n)); // pos+1 -> skip \n
 
 						active_logger log = *::logger << logger::begin;
 

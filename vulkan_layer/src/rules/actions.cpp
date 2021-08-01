@@ -7,8 +7,10 @@
 #include "utils.hpp"
 #include "images.hpp"
 
+#include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <istream>
 #include <iterator>
 #include <memory>
@@ -374,7 +376,7 @@ namespace CheekyLayer
 		if(rule_env.fds.count(m_name))
 			throw std::runtime_error("file descriptor with name "+m_name+" already exists");
 
-		rule_env.fds[m_name] = std::make_unique<ipc::socket>(m_socketType, m_host, m_port, ipc::socket::protocol_type::Raw);
+		rule_env.fds[m_name] = std::make_unique<ipc::socket>(m_socketType, m_host, m_port, m_protocol);
 		rule_env.fds[m_name]->m_name = m_name;
 	}
 
@@ -475,25 +477,37 @@ namespace CheekyLayer
 		if(!rule_env.handles.count(m_target))
 			throw std::runtime_error("stored handle with name "+m_target+" does not exists");
 
+		scoped_lock l(global_lock);
 		if(m_mode == mode::Data)
 		{
 			std::vector<uint8_t> data = std::get<std::vector<uint8_t>>(m_data->get(stype, data_type::Raw, handle, ctx, rule));
-			std::thread t(&overload_action::work, this, std::string{}, data);
+			std::thread t(&overload_action::workTry, this, std::string{}, data);
 			rule_env.threads.push_back(std::move(t));
 		}
 		else if(m_mode == mode::FileFromData)
 		{
 			std::string filename = std::get<std::string>(m_data->get(stype, data_type::String, handle, ctx, rule));
-			std::thread t(&overload_action::work, this, filename, std::vector<uint8_t>{});
+			std::thread t(&overload_action::workTry, this, filename, std::vector<uint8_t>{});
 			rule_env.threads.push_back(std::move(t));
 		}
 		else
 		{
-			std::thread t(&overload_action::work, this, m_filename, std::vector<uint8_t>{});
+			std::thread t(&overload_action::workTry, this, m_filename, std::vector<uint8_t>{});
 			rule_env.threads.push_back(std::move(t));
 		}
 	}
 
+	void overload_action::workTry(std::string optFilename, std::vector<uint8_t> optData)
+	{
+		try
+		{
+			work(optFilename, std::move(optData));
+		}
+		catch(const std::exception& ex)
+		{
+			*::logger << logger::begin << logger::error << " overload failed: " << ex.what() << logger::end;
+		}
+	}
 	void overload_action::work(std::string optFilename, std::vector<uint8_t> optData)
 	{
 		stored_handle& h = rule_env.handles[m_target];

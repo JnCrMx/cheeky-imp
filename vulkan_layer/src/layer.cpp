@@ -206,8 +206,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyInstance(VkInstance instance,
 	}
 
 	instance_dispatch[GetKey(instance)].DestroyInstance(instance, pAllocator);
-	if(instance_dispatch.find(GetKey(instance)) != instance_dispatch.end())
-		instance_dispatch.erase(GetKey(instance));
+	instance_dispatch.erase(GetKey(instance));
 
 	*logger << logger::begin << "DestroyInstance: " << instance << logger::end;
 
@@ -216,6 +215,9 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyInstance(VkInstance instance,
 		fd->close();
 	}
 	CheekyLayer::rule_env.fds.clear();
+
+	for(auto& t : CheekyLayer::rule_env.threads)
+		t.join();
 	CheekyLayer::rule_env.threads.clear();
 }
 
@@ -308,18 +310,21 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_GetDeviceQueue(
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyDevice(VkDevice device, const VkAllocationCallbacks *pAllocator)
 {
-	device_dispatch[GetKey(device)].DestroyCommandPool(device, transferPools[device], nullptr);
-	transferCommandBuffers.erase(device);
-	transferPools.erase(device);
-	transferQueues.erase(device);
+	scoped_lock l(global_lock);
+	if(logger)
+		*logger << logger::begin << "DestroyDevice: " << device << logger::end;
+
+	if(transferQueues.contains(device))
+	{
+		device_dispatch[GetKey(device)].DestroyCommandPool(device, transferPools[device], nullptr);
+		transferCommandBuffers.erase(device);
+		transferPools.erase(device);
+		transferQueues.erase(device);
+	}
 
 	device_dispatch[GetKey(device)].DestroyDevice(device, pAllocator);
 
-	scoped_lock l(global_lock);
 	device_dispatch.erase(GetKey(device));
-
-	if(logger)
-		*logger << logger::begin << "DestroyDevice: " << device << logger::end;
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_EnumerateInstanceLayerProperties(uint32_t *pPropertyCount, VkLayerProperties *pProperties)
