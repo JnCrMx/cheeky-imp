@@ -40,8 +40,8 @@ namespace CheekyLayer
 	{
 		public:
 			vkstruct_data(selector_type type) : data(type) {
-				if(type != selector_type::Pipeline)
-					throw std::runtime_error("the \"vkstruct\" data is only supported for pipeline selectors, but not for "+to_string(type)+" selectors");
+				if(type != selector_type::Pipeline && type != selector_type::Draw)
+					throw std::runtime_error("the \"vkstruct\" data is only supported for pipeline and draw selectors, but not for "+to_string(type)+" selectors");
 			}
 			virtual void read(std::istream&);
 			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);

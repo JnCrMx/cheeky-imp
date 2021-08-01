@@ -68,6 +68,8 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 		DeviceHook(CmdBindVertexBuffers) \
 		DeviceHook(CmdBindVertexBuffers2EXT) \
 		DeviceHook(CmdBindIndexBuffer) \
+		DeviceHook(CmdSetScissor) \
+		DeviceHook(CmdDraw) \
 		DeviceHook(CmdDrawIndexed) \
 		\
 		DeviceHook(CreateDescriptorUpdateTemplate) \
@@ -127,7 +129,9 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	DeviceDispatch(CmdBindVertexBuffers) \
 	DeviceDispatch(CmdBindVertexBuffers2EXT) \
 	DeviceDispatch(CmdBindIndexBuffer) \
+	DeviceDispatch(CmdSetScissor) \
 	DeviceDispatch(CmdDrawIndexed) \
+	DeviceDispatch(CmdDraw) \
 	DeviceDispatch(CmdPipelineBarrier) \
 	\
 	DeviceDispatch(CreateDescriptorUpdateTemplate) \

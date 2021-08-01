@@ -22,11 +22,13 @@ struct QuickDispatch
 {
 	bool filled;
 	PFN_vkCmdDrawIndexed CmdDrawIndexed;
+	PFN_vkCmdDraw CmdDraw;
 	PFN_vkCmdBindPipeline CmdBindPipeline;
 	PFN_vkCmdBindDescriptorSets CmdBindDescriptorSets;
 	PFN_vkCmdBindIndexBuffer CmdBindIndexBuffer;
 	PFN_vkCmdBindVertexBuffers CmdBindVertexBuffers;
 	PFN_vkCmdBindVertexBuffers2EXT CmdBindVertexBuffers2EXT;
+	PFN_vkCmdSetScissor CmdSetScissor;
 	PFN_vkEndCommandBuffer EndCommandBuffer;
 };
 inline QuickDispatch quick_dispatch = {false};
@@ -43,6 +45,8 @@ struct CommandBufferState
 	VkBuffer indexBuffer;
 	VkDeviceSize indexBufferOffset;
 	VkIndexType indexType;
+
+	std::vector<VkRect2D> scissors;
 };
 
 extern std::map<VkPipeline, PipelineState> pipelineStates;

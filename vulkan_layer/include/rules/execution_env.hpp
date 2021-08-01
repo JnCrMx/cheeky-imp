@@ -11,8 +11,10 @@
 #include <optional>
 #include <functional>
 #include <thread>
+#include <variant>
 #include <vulkan/vulkan_core.h>
 #include "rules/ipc.hpp"
+#include "reflection/custom_structs.hpp"
 
 namespace CheekyLayer
 {
@@ -64,6 +66,8 @@ namespace CheekyLayer
 		std::vector<VkShaderModule>& shaders;
 		std::vector<VkBuffer>& vertexBuffers;
 		VkBuffer indexBuffer;
+
+		std::variant<const reflection::VkCmdDrawIndexed*, const reflection::VkCmdDraw*> info;
 	};
 
 	struct pipeline_info
