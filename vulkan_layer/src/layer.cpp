@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <cstring>
+#include <dlfcn.h>
 #include <exception>
 #include <iterator>
 #include <mutex>
@@ -51,6 +53,33 @@ void update_has_rules()
 	}
 
 	evalRulesInDraw = has_rules[CheekyLayer::selector_type::Draw];
+}
+
+void load_plugin(std::filesystem::path path)
+{
+	void* h = dlopen(path.c_str(), RTLD_LAZY);
+	if(!h)
+	{
+		*logger << logger::begin << logger::error << "dlopen failed: " << std::strerror(errno) << logger::end;
+	}
+
+	*logger << logger::begin << "Loaded plugin from " << path << logger::end;
+}
+
+void load_plugins()
+{
+	try
+	{
+		std::filesystem::directory_iterator it(global_config["pluginDirectory"]+"/");
+		for(auto& f : it)
+		{
+			load_plugin(f.path());
+		}
+	}
+	catch (std::filesystem::filesystem_error& ex)
+	{
+		*logger << logger::begin << logger::error << "Cannot find plugins: " << ex.what() << logger::end;
+	}
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator,
@@ -136,6 +165,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 			*logger << logger::begin << logger::error << "Cannot find overrides for " << type << ": " << ex.what() << logger::end;
 		}
 	}
+	load_plugins();
 
 	std::string rulefile = global_config["ruleFile"];
 	std::ifstream rulesIn(rulefile);

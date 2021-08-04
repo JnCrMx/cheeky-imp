@@ -60,6 +60,7 @@ namespace CheekyLayer
 		{"logFile", "cheeky_layer.txt"},
 		{"ruleFile", "rules.txt"},
 		{"hookDraw", "false"},
-		{"application", ""}
+		{"application", ""},
+		{"pluginDirectory", "./plugins"}
 	}));
 }
