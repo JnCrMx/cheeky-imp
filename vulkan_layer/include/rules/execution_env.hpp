@@ -63,7 +63,7 @@ namespace CheekyLayer
 	struct draw_info
 	{
 		std::vector<VkImage>& images;
-		std::vector<VkShaderModule>& shaders;
+		std::vector<VkHandle>& shaders;
 		std::vector<VkBuffer>& vertexBuffers;
 		VkBuffer indexBuffer;
 
@@ -72,7 +72,7 @@ namespace CheekyLayer
 
 	struct pipeline_info
 	{
-		std::vector<VkShaderModule>& shaderStages;
+		std::vector<VkHandle>& shaderStages;
 		const VkGraphicsPipelineCreateInfo* info;
 	};
 

@@ -1,12 +1,16 @@
 #pragma once
 
 #include "layer.hpp"
+#include "rules/execution_env.hpp"
 #include <vulkan/vulkan_core.h>
+
+using CheekyLayer::VkHandle;
 
 struct ShaderInfo
 {
 	VkShaderStageFlagBits stage;
 	VkShaderModule module;
+	VkHandle customHandle;
 	std::string hash;
 	std::string name;
 };

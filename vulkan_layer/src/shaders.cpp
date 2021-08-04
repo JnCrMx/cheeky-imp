@@ -1,6 +1,7 @@
 #include "layer.hpp"
 #include "dispatch.hpp"
 #include "utils.hpp"
+#include "shaders.hpp"
 #include <fstream>
 #include <iterator>
 #include <sys/types.h>
@@ -23,6 +24,9 @@
 
 using CheekyLayer::logger;
 using CheekyLayer::VkHandle;
+
+static uint64_t currentCustonShaderHandle = 0xABC1230000;
+std::map<VkHandle, VkHandle> customShaderHandles;
 
 #ifdef USE_SPIRV
 std::string stage_to_string(spv::ExecutionModel stage)
@@ -232,16 +236,17 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 	if(result == VK_SUCCESS)
 	{
 		VkHandle handle = (VkHandle)*pShaderModule;
+		VkHandle customHandle = customShaderHandles[handle] = (VkHandle) currentCustonShaderHandle++;
 
-		auto p = CheekyLayer::rule_env.hashes.find(handle);
+		/*auto p = CheekyLayer::rule_env.hashes.find(handle);
 		if(p != CheekyLayer::rule_env.hashes.end() && hash_string != p->second)
 		{
 			log << " Shader module collision: " << handle << " (formerly known as " << p->second << ") will be replaced";
-		}
+		}*/
 
-		CheekyLayer::rule_env.hashes[handle] = hash_string;
+		CheekyLayer::rule_env.hashes[customHandle] = hash_string;
 		CheekyLayer::local_context ctx = {log};
-		CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Shader, handle, ctx);
+		CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Shader, customHandle, ctx);
 	}
 
 	log << logger::end;

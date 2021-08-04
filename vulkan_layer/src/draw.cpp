@@ -3,11 +3,13 @@
 #include "layer.hpp"
 #include "logger.hpp"
 #include "descriptors.hpp"
+#include "shaders.hpp"
 #include "reflection/reflectionparser.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
 
 #include <iomanip>
+#include <iterator>
 #include <vulkan/vulkan.hpp>
 
 using CheekyLayer::logger;
@@ -82,9 +84,9 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateGraphicsPipelines(
 	{
 		VkGraphicsPipelineCreateInfo* info = const_cast<VkGraphicsPipelineCreateInfo*>(pCreateInfos+i);
 
-		std::vector<VkShaderModule> shaderStages;
+		std::vector<VkHandle> shaderStages;
 		std::transform(info->pStages, info->pStages+info->stageCount, std::back_inserter(shaderStages), [](VkPipelineShaderStageCreateInfo s){
-			return s.module;
+			return customShaderHandles[s.module];
 		});
 
 		CheekyLayer::pipeline_info pinfo = {shaderStages, info};
@@ -123,13 +125,14 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateGraphicsPipelines(
 			for(int j=0; j<info.stageCount; j++)
 			{
 				VkPipelineShaderStageCreateInfo shaderInfo = info.pStages[j];
+				VkHandle customHandle = customShaderHandles[shaderInfo.module];
 
-				auto p = CheekyLayer::rule_env.hashes.find(shaderInfo.module);
+				auto p = CheekyLayer::rule_env.hashes.find(customHandle);
 				std::string hash = "unknown";
 				if(p != CheekyLayer::rule_env.hashes.end())
 					hash = p->second;
 
-				state.stages[j] = {shaderInfo.stage, shaderInfo.module, hash, std::string(shaderInfo.pName)};
+				state.stages[j] = {shaderInfo.stage, shaderInfo.module, customHandle, hash, std::string(shaderInfo.pName)};
 			}
 			state.vertexBindingDescriptions = std::vector(info.pVertexInputState->pVertexBindingDescriptions,
 				info.pVertexInputState->pVertexBindingDescriptions + info.pVertexInputState->vertexBindingDescriptionCount);
@@ -279,7 +282,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(
 
 	std::vector<VkImage> images;
 	std::vector<VkBuffer> buffers;
-	std::vector<VkShaderModule> shaders;
+	std::vector<VkHandle> shaders;
 	for(auto d : state.descriptorSets)
 	{
 		if(d)
@@ -297,6 +300,11 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(
 			}
 		}
 	}
+	PipelineState& pstate = pipelineStates[state.pipeline];
+	std::transform(pstate.stages.begin(), pstate.stages.end(), std::back_inserter(shaders), [](ShaderInfo s){
+		return s.customHandle;
+	});
+
 	CheekyLayer::reflection::VkCmdDrawIndexed drawCall = {
 		.indexCount = indexCount,
 		.instanceCount = instanceCount,
@@ -426,7 +434,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDraw(
 
 	std::vector<VkImage> images;
 	std::vector<VkBuffer> buffers;
-	std::vector<VkShaderModule> shaders;
+	std::vector<VkHandle> shaders;
 	for(auto d : state.descriptorSets)
 	{
 		if(d)
@@ -444,6 +452,11 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDraw(
 			}
 		}
 	}
+	PipelineState& pstate = pipelineStates[state.pipeline];
+	std::transform(pstate.stages.begin(), pstate.stages.end(), std::back_inserter(shaders), [](ShaderInfo s){
+		return s.customHandle;
+	});
+
 	CheekyLayer::reflection::VkCmdDraw drawCall = {
 		.vertexCount = vertexCount,
 		.instanceCount = instanceCount,
