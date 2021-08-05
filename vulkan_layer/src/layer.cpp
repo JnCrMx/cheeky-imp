@@ -293,6 +293,14 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateDevice(VkPhysicalDevice ph
 
 	deviceInfos[*pDevice] = {props, memProperties, families};
 
+	if(!layer_disabled)
+	{
+		CheekyLayer::active_logger log = *logger << logger::begin;
+		CheekyLayer::local_context ctx = { .logger = log };
+		CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::DeviceCreate, *pDevice, ctx);
+		log << logger::end;
+	}
+
 	return ret;
 }
 
@@ -350,6 +358,14 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyDevice(VkDevice device, const
 		transferCommandBuffers.erase(device);
 		transferPools.erase(device);
 		transferQueues.erase(device);
+	}
+
+	if(!layer_disabled)
+	{
+		CheekyLayer::active_logger log = *logger << logger::begin;
+		CheekyLayer::local_context ctx = { .logger = log };
+		CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::DeviceDestroy, device, ctx);
+		log << logger::end;
 	}
 
 	device_dispatch[GetKey(device)].DestroyDevice(device, pAllocator);

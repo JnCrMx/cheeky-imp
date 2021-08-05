@@ -24,7 +24,9 @@ namespace CheekyLayer
 		Draw,
 		Pipeline,
 		Init,
-		Receive
+		Receive,
+		DeviceCreate,
+		DeviceDestroy
 	};
 	selector_type from_string(std::string);
 	std::string to_string(selector_type);

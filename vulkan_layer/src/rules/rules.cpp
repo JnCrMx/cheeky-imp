@@ -117,6 +117,10 @@ namespace CheekyLayer
 			return selector_type::Init;
 		if(s=="receive")
 			return selector_type::Receive;
+		if(s=="device_create")
+			return selector_type::DeviceCreate;
+		if(s=="device_destroy")
+			return selector_type::DeviceDestroy;
 		throw std::runtime_error("unknown selector_type \""+s+"\"");
 	}
 
@@ -138,6 +142,10 @@ namespace CheekyLayer
 				return "init";
 			case selector_type::Receive:
 				return "receive";
+			case selector_type::DeviceCreate:
+				return "device_create";
+			case selector_type::DeviceDestroy:
+				return "device_destroy";
 			default:
 				return "unknown" + std::to_string((int)type);
 		}
