@@ -11,4 +11,6 @@ namespace CheekyLayer { namespace reflection {
 	void parse_assign(std::string expression, void* p, std::string type);
 
 	std::string parse_get_string(std::string path, const void* p, std::string type);
+
+	std::any parse_rvalue(std::string expression, const void* p, std::string dtype);
 }}

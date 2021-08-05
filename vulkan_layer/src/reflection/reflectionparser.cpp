@@ -211,7 +211,7 @@ namespace CheekyLayer { namespace reflection {
 		else std::abort();
 	}
 
-	std::any parse_rvalue(std::string expression, const void* p, std::string type, std::string dtype)
+	std::any parse_rvalue(std::string expression, const void* p, std::string dtype)
 	{
 		try
 		{
@@ -272,7 +272,7 @@ namespace CheekyLayer { namespace reflection {
 
 		std::string ltype = parse_get_type(left, type);
 
-		std::any rvalue = parse_rvalue(right, p, type, ltype);
+		std::any rvalue = parse_rvalue(right, p, ltype);
 		std::any converted = convert(rvalue, ltype);
 		parse_set(left, p, type, converted);
 	}
