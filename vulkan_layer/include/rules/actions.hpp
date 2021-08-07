@@ -83,7 +83,8 @@ namespace CheekyLayer
 		enum on_action_event
 		{
 			EndCommandBuffer,
-			QueueSubmit
+			QueueSubmit,
+			EndRenderPass
 		};
 
 		public:
@@ -98,6 +99,8 @@ namespace CheekyLayer
 					return EndCommandBuffer;
 				if(s=="QueueSubmit")
 					return QueueSubmit;
+				if(s=="EndRenderPass")
+					return EndRenderPass;
 				throw std::runtime_error("unsupported on_action_event: "+s);
 			}
 
@@ -109,6 +112,8 @@ namespace CheekyLayer
 						return "EndCommandBuffer";
 					case QueueSubmit:
 						return "QueueSubmit";
+					case EndRenderPass:
+						return "EndRenderPass";
 					default:
 						return "unknown";
 				}

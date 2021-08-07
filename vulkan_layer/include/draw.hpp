@@ -22,20 +22,7 @@ struct PipelineState
 	std::vector<VkVertexInputAttributeDescription> vertexAttributeDescriptions;
 };
 
-struct QuickDispatch
-{
-	bool filled;
-	PFN_vkCmdDrawIndexed CmdDrawIndexed;
-	PFN_vkCmdDraw CmdDraw;
-	PFN_vkCmdBindPipeline CmdBindPipeline;
-	PFN_vkCmdBindDescriptorSets CmdBindDescriptorSets;
-	PFN_vkCmdBindIndexBuffer CmdBindIndexBuffer;
-	PFN_vkCmdBindVertexBuffers CmdBindVertexBuffers;
-	PFN_vkCmdBindVertexBuffers2EXT CmdBindVertexBuffers2EXT;
-	PFN_vkCmdSetScissor CmdSetScissor;
-	PFN_vkEndCommandBuffer EndCommandBuffer;
-};
-inline QuickDispatch quick_dispatch = {false};
+inline VkLayerDispatchTable quick_dispatch;
 
 struct CommandBufferState
 {
@@ -51,6 +38,9 @@ struct CommandBufferState
 	VkIndexType indexType;
 
 	std::vector<VkRect2D> scissors;
+
+	VkRenderPass renderpass;
+	VkFramebuffer framebuffer;
 };
 
 extern std::map<VkPipeline, PipelineState> pipelineStates;

@@ -20,6 +20,8 @@ namespace CheekyLayer { namespace reflection {
 			return true;
 		if(enum_reflection_map.contains(type)) // all enums can be returned as an uint32_t
 			return true;
+		if(type.ends_with("Flags"))
+			return true;
 		return false;
 	}
 
@@ -33,12 +35,14 @@ namespace CheekyLayer { namespace reflection {
 			return *((VkBool32*)p);
 		if(enum_reflection_map.contains(type)) // all enums can be returned as an uint32_t
 			return *((uint32_t*)p);
+		if(type.ends_with("Flags"))
+			return *((uint32_t*)p);
 		throw std::runtime_error("cannot create type \""+type+"\"");
 	}
 
 	void set_type(void* p, std::string type, std::any value)
 	{
-		if(type=="uint32_t")
+		if(type=="uint32_t" || type.ends_with("Flags"))
 			*((uint32_t*)p) = std::any_cast<uint32_t>(value);
 		else if(type=="int32_t")
 			*((int32_t*)p) = std::any_cast<int32_t>(value);
@@ -245,14 +249,14 @@ namespace CheekyLayer { namespace reflection {
 	{
 		if(in.type() == typeid(long))
 		{
-			if(type=="uint32_t" || type=="VkBool32")
+			if(type=="uint32_t" || type=="VkBool32" || type.ends_with("Flags"))
 				return (uint32_t)std::any_cast<long>(in);
 			if(type=="float")
 				return (float)std::any_cast<long>(in);
 		}
 		if(in.type() == typeid(uint32_t))
 		{
-			if(type=="uint32_t" || type=="VkBool32")
+			if(type=="uint32_t" || type=="VkBool32" || type.ends_with("Flags"))
 				return in;
 			if(enum_reflection_map.contains(type)) // all enums are uint32_t by default I hope
 				return in;

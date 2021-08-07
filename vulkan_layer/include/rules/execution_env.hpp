@@ -16,6 +16,7 @@
 #include "rules/ipc.hpp"
 #include "reflection/custom_structs.hpp"
 
+struct CommandBufferState;
 namespace CheekyLayer
 {
 	#if (VK_USE_64_BIT_PTR_DEFINES==1)
@@ -42,6 +43,7 @@ namespace CheekyLayer
 
 			std::map<VkCommandBuffer, std::vector<std::function<void(local_context&)>>> on_EndCommandBuffer;
 			std::map<VkCommandBuffer, std::vector<std::function<void(local_context&)>>> on_QueueSubmit;
+			std::map<VkCommandBuffer, std::vector<std::function<void(local_context&)>>> on_EndRenderPass;
 
 			void onEndCommandBuffer(VkCommandBuffer commandBuffer, std::function<void(local_context&)> function)
 			{
@@ -50,6 +52,10 @@ namespace CheekyLayer
 			void onQueueSubmit(VkCommandBuffer commandBuffer, std::function<void(local_context&)> function)
 			{
 				on_QueueSubmit[commandBuffer].push_back(function);
+			}
+			void onEndRenderPass(VkCommandBuffer commandBuffer, std::function<void(local_context&)> function)
+			{
+				on_EndRenderPass[commandBuffer].push_back(function);
 			}
 
 			std::map<std::string, std::unique_ptr<ipc::file_descriptor>> fds;
@@ -99,5 +105,6 @@ namespace CheekyLayer
 		VkDevice device;
 		bool canceled = false;
 		std::vector<std::string> overrides;
+		CommandBufferState* commandBufferState;
 	};
 }

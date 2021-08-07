@@ -234,6 +234,11 @@ namespace CheekyLayer
 					this->m_action->execute(type, handle, ctx2, rule);
 				});
 				break;
+			case EndRenderPass:
+				rule_env.onEndRenderPass(ctx.commandBuffer, [this, type, handle, &rule](local_context& ctx2){
+					this->m_action->execute(type, handle, ctx2, rule);
+				});
+				break;
 		}
 	}
 

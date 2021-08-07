@@ -35,19 +35,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_AllocateCommandBuffers(
 	}
 	log << logger::end;
 
-	if(!quick_dispatch.filled)
-	{
-		quick_dispatch.CmdDrawIndexed = device_dispatch[GetKey(device)].CmdDrawIndexed;
-		quick_dispatch.CmdDraw = device_dispatch[GetKey(device)].CmdDraw;
-		quick_dispatch.CmdBindPipeline = device_dispatch[GetKey(device)].CmdBindPipeline;
-		quick_dispatch.CmdBindDescriptorSets = device_dispatch[GetKey(device)].CmdBindDescriptorSets;
-		quick_dispatch.CmdBindIndexBuffer = device_dispatch[GetKey(device)].CmdBindIndexBuffer;
-		quick_dispatch.CmdBindVertexBuffers = device_dispatch[GetKey(device)].CmdBindVertexBuffers;
-		quick_dispatch.CmdBindVertexBuffers2EXT = device_dispatch[GetKey(device)].CmdBindVertexBuffers2EXT;
-		quick_dispatch.CmdSetScissor = device_dispatch[GetKey(device)].CmdSetScissor;
-		quick_dispatch.EndCommandBuffer = device_dispatch[GetKey(device)].EndCommandBuffer;
-		quick_dispatch.filled = true;
-	}
+	quick_dispatch = device_dispatch[GetKey(device)];
 
 	return result;
 }
@@ -264,6 +252,44 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdSetScissor(
 	quick_dispatch.CmdSetScissor(commandBuffer, firstScissor, scissorCount, pScissors);
 }
 
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBeginRenderPass(
+    VkCommandBuffer                             commandBuffer,
+    const VkRenderPassBeginInfo*                pRenderPassBegin,
+    VkSubpassContents                           contents)
+{
+	CommandBufferState& state = commandBufferStates[commandBuffer];
+	state.renderpass = pRenderPassBegin->renderPass;
+	state.framebuffer = pRenderPassBegin->framebuffer;
+
+	quick_dispatch.CmdBeginRenderPass(commandBuffer, pRenderPassBegin, contents);
+}
+
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdEndRenderPass(
+    VkCommandBuffer                             commandBuffer)
+{
+	if(evalRulesInDraw)
+	{
+		CommandBufferState& state = commandBufferStates[commandBuffer];
+
+		auto p = CheekyLayer::rule_env.on_EndRenderPass.find(commandBuffer);
+		if(p != CheekyLayer::rule_env.on_EndRenderPass.end() && !p->second.empty())
+		{
+			CheekyLayer::active_logger log = *logger << logger::begin;
+			CheekyLayer::local_context ctx = {.logger = log, .device = state.device, .commandBufferState = &state };
+
+			for(auto& f : p->second)
+			{
+				f(ctx);
+			}
+			p->second.clear();
+
+			log << logger::end;
+		}
+	}
+
+	quick_dispatch.CmdEndRenderPass(commandBuffer);
+}
+
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(
     VkCommandBuffer                             commandBuffer,
     uint32_t                                    indexCount,
@@ -408,7 +434,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(
 				<< std::setw(6) << a.offset   << " | "
 				<< std::setw(6) << vk::to_string((vk::Format)a.format)   << '\n';
 		}
-	}, &info2, commandBuffer};
+	}, &info2, commandBuffer, state.device, {}, {}, &state};
 	CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Draw, VK_NULL_HANDLE, ctx);
 
 	log << logger::end;
@@ -530,7 +556,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDraw(
 				<< std::setw(6) << a.offset   << " | "
 				<< std::setw(6) << vk::to_string((vk::Format)a.format)   << '\n';
 		}
-	}, &info2, commandBuffer};
+	}, &info2, commandBuffer, state.device, {}, {}, &state};
 	CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Draw, VK_NULL_HANDLE, ctx);
 
 	log << logger::end;

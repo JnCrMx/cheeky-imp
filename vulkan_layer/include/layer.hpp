@@ -89,6 +89,8 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindVertexBuffers(VkCommandBuffer
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindVertexBuffers2EXT(VkCommandBuffer, uint32_t, uint32_t, const VkBuffer*, const VkDeviceSize*, const VkDeviceSize*, const VkDeviceSize*);
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindIndexBuffer(VkCommandBuffer, VkBuffer, VkDeviceSize, VkIndexType);
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdSetScissor(VkCommandBuffer, uint32_t, uint32_t, const VkRect2D*);
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBeginRenderPass(VkCommandBuffer, const VkRenderPassBeginInfo*, VkSubpassContents);
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdEndRenderPass(VkCommandBuffer);
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(VkCommandBuffer, uint32_t, uint32_t, uint32_t, int32_t, uint32_t);
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDraw(VkCommandBuffer, uint32_t, uint32_t, uint32_t, uint32_t);
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_EndCommandBuffer(VkCommandBuffer);
