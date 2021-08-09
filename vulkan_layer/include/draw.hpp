@@ -29,6 +29,7 @@ struct CommandBufferState
 	VkDevice device;
 	VkPipeline pipeline;
 	std::vector<VkDescriptorSet> descriptorSets;
+	std::vector<uint32_t> descriptorDynamicOffsets;
 
 	std::vector<VkBuffer> vertexBuffers;
 	std::vector<VkDeviceSize> vertexBufferOffsets;

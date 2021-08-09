@@ -151,6 +151,14 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindDescriptorSets(
 		if(state.descriptorSets.size() < (firstSet + descriptorSetCount))
 			state.descriptorSets.resize(firstSet + descriptorSetCount);
 		std::copy(pDescriptorSets, pDescriptorSets+descriptorSetCount, state.descriptorSets.begin() + firstSet);
+
+		if(dynamicOffsetCount && pDynamicOffsets)
+		{
+			// TODO: support multiple descriptor sets, eeeeeeeh
+			if(state.descriptorDynamicOffsets.size() < dynamicOffsetCount)
+				state.descriptorDynamicOffsets.resize(dynamicOffsetCount);
+			std::copy(pDynamicOffsets, pDynamicOffsets + dynamicOffsetCount, state.descriptorDynamicOffsets.begin());
+		}
 	}
 
 	quick_dispatch.CmdBindDescriptorSets(commandBuffer, pipelineBindPoint, layout, firstSet,
@@ -271,11 +279,12 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdEndRenderPass(
 	{
 		CommandBufferState& state = commandBufferStates[commandBuffer];
 
+		scoped_lock l(global_lock);
 		auto p = CheekyLayer::rule_env.on_EndRenderPass.find(commandBuffer);
 		if(p != CheekyLayer::rule_env.on_EndRenderPass.end() && !p->second.empty())
 		{
 			CheekyLayer::active_logger log = *logger << logger::begin;
-			CheekyLayer::local_context ctx = {.logger = log, .device = state.device, .commandBufferState = &state };
+			CheekyLayer::local_context ctx = {.logger = log, .commandBuffer = commandBuffer, .device = state.device, .commandBufferState = &state };
 
 			for(auto& f : p->second)
 			{
