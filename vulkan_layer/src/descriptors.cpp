@@ -38,6 +38,12 @@ bool from_descriptorType(VkDescriptorType type, CheekyLayer::selector_type& outT
 		case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
 			outType = CheekyLayer::selector_type::Image;
 			return true;
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+			outType = CheekyLayer::selector_type::Buffer;
+			return true;
 		default:
 			return false;
 	}
@@ -78,7 +84,13 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_UpdateDescriptorSetWithTemplate(
 				{
 					const VkDescriptorImageInfo* info = (const VkDescriptorImageInfo*) newPtr;
 
-					binding.arrayElements[entry.dstArrayElement + j] = imageViews[info->imageView];
+					binding.arrayElements[entry.dstArrayElement + j] = {imageViews[info->imageView], *info};
+				}
+				else if(type == CheekyLayer::selector_type::Buffer)
+				{
+					const VkDescriptorBufferInfo* info = (const VkDescriptorBufferInfo*) newPtr;
+
+					binding.arrayElements[entry.dstArrayElement + j] = {info->buffer, *info};
 				}
 			}
 		}

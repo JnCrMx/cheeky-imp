@@ -10,7 +10,9 @@
 
 #include <iomanip>
 #include <iterator>
+#include <experimental/iterator>
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_core.h>
 
 using CheekyLayer::logger;
 using CheekyLayer::VkHandle;
@@ -299,6 +301,121 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdEndRenderPass(
 	quick_dispatch.CmdEndRenderPass(commandBuffer);
 }
 
+void verbose_pipeline_stages(CheekyLayer::active_logger& log, PipelineState& pstate)
+{
+	log << "  pipeline stages:\n";
+	log << "    |    stage |       name | shader\n";
+	for(auto shader : pstate.stages)
+	{
+		log << "    | " << std::setw(8) << vk::to_string((vk::ShaderStageFlagBits)shader.stage) << " | ";
+		log << std::setw(10) << shader.name;
+		log << " | " << shader.hash;
+		log << '\n';
+	}
+}
+
+void verbose_vertex_attributes(CheekyLayer::active_logger& log, CommandBufferState& state, PipelineState& pstate, bool index)
+{
+	log << "  vertex bindings:\n";
+	log << "    | binding | stride |     rate | buffer\n";
+	if(index)
+	{
+		log << "    | " << std::setw(7) << "index" << " | ";
+		log << std::setw(6);
+		switch(state.indexType)
+		{
+			case VK_INDEX_TYPE_UINT16:
+				log << 2;
+				break;
+			case VK_INDEX_TYPE_UINT32:
+				log << 4;
+				break;
+			default:
+				log << vk::to_string((vk::IndexType)state.indexType);
+		}
+		log << " | " << std::setw(8) << "-";
+
+		auto p = CheekyLayer::rule_env.hashes.find((VkHandle)state.indexBuffer);
+		if(p != CheekyLayer::rule_env.hashes.end())
+		{
+			log << " | " << p->second;
+		}
+		else
+		{
+			log << " | " << "unknown buffer " << state.indexBuffer;
+		}
+		log << " + " << std::hex << state.indexBufferOffset << std::dec;
+		log << '\n';
+	}
+	for(auto b : pstate.vertexBindingDescriptions)
+	{
+		log << "    | "
+			<< std::setw(7) << b.binding   << " | "
+			<< std::setw(6) << b.stride    << " | "
+			<< std::setw(8) << vk::to_string((vk::VertexInputRate)b.inputRate);
+
+		if(state.vertexBuffers.size() > b.binding)
+		{
+			VkBuffer buffer = state.vertexBuffers[b.binding];
+			auto p = CheekyLayer::rule_env.hashes.find((VkHandle)buffer);
+			if(p != CheekyLayer::rule_env.hashes.end())
+			{
+				log << " | " << p->second;
+			}
+			else
+			{
+				log << " | " << "unknown buffer " << buffer;
+			}
+			log << " + " << std::hex << state.vertexBufferOffsets[b.binding] << std::dec;
+		}
+		log << '\n';
+	}
+}
+
+void verbose_vertex_attributes(CheekyLayer::active_logger& log, PipelineState& pstate)
+{
+	log << "  vertex attributes:\n";
+	log << "    | binding | location | offset | format\n";
+	for(auto a : pstate.vertexAttributeDescriptions)
+	{
+		log << "    | "
+			<< std::setw(7) << a.binding  << " | "
+			<< std::setw(8) << a.location << " | "
+			<< std::setw(6) << a.offset   << " | "
+			<< std::setw(6) << vk::to_string((vk::Format)a.format)   << '\n';
+	}
+}
+
+void verbose_descriptors(CheekyLayer::active_logger& log, CommandBufferState& state)
+{
+	log << "  descriptors:\n";
+	for(int i=0; i<state.descriptorSets.size(); i++)
+	{
+		VkDescriptorSet set = state.descriptorSets[i];
+		if(descriptorStates.contains(set))
+		{
+			DescriptorState& descriptorState = descriptorStates[set];
+			for(auto& [binding, info] : descriptorState.bindings)
+			{
+				log << "    | " << i << " | " << binding << " | " << to_string(info.type) << " | ";
+				if(state.descriptorDynamicOffsets.size() > binding)
+					log << state.descriptorDynamicOffsets[binding];
+				else
+					log << " unknown offset";
+				log << " | [";
+				std::transform(info.arrayElements.begin(), info.arrayElements.end(), std::experimental::make_ostream_joiner(log.raw(), ", "), [](auto a){
+					return a.handle;
+				});
+				log << "]\n";
+			}
+		}
+		else
+		{
+			log << "    | " << i << " | unrecognized descriptor set " << set << '\n';
+		}
+	}
+}
+
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(
     VkCommandBuffer                             commandBuffer,
     uint32_t                                    indexCount,
@@ -329,7 +446,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(
 				if(binding.type == CheekyLayer::selector_type::Image)
 				{
 					std::transform(binding.arrayElements.begin(), binding.arrayElements.end(), std::back_inserter(images), [](auto h){
-						return (VkImage) h;
+						return (VkImage) h.handle;
 					});
 				}
 			}
@@ -369,80 +486,10 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(
 		log << "    firstInstance = " << firstInstance << '\n';
 
 		PipelineState& pstate = pipelineStates[state.pipeline];
-		log << "  pipeline stages:\n";
-		log << "    |    stage |       name | shader\n";
-		for(auto shader : pstate.stages)
-		{
-			log << "    | " << std::setw(8) << vk::to_string((vk::ShaderStageFlagBits)shader.stage) << " | ";
-			log << std::setw(10) << shader.name;
-			log << " | " << shader.hash;
-			log << '\n';
-		}
-
-		log << "  vertex bindings:\n";
-		log << "    | binding | stride |     rate | buffer\n";
-		{
-			log << "    | " << std::setw(7) << "index" << " | ";
-			log << std::setw(6);
-			switch(state.indexType)
-			{
-				case VK_INDEX_TYPE_UINT16:
-					log << 2;
-					break;
-				case VK_INDEX_TYPE_UINT32:
-					log << 4;
-					break;
-				default:
-					log << vk::to_string((vk::IndexType)state.indexType);
-			}
-			log << " | " << std::setw(8) << "-";
-
-			auto p = CheekyLayer::rule_env.hashes.find((VkHandle)state.indexBuffer);
-			if(p != CheekyLayer::rule_env.hashes.end())
-			{
-				log << " | " << p->second;
-			}
-			else
-			{
-				log << " | " << "unknown buffer " << state.indexBuffer;
-			}
-			log << " + " << std::hex << state.indexBufferOffset << std::dec;
-			log << '\n';
-		}
-		for(auto b : pstate.vertexBindingDescriptions)
-		{
-			log << "    | "
-				<< std::setw(7) << b.binding   << " | "
-				<< std::setw(6) << b.stride    << " | "
-				<< std::setw(8) << vk::to_string((vk::VertexInputRate)b.inputRate);
-
-			if(state.vertexBuffers.size() > b.binding)
-			{
-				VkBuffer buffer = state.vertexBuffers[b.binding];
-				auto p = CheekyLayer::rule_env.hashes.find((VkHandle)buffer);
-				if(p != CheekyLayer::rule_env.hashes.end())
-				{
-					log << " | " << p->second;
-				}
-				else
-				{
-					log << " | " << "unknown buffer " << buffer;
-				}
-				log << " + " << std::hex << state.vertexBufferOffsets[b.binding] << std::dec;
-			}
-			log << '\n';
-		}
-
-		log << "  vertex attributes:\n";
-		log << "    | binding | location | offset | format\n";
-		for(auto a : pstate.vertexAttributeDescriptions)
-		{
-			log << "    | "
-				<< std::setw(7) << a.binding  << " | "
-				<< std::setw(8) << a.location << " | "
-				<< std::setw(6) << a.offset   << " | "
-				<< std::setw(6) << vk::to_string((vk::Format)a.format)   << '\n';
-		}
+		verbose_pipeline_stages(log, pstate);
+		verbose_vertex_attributes(log, state, pstate, true);
+		verbose_vertex_attributes(log, pstate);
+		verbose_descriptors(log, state);
 	}, &info2, commandBuffer, state.device, {}, {}, &state};
 	CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Draw, VK_NULL_HANDLE, ctx);
 
@@ -481,7 +528,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDraw(
 				if(binding.type == CheekyLayer::selector_type::Image)
 				{
 					std::transform(binding.arrayElements.begin(), binding.arrayElements.end(), std::back_inserter(images), [](auto h){
-						return (VkImage) h;
+						return (VkImage) h.handle;
 					});
 				}
 			}
@@ -519,52 +566,10 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDraw(
 		log << "    firstInstance = " << firstInstance << '\n';
 
 		PipelineState& pstate = pipelineStates[state.pipeline];
-		log << "  pipeline stages:\n";
-		log << "    |    stage |       name | shader\n";
-		for(auto shader : pstate.stages)
-		{
-			log << "    | " << std::setw(8) << vk::to_string((vk::ShaderStageFlagBits)shader.stage) << " | ";
-			log << std::setw(10) << shader.name;
-			log << " | " << shader.hash;
-			log << '\n';
-		}
-
-		log << "  vertex bindings:\n";
-		log << "    | binding | stride |     rate | buffer\n";
-		for(auto b : pstate.vertexBindingDescriptions)
-		{
-			log << "    | "
-				<< std::setw(7) << b.binding   << " | "
-				<< std::setw(6) << b.stride    << " | "
-				<< std::setw(8) << vk::to_string((vk::VertexInputRate)b.inputRate);
-
-			if(state.vertexBuffers.size() > b.binding)
-			{
-				VkBuffer buffer = state.vertexBuffers[b.binding];
-				auto p = CheekyLayer::rule_env.hashes.find((VkHandle)buffer);
-				if(p != CheekyLayer::rule_env.hashes.end())
-				{
-					log << " | " << p->second;
-				}
-				else
-				{
-					log << " | " << "unknown buffer " << buffer;
-				}
-				log << " + " << std::hex << state.vertexBufferOffsets[b.binding] << std::dec;
-			}
-			log << '\n';
-		}
-
-		log << "  vertex attributes:\n";
-		log << "    | binding | location | offset | format\n";
-		for(auto a : pstate.vertexAttributeDescriptions)
-		{
-			log << "    | "
-				<< std::setw(7) << a.binding  << " | "
-				<< std::setw(8) << a.location << " | "
-				<< std::setw(6) << a.offset   << " | "
-				<< std::setw(6) << vk::to_string((vk::Format)a.format)   << '\n';
-		}
+		verbose_pipeline_stages(log, pstate);
+		verbose_vertex_attributes(log, state, pstate, false);
+		verbose_vertex_attributes(log, pstate);
+		verbose_descriptors(log, state);
 	}, &info2, commandBuffer, state.device, {}, {}, &state};
 	CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Draw, VK_NULL_HANDLE, ctx);
 
