@@ -4,9 +4,11 @@
 #include <any>
 #include <cstdint>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <stdint.h>
 #include <string>
+#include "layer.hpp"
 #include <vulkan/vulkan_core.h>
 
 namespace CheekyLayer { namespace reflection {
@@ -17,6 +19,8 @@ namespace CheekyLayer { namespace reflection {
 		if(type=="int32_t")
 			return true;
 		if(type=="VkBool32")
+			return true;
+		if(type=="float")
 			return true;
 		if(enum_reflection_map.contains(type)) // all enums can be returned as an uint32_t
 			return true;
@@ -33,6 +37,8 @@ namespace CheekyLayer { namespace reflection {
 			return *((int32_t*)p);
 		if(type=="VkBool32")
 			return *((VkBool32*)p);
+		if(type=="float")
+			return *((float*)p);
 		if(enum_reflection_map.contains(type)) // all enums can be returned as an uint32_t
 			return *((uint32_t*)p);
 		if(type.ends_with("Flags"))
@@ -48,6 +54,8 @@ namespace CheekyLayer { namespace reflection {
 			*((int32_t*)p) = std::any_cast<int32_t>(value);
 		else if(type=="VkBool32")
 			*((VkBool32*)p) = std::any_cast<VkBool32>(value);
+		else if(type=="float")
+			*((float*)p) = std::any_cast<float>(value);
 		else if(enum_reflection_map.contains(type)) // all enums can be set as an uint32_t
 			*((uint32_t*)p) = std::any_cast<uint32_t>(value);
 		else
@@ -215,6 +223,7 @@ namespace CheekyLayer { namespace reflection {
 		else std::abort();
 	}
 
+	std::any convert(std::any in, std::string type);
 	std::any parse_rvalue(std::string expression, const void* p, std::string dtype)
 	{
 		try
@@ -222,6 +231,13 @@ namespace CheekyLayer { namespace reflection {
 			size_t index;
 			long l = std::stol(expression, &index, 10);
 			return l;
+		}
+		catch (const std::invalid_argument& ex) {}
+		try
+		{
+			size_t index;
+			double d = std::stod(expression, &index);
+			return d;
 		}
 		catch (const std::invalid_argument& ex) {}
 
@@ -242,7 +258,30 @@ namespace CheekyLayer { namespace reflection {
 			}
 		}
 
-		throw std::runtime_error("cannot parse expression \""+expression+"\" for type \""+dtype+"\"");
+		std::string flagBits = dtype.substr(0, dtype.size()-1)+"Bits";
+		if(dtype.ends_with("Flags") && enum_reflection_map.contains(flagBits))
+		{
+			auto& submap = enum_reflection_map[flagBits];
+			std::istringstream iss(expression);
+			std::string elem;
+
+			uint32_t flag = 0;
+			while(std::getline(iss, elem, '|'))
+			{
+				elem.erase(remove_if(elem.begin(), elem.end(), isspace), elem.end());
+				if(submap.contains(elem))
+				{
+					flag |= submap[elem].value;
+				}
+				else
+				{
+					flag |= std::any_cast<uint32_t>(convert(parse_rvalue(elem, nullptr, dtype), dtype));
+				}
+			}
+			return flag;
+		}
+
+		throw std::runtime_error("cannot parse expression \""+expression+"\" for type \""+dtype+"\" or \""+flagBits+"\"");
 	}
 
 	std::any convert(std::any in, std::string type)
@@ -260,6 +299,11 @@ namespace CheekyLayer { namespace reflection {
 				return in;
 			if(enum_reflection_map.contains(type)) // all enums are uint32_t by default I hope
 				return in;
+		}
+		if(in.type() == typeid(double))
+		{
+			if(type=="float")
+				return (float)std::any_cast<double>(in);
 		}
 
 		throw std::runtime_error("cannot convert from type \""+std::string(in.type().name())+"\" to type \""+type+"\"");

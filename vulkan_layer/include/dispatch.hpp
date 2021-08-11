@@ -40,7 +40,8 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	InstanceHook(DestroyInstance) \
 	InstanceHook(EnumerateDeviceLayerProperties) \
 	InstanceHook(EnumerateDeviceExtensionProperties) \
-	InstanceHook(CreateDevice)
+	InstanceHook(CreateDevice) \
+	InstanceHook(EnumeratePhysicalDevices)
 
 #define DeviceHooks() \
 	DeviceHook(GetDeviceProcAddr) \
@@ -93,7 +94,8 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	InstanceDispatch(EnumerateDeviceExtensionProperties) \
 	InstanceDispatch(GetPhysicalDeviceMemoryProperties) \
 	InstanceDispatch(GetPhysicalDeviceProperties) \
-	InstanceDispatch(GetPhysicalDeviceQueueFamilyProperties)
+	InstanceDispatch(GetPhysicalDeviceQueueFamilyProperties) \
+	InstanceDispatch(EnumeratePhysicalDevices)
 
 #define InitDeviceDispatch() \
 	DeviceDispatch(GetDeviceProcAddr) \
@@ -126,6 +128,10 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	DeviceDispatch(CreatePipelineLayout) \
 	DeviceDispatch(CreateRenderPass) \
 	\
+	DeviceDispatch(CreateDescriptorSetLayout) \
+	DeviceDispatch(CreateDescriptorPool) \
+	DeviceDispatch(AllocateDescriptorSets) \
+	\
 	DeviceDispatch(CmdCopyBufferToImage) \
 	DeviceDispatch(CmdCopyBuffer) \
 	DeviceDispatch(CmdBindDescriptorSets) \
@@ -142,6 +148,7 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	\
 	DeviceDispatch(CreateDescriptorUpdateTemplate) \
 	DeviceDispatch(UpdateDescriptorSetWithTemplate) \
+	DeviceDispatch(UpdateDescriptorSets) \
 	\
 	DeviceDispatch(AllocateCommandBuffers) \
 	DeviceDispatch(FreeCommandBuffers) \

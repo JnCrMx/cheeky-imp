@@ -145,7 +145,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 	*logger << logger::begin << "Hello from " << CheekyLayer::Contants::LAYER_NAME
 		<< " for application " << applicationName
 		<< " using engine " << engineName << logger::end;
-	*logger << logger::begin << "CreateInstance: " << *pInstance << logger::end;
+	*logger << logger::begin << "CreateInstance: " << *pInstance << " -> " << ret << logger::end;
 
 	for(std::string type : {"images", "buffers", "shaders"})
 	{
@@ -225,6 +225,25 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 	return ret;
 }
 
+std::map<VkPhysicalDevice, VkInstance> physicalDeviceInstances;
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_EnumeratePhysicalDevices(
+    VkInstance                                  instance,
+    uint32_t*                                   pPhysicalDeviceCount,
+    VkPhysicalDevice*                           pPhysicalDevices)
+{
+	VkResult r = instance_dispatch[GetKey(instance)].EnumeratePhysicalDevices(instance, pPhysicalDeviceCount, pPhysicalDevices);
+
+	if(pPhysicalDeviceCount && pPhysicalDevices)
+	{
+		for(int i=0; i<*pPhysicalDeviceCount; i++)
+		{
+			physicalDeviceInstances[pPhysicalDevices[i]] = instance;
+		}
+	}
+
+	return r;
+}
+
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyInstance(VkInstance instance, const VkAllocationCallbacks *pAllocator)
 {
 	scoped_lock l(global_lock);
@@ -273,15 +292,23 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateDevice(VkPhysicalDevice ph
 	// move chain on for next layer
 	layerCreateInfo->u.pLayerInfo = layerCreateInfo->u.pLayerInfo->pNext;
 
-	PFN_vkCreateDevice createFunc = (PFN_vkCreateDevice) gipa(VK_NULL_HANDLE, "vkCreateDevice");
-
+	PFN_vkCreateDevice createFunc = (PFN_vkCreateDevice) gipa(physicalDeviceInstances[physicalDevice], "vkCreateDevice");
 	VkResult ret = createFunc(physicalDevice, pCreateInfo, pAllocator, pDevice);
 
 	InitDeviceDispatchTable(*pDevice, gdpa);
 
 	VkPhysicalDeviceProperties props;
 	instance_dispatch.begin()->second.GetPhysicalDeviceProperties(physicalDevice, &props);
-	*logger << logger::begin << "CreateDevice: " << *pDevice << " for " << props.deviceName << logger::end;
+	*logger << logger::begin << "CreateDevice: " << *pDevice << " for " << props.deviceName << " -> " << ret <<  " with " << pCreateInfo->enabledLayerCount << " layers:" << logger::end;
+	for(int i=0; i<pCreateInfo->enabledLayerCount; i++)
+	{
+		*logger << logger::begin << '\t' << pCreateInfo->ppEnabledLayerNames[i] << logger::end;
+	}
+	*logger << logger::begin << "and " << pCreateInfo->enabledExtensionCount << " extensions:" << logger::end;
+	for(int i=0; i<pCreateInfo->enabledExtensionCount; i++)
+	{
+		*logger << logger::begin << '\t' << pCreateInfo->ppEnabledExtensionNames[i] << logger::end;
+	}
 
 	VkPhysicalDeviceMemoryProperties memProperties;
 	instance_dispatch.begin()->second.GetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
@@ -292,14 +319,6 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateDevice(VkPhysicalDevice ph
 	instance_dispatch.begin()->second.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, families.data());
 
 	deviceInfos[*pDevice] = {props, memProperties, families};
-
-	if(!layer_disabled)
-	{
-		CheekyLayer::active_logger log = *logger << logger::begin;
-		CheekyLayer::local_context ctx = { .logger = log };
-		CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::DeviceCreate, *pDevice, ctx);
-		log << logger::end;
-	}
 
 	return ret;
 }
@@ -343,6 +362,12 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_GetDeviceQueue(
 		transferCommandBuffers[device] = buffer;
 
 		*logger << logger::begin << "Created transfer command buffer " << buffer << " in pool " << pool << " for queue family " << queueFamilyIndex << " on device " << device << logger::end;
+
+		// now we are "ready"
+		CheekyLayer::active_logger log = *logger << logger::begin;
+		CheekyLayer::local_context ctx = { .logger = log };
+		CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::DeviceCreate, device, ctx);
+		log << logger::end;
 	}
 }
 

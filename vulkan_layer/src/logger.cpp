@@ -19,6 +19,7 @@ namespace CheekyLayer
 	active_logger& active_logger::operator<<(struct error_t)
 	{
 		*this << "error: ";
+		error = true;
 		return *this;
 	}
 

@@ -389,6 +389,7 @@ void verbose_vertex_attributes(CheekyLayer::active_logger& log, PipelineState& p
 void verbose_descriptors(CheekyLayer::active_logger& log, CommandBufferState& state)
 {
 	log << "  descriptors:\n";
+	log << "    | set | binding |   type |         offset | elements\n";
 	for(int i=0; i<state.descriptorSets.size(); i++)
 	{
 		VkDescriptorSet set = state.descriptorSets[i];
@@ -397,21 +398,24 @@ void verbose_descriptors(CheekyLayer::active_logger& log, CommandBufferState& st
 			DescriptorState& descriptorState = descriptorStates[set];
 			for(auto& [binding, info] : descriptorState.bindings)
 			{
-				log << "    | " << i << " | " << binding << " | " << to_string(info.type) << " | ";
+				log << "    | " 
+					<< std::setw(3) << i << " | " 
+					<< std::setw(7) << binding << " | " 
+					<< std::setw(6) << to_string(info.type) << " | ";
 				if(state.descriptorDynamicOffsets.size() > binding)
-					log << state.descriptorDynamicOffsets[binding];
+					log << std::setw(14) << state.descriptorDynamicOffsets[binding];
 				else
-					log << " unknown offset";
-				log << " | [";
+					log << "unknown offset";
+				log << " | ";
 				std::transform(info.arrayElements.begin(), info.arrayElements.end(), std::experimental::make_ostream_joiner(log.raw(), ", "), [](auto a){
 					return a.handle;
 				});
-				log << "]\n";
+				log << '\n';
 			}
 		}
 		else
 		{
-			log << "    | " << i << " | unrecognized descriptor set " << set << '\n';
+			log << "    | " << std::setw(3) << i << " | unrecognized descriptor set " << set << '\n';
 		}
 	}
 }
@@ -456,6 +460,8 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(
 	std::transform(pstate.stages.begin(), pstate.stages.end(), std::back_inserter(shaders), [](ShaderInfo s){
 		return s.customHandle;
 	});
+	buffers.push_back(state.indexBuffer);
+	std::copy(state.vertexBuffers.begin(), state.vertexBuffers.end(), std::back_inserter(buffers));
 
 	CheekyLayer::reflection::VkCmdDrawIndexed drawCall = {
 		.indexCount = indexCount,
@@ -538,6 +544,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDraw(
 	std::transform(pstate.stages.begin(), pstate.stages.end(), std::back_inserter(shaders), [](ShaderInfo s){
 		return s.customHandle;
 	});
+	std::copy(state.vertexBuffers.begin(), state.vertexBuffers.end(), std::back_inserter(buffers));
 
 	CheekyLayer::reflection::VkCmdDraw drawCall = {
 		.vertexCount = vertexCount,

@@ -133,6 +133,7 @@ namespace CheekyLayer
 				break;
 			case selector_type::Draw:
 				reflection::parse_get_type(m_path, "VkCmdDrawIndexed");
+				break;
 			default:
 				throw std::runtime_error("cannot work with selector type "+to_string(m_type));
 		}
@@ -160,6 +161,7 @@ namespace CheekyLayer
 					structData = std::get<const reflection::VkCmdDraw*>(v);
 					structType = "VkCmdDraw";
 				}
+				break;
 			}
 			default:
 				throw std::runtime_error("cannot work with selector type "+to_string(stype));

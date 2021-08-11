@@ -50,6 +50,7 @@ namespace CheekyLayer
 			{
 				written = true;
 				myLogger->out << t;
+				if(error) myLogger->out.flush(); // always flush in error mode, because we have even more potential to crash
 				return *this;
 			}
 
@@ -58,5 +59,6 @@ namespace CheekyLayer
 		private:
 			logger* myLogger;
 			bool written = false;
+			bool error = false;
 	};
 }
