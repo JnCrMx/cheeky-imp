@@ -13,6 +13,7 @@
 #include <experimental/iterator>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan_enums.hpp>
 
 using CheekyLayer::logger;
 using CheekyLayer::VkHandle;
@@ -389,7 +390,7 @@ void verbose_vertex_attributes(CheekyLayer::active_logger& log, PipelineState& p
 void verbose_descriptors(CheekyLayer::active_logger& log, CommandBufferState& state)
 {
 	log << "  descriptors:\n";
-	log << "    | set | binding |   type |         offset | elements\n";
+	log << "    | set | binding |   type | exact type |         offset | elements\n";
 	for(int i=0; i<state.descriptorSets.size(); i++)
 	{
 		VkDescriptorSet set = state.descriptorSets[i];
@@ -401,7 +402,8 @@ void verbose_descriptors(CheekyLayer::active_logger& log, CommandBufferState& st
 				log << "    | " 
 					<< std::setw(3) << i << " | " 
 					<< std::setw(7) << binding << " | " 
-					<< std::setw(6) << to_string(info.type) << " | ";
+					<< std::setw(6) << to_string(info.type) << " | "
+					<< vk::to_string((vk::DescriptorType)info.exactType) << " | ";
 				if(state.descriptorDynamicOffsets.size() > binding)
 					log << std::setw(14) << state.descriptorDynamicOffsets[binding];
 				else

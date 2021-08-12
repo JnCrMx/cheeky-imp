@@ -73,6 +73,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_UpdateDescriptorSetWithTemplate(
 			if(!from_descriptorType(entry.descriptorType, type))
 				continue;
 			binding.type = type;
+			binding.exactType = entry.descriptorType;
 
 			if(binding.arrayElements.size() < entry.dstArrayElement + entry.descriptorCount)
 				binding.arrayElements.resize(entry.dstArrayElement + entry.descriptorCount);

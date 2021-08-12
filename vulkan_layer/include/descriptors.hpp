@@ -23,6 +23,7 @@ struct DescriptorElement
 struct DescriptorBinding
 {
 	CheekyLayer::selector_type type;
+	VkDescriptorType exactType;
 	std::vector<DescriptorElement> arrayElements;
 };
 
