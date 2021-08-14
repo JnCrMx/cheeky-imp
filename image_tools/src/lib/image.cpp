@@ -33,6 +33,16 @@ namespace image_tools
 		return data.at(y*width + x);
 	}
 
+	constexpr glm::ivec4 color_to_ivec4(image::color c)
+	{
+		int r = (c>>(0*8)) & 0xff;
+		int g = (c>>(1*8)) & 0xff;
+		int b = (c>>(2*8)) & 0xff;
+		int a = (c>>(3*8)) & 0xff;
+
+		return glm::ivec4(r, g, b, a);
+	}
+
 	glm::vec4 image::scaled(int x, int y, int w, int h) const
 	{
 		if(w==width && h==height)
@@ -50,15 +60,15 @@ namespace image_tools
 		int scanX = factorX;
 		int scanY = factorY;
 
-		glm::vec4 sum(0.0);
+		glm::ivec4 sum(0.0);
 		for(int xxx = xx; xxx < xx+scanX; xxx++)
 		{
 			for(int yyy = yy; yyy < yy+scanY; yyy++)
 			{
-				sum += color_to_vec4(data[yyy*width + xxx]);
+				sum += color_to_ivec4(data[yyy*width + xxx]);
 			}
 		}
-		return sum / (float)(scanX * scanY);
+		return glm::vec4(sum) / (float)(scanX * scanY * 255.0f);
 	}
 
 	image::color color(glm::vec4 rgba)
@@ -85,4 +95,10 @@ namespace image_tools
 	{
 		return (const uint8_t*) data.data();
 	}
+
+	std::vector<image::color>::iterator image::begin() { return data.begin(); }
+	std::vector<image::color>::iterator image::end() { return data.end(); }
+
+	std::vector<image::color>::const_iterator image::cbegin() const { return data.cbegin(); }
+	std::vector<image::color>::const_iterator image::cend() const { return data.cend(); }
 }

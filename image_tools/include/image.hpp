@@ -19,6 +19,11 @@ namespace image_tools
 
 			operator const uint8_t*();
 
+			std::vector<color>::iterator begin();
+			std::vector<color>::iterator end();
+
+			std::vector<color>::const_iterator cbegin() const;
+			std::vector<color>::const_iterator cend() const;
 		private:
 			std::vector<color> data;
 			int width;
