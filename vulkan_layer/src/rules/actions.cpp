@@ -6,11 +6,13 @@
 #include "rules/rules.hpp"
 #include "utils.hpp"
 #include "images.hpp"
+#include "draw.hpp"
 
 #include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <exception>
+#include <ios>
 #include <istream>
 #include <iterator>
 #include <memory>
@@ -23,6 +25,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <utility>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan.hpp>
@@ -33,9 +36,10 @@
 #include <image.hpp>
 
 #include <stb_image.h>
+#include <stb_image_write.h>
 #endif
 
-namespace CheekyLayer
+namespace CheekyLayer::rules::actions
 {
 	action_register<mark_action> mark_action::reg("mark");
 	action_register<unmark_action> unmark_action::reg("unmark");
@@ -53,6 +57,8 @@ namespace CheekyLayer
 	action_register<store_action> store_action::reg("store");
 	action_register<overload_action> overload_action::reg("overload");
 	action_register<preload_action> preload_action::reg("preload");
+	action_register<dump_framebuffer_action> dump_framebuffer_action::reg("dumbfb");
+	action_register<every_action> every_action::reg("every");
 
 	void mark_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule&)
 	{
@@ -892,6 +898,180 @@ namespace CheekyLayer
 	{
 		out << "preload(" << m_target << ", ";
 		m_filename->print(out);
+		out << ")";
+		return out;
+	}
+
+	void dump_framebuffer_action::execute(selector_type, VkHandle, local_context &ctx, rule&)
+	{
+		m_lock.lock();
+		VkDevice device = ctx.device;
+
+		VkFramebuffer fb = ctx.commandBufferState->framebuffer;
+		VkImageView view = framebuffers[fb].attachments[m_attachment];
+		VkImage image = imageViews[view];
+		VkImageCreateInfo imageInfo = images[image];
+
+		VkMemoryRequirements req;
+		device_dispatch[GetKey(device)].GetImageMemoryRequirements(ctx.device, image, &req);
+		VkDeviceSize size = req.size;
+
+		VkBufferCreateInfo bufferCreateInfo{};
+		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferCreateInfo.size = size;
+		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		device_dispatch[GetKey(device)].CreateBuffer(ctx.device, &bufferCreateInfo, nullptr, &m_buffer);
+
+		device_dispatch[GetKey(device)].GetBufferMemoryRequirements(ctx.device, m_buffer, &req);
+
+		VkMemoryAllocateInfo allocateInfo{};
+		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocateInfo.allocationSize = req.size;
+		allocateInfo.memoryTypeIndex = findMemoryType(deviceInfos[ctx.device].memory, 
+			req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		device_dispatch[GetKey(device)].AllocateMemory(ctx.device, &allocateInfo, nullptr, &m_memory);
+
+		device_dispatch[GetKey(device)].BindBufferMemory(ctx.device, m_buffer, m_memory, 0);
+
+		VkEventCreateInfo eventCreateInfo{};
+		eventCreateInfo.sType = VK_STRUCTURE_TYPE_EVENT_CREATE_INFO;
+		device_dispatch[GetKey(device)].CreateEvent(device, &eventCreateInfo, nullptr, &m_event);
+
+		VkBufferImageCopy copy{};
+		copy.imageSubresource = VkImageSubresourceLayers{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+		copy.imageExtent = imageInfo.extent;
+
+		VkImageMemoryBarrier barrier{};
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.image = image;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		barrier.subresourceRange = VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+		device_dispatch[GetKey(device)].CmdPipelineBarrier(ctx.commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+			0, nullptr, 0, nullptr, 1, &barrier);
+		device_dispatch[GetKey(device)].CmdCopyImageToBuffer(ctx.commandBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_buffer, 1, &copy);
+		device_dispatch[GetKey(device)].CmdSetEvent(ctx.commandBuffer, m_event, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+		m_lock.unlock();
+
+		std::thread thread([this, device, imageInfo, size](){
+			m_lock.lock();
+			for(;;)
+			{
+				if(device_dispatch[GetKey(device)].GetEventStatus(device, m_event) == VK_EVENT_SET)
+					break;
+				using std::chrono::operator""ms;
+				std::this_thread::sleep_for(10ms);
+			}
+
+			{
+				std::vector<char> data(size);
+
+				{
+					scoped_lock l(global_lock);
+					char* p;
+					device_dispatch[GetKey(device)].MapMemory(device, m_memory, 0, size, 0, (void**)&p);
+					std::copy(p, p+size, data.begin());
+					device_dispatch[GetKey(device)].UnmapMemory(device, m_memory);
+
+					device_dispatch[GetKey(device)].DestroyBuffer(device, m_buffer, nullptr);
+					device_dispatch[GetKey(device)].FreeMemory(device, m_memory, nullptr);
+					device_dispatch[GetKey(device)].DestroyEvent(device, m_event, nullptr);
+
+					m_lock.unlock();
+				}
+
+				auto t = std::chrono::high_resolution_clock::now();
+				std::chrono::duration<long> seconds = std::chrono::duration_cast<std::chrono::seconds>(t.time_since_epoch());
+
+				std::string name = std::to_string(seconds.count()) + "_" + std::to_string(m_attachment);
+				std::string filename = global_config["dumpDirectory"]+"/images/framebuffers/"+name+".image";
+				try
+				{
+					std::ofstream of(filename, std::ios::binary);
+					if(!of.good())
+						throw std::runtime_error("ofstream is not good");
+					of.write(data.data(), data.size());
+					*::logger << logger::begin << "Framebuffer of size " 
+						<< imageInfo.extent.width << "x" << imageInfo.extent.height << " (" << size 
+						<< " bytes) was written to file \"" << filename << "\"." << logger::end;
+				}
+				catch(const std::exception& ex)
+				{
+					*::logger << logger::begin << logger::error << "Could not write framebuffer of size " 
+						<< size << " to file \"" << filename << "\": " << ex.what() << logger::end;
+				}
+
+#ifdef USE_IMAGE_TOOLS
+				bool decompression = image_tools::is_decompression_supported(imageInfo.format);
+				if(decompression || imageInfo.format == VK_FORMAT_R8G8B8A8_SRGB)
+				{
+					std::string filename = global_config["dumpDirectory"]+"/images/framebuffers/"+name+".png";
+					try
+					{
+						image_tools::image image(imageInfo.extent.width, imageInfo.extent.height);
+
+						if(decompression)
+							image_tools::decompress(imageInfo.format, (uint8_t*)data.data(), image, imageInfo.extent.width, imageInfo.extent.height);
+						else
+							std::copy((uint32_t*)data.data(), ((uint32_t*)data.data())+imageInfo.extent.width*imageInfo.extent.height, image.begin());
+
+						stbi_write_png(filename.c_str(), imageInfo.extent.width, imageInfo.extent.height, 4, image, imageInfo.extent.width*4);
+						*::logger << logger::begin << "Framebuffer of size " 
+							<< imageInfo.extent.width << "x" << imageInfo.extent.height << " was encoded and written to PNG file \"" 
+							<< filename << "\"." << logger::end;
+					}
+					catch(const std::exception& ex)
+					{
+						*::logger << logger::begin << logger::error << "Could not encode and write framebuffer to PNG file \"" 
+							<< filename << "\": " << ex.what() << logger::end;
+					}
+				}
+#endif
+			}
+		});
+		rule_env.threads.push_back(std::move(thread));
+	}
+
+	void dump_framebuffer_action::read(std::istream& in)
+	{
+		in >> m_attachment;
+		skip_ws(in);
+		check_stream(in, ')');
+	}
+
+	std::ostream& dump_framebuffer_action::print(std::ostream& out)
+	{
+		out << "dumpfb(" << m_attachment << ")";
+		return out;
+	}
+
+	void every_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule& rule)
+	{
+		if(m_i == 0)
+			m_action->execute(type, handle, ctx, rule);
+		
+		m_i++;
+		m_i %= m_n;
+	}
+
+	void every_action::read(std::istream& in)
+	{
+		in >> m_n;
+		skip_ws(in);
+		check_stream(in, ',');
+		skip_ws(in);
+
+		m_action = read_action(in, m_type);
+		check_stream(in, ')');
+	}
+
+	std::ostream& every_action::print(std::ostream& out)
+	{
+		out << "every(" << m_n << ", ";
+		m_action->print(out);
 		out << ")";
 		return out;
 	}

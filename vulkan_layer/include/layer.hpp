@@ -31,8 +31,8 @@ extern CheekyLayer::logger* logger;
 
 extern std::vector<std::string> overrideCache;
 
-extern std::vector<std::unique_ptr<CheekyLayer::rule>> rules;
-extern std::map<CheekyLayer::selector_type, bool> has_rules;
+extern std::vector<std::unique_ptr<CheekyLayer::rules::rule>> rules;
+extern std::map<CheekyLayer::rules::selector_type, bool> has_rules;
 
 extern std::map<VkDevice, VkQueue> transferQueues;
 extern std::map<VkDevice, VkCommandPool> transferPools;
@@ -83,6 +83,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_UpdateDescriptorSetWithTemplate(VkDe
 // draw.cpp
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_AllocateCommandBuffers(VkDevice, const VkCommandBufferAllocateInfo*, VkCommandBuffer*);
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_FreeCommandBuffers(VkDevice, VkCommandPool, uint32_t, const VkCommandBuffer*);
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateFramebuffer(VkDevice, const VkFramebufferCreateInfo*, const VkAllocationCallbacks*, VkFramebuffer*);
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateGraphicsPipelines(VkDevice, VkPipelineCache, uint32_t, const VkGraphicsPipelineCreateInfo*, const VkAllocationCallbacks*, VkPipeline*);
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindDescriptorSets(VkCommandBuffer, VkPipelineBindPoint, VkPipelineLayout, uint32_t, uint32_t, const VkDescriptorSet*, uint32_t, const uint32_t*);
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindPipeline(VkCommandBuffer, VkPipelineBindPoint, VkPipeline);

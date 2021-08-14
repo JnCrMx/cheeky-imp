@@ -5,7 +5,7 @@
 #include "rules.hpp"
 #include "rules/execution_env.hpp"
 
-namespace CheekyLayer
+namespace CheekyLayer::rules::datas
 {
 	class string_data : public data
 	{

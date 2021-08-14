@@ -29,7 +29,7 @@
 #endif
 
 using CheekyLayer::logger;
-using CheekyLayer::VkHandle;
+using CheekyLayer::rules::VkHandle;
 
 std::map<VkImage, VkImageCreateInfo> images;
 std::map<VkImageView, VkImage> imageViews;
@@ -156,9 +156,9 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBufferToImage(
 
 		if(pRegions[0].imageSubresource.mipLevel == 0)
 		{
-			CheekyLayer::rule_env.hashes[(VkHandle)dstImage] = hash_string;
-			CheekyLayer::local_context ctx = { .logger = log, .device = device };
-			CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Image, (VkHandle)dstImage, ctx);
+			CheekyLayer::rules::rule_env.hashes[(VkHandle)dstImage] = hash_string;
+			CheekyLayer::rules::local_context ctx = { .logger = log, .device = device };
+			CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::Image, (VkHandle)dstImage, ctx);
 		}
 
 		log << " hash=" << hash;

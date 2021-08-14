@@ -4,7 +4,7 @@
 #include "rules/execution_env.hpp"
 #include <vulkan/vulkan_core.h>
 
-using CheekyLayer::VkHandle;
+using CheekyLayer::rules::VkHandle;
 
 struct ShaderInfo
 {
@@ -44,6 +44,23 @@ struct CommandBufferState
 	VkFramebuffer framebuffer;
 };
 
+struct FramebufferInfo
+{
+	std::vector<VkImageView> attachments;
+	uint32_t width;
+	uint32_t height;
+
+	FramebufferInfo() {}
+
+	FramebufferInfo(const VkFramebufferCreateInfo* i)
+	{
+		attachments = std::vector<VkImageView>(i->pAttachments, i->pAttachments + i->attachmentCount);
+		width = i->width;
+		height = i->height;
+	}
+};
+
+extern std::map<VkFramebuffer, FramebufferInfo> framebuffers;
 extern std::map<VkPipeline, PipelineState> pipelineStates;
 extern std::map<VkCommandBuffer, CommandBufferState> commandBufferStates;
 inline bool evalRulesInDraw;

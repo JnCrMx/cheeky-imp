@@ -31,8 +31,8 @@ CheekyLayer::logger* logger;
 std::vector<std::string> overrideCache;
 
 std::vector<VkInstance> instances;
-std::vector<std::unique_ptr<CheekyLayer::rule>> rules;
-std::map<CheekyLayer::selector_type, bool> has_rules;
+std::vector<std::unique_ptr<CheekyLayer::rules::rule>> rules;
+std::map<CheekyLayer::rules::selector_type, bool> has_rules;
 
 std::map<VkDevice, VkQueue> transferQueues;
 std::map<VkDevice, VkCommandPool> transferPools;
@@ -41,10 +41,10 @@ std::map<VkDevice, VkDeviceInfo> deviceInfos;
 
 void update_has_rules()
 {
-	has_rules[CheekyLayer::selector_type::Buffer] = false;
-	has_rules[CheekyLayer::selector_type::Draw] = false;
-	has_rules[CheekyLayer::selector_type::Image] = false;
-	has_rules[CheekyLayer::selector_type::Shader] = false;
+	has_rules[CheekyLayer::rules::selector_type::Buffer] = false;
+	has_rules[CheekyLayer::rules::selector_type::Draw] = false;
+	has_rules[CheekyLayer::rules::selector_type::Image] = false;
+	has_rules[CheekyLayer::rules::selector_type::Shader] = false;
 
 	for(auto& r : rules)
 	{
@@ -52,7 +52,7 @@ void update_has_rules()
 			has_rules[r->get_type()] = true;
 	}
 
-	evalRulesInDraw = has_rules[CheekyLayer::selector_type::Draw];
+	evalRulesInDraw = has_rules[CheekyLayer::rules::selector_type::Draw];
 }
 
 void load_plugin(std::filesystem::path path)
@@ -181,7 +181,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 			{
 				try
 				{
-					std::unique_ptr<CheekyLayer::rule> rule = std::make_unique<CheekyLayer::rule>();
+					std::unique_ptr<CheekyLayer::rules::rule> rule = std::make_unique<CheekyLayer::rules::rule>();
 					std::istringstream iss(line);
 					iss >> *rule;
 
@@ -202,23 +202,23 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 		r->print(log.raw());
 		log << logger::end;
 	}
-	CheekyLayer::rule_disable_callback = [](CheekyLayer::rule* rule){
+	CheekyLayer::rules::rule_disable_callback = [](CheekyLayer::rules::rule* rule){
 		update_has_rules();
 	};
 	update_has_rules();
 
 	// close all file descriptors when creating a new instance
-	for(auto& [name, fd] : CheekyLayer::rule_env.fds)
+	for(auto& [name, fd] : CheekyLayer::rules::rule_env.fds)
 	{
 		fd->close();
 	}
-	CheekyLayer::rule_env.fds.clear();
+	CheekyLayer::rules::rule_env.fds.clear();
 
 	if(!layer_disabled)
 	{
 		CheekyLayer::active_logger log = *logger << logger::begin;
-		CheekyLayer::local_context ctx = { .logger = log };
-		CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Init, VK_NULL_HANDLE, ctx);
+		CheekyLayer::rules::local_context ctx = { .logger = log };
+		CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::Init, VK_NULL_HANDLE, ctx);
 		log << logger::end;
 	}
 
@@ -259,15 +259,15 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyInstance(VkInstance instance,
 
 	*logger << logger::begin << "DestroyInstance: " << instance << logger::end;
 
-	for(auto& [name, fd] : CheekyLayer::rule_env.fds)
+	for(auto& [name, fd] : CheekyLayer::rules::rule_env.fds)
 	{
 		fd->close();
 	}
-	CheekyLayer::rule_env.fds.clear();
+	CheekyLayer::rules::rule_env.fds.clear();
 
-	for(auto& t : CheekyLayer::rule_env.threads)
+	for(auto& t : CheekyLayer::rules::rule_env.threads)
 		t.join();
-	CheekyLayer::rule_env.threads.clear();
+	CheekyLayer::rules::rule_env.threads.clear();
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,
@@ -365,8 +365,8 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_GetDeviceQueue(
 
 		// now we are "ready"
 		CheekyLayer::active_logger log = *logger << logger::begin;
-		CheekyLayer::local_context ctx = { .logger = log };
-		CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::DeviceCreate, device, ctx);
+		CheekyLayer::rules::local_context ctx = { .logger = log };
+		CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::DeviceCreate, device, ctx);
 		log << logger::end;
 	}
 }
@@ -388,8 +388,8 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyDevice(VkDevice device, const
 	if(!layer_disabled)
 	{
 		CheekyLayer::active_logger log = *logger << logger::begin;
-		CheekyLayer::local_context ctx = { .logger = log };
-		CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::DeviceDestroy, device, ctx);
+		CheekyLayer::rules::local_context ctx = { .logger = log };
+		CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::DeviceDestroy, device, ctx);
 		log << logger::end;
 	}
 

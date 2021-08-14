@@ -8,7 +8,7 @@
 #include "rules/rules.hpp"
 #include "rules/execution_env.hpp"
 
-using CheekyLayer::VkHandle;
+using CheekyLayer::rules::VkHandle;
 
 extern std::map<VkDescriptorUpdateTemplate, std::vector<VkDescriptorUpdateTemplateEntry>> updateTemplates;
 
@@ -22,7 +22,7 @@ struct DescriptorElement
 
 struct DescriptorBinding
 {
-	CheekyLayer::selector_type type;
+	CheekyLayer::rules::selector_type type;
 	VkDescriptorType exactType;
 	std::vector<DescriptorElement> arrayElements;
 };

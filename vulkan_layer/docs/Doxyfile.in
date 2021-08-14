@@ -1,0 +1,5 @@
+OUTPUT_DIRECTORY     = @CMAKE_CURRENT_BINARY_DIR@/docs/
+INPUT                = @CMAKE_CURRENT_SOURCE_DIR@/include
+RECURSIVE		     = YES
+WARN_IF_UNDOCUMENTED = NO
+TAGFILES            += "@CMAKE_CURRENT_BINARY_DIR@/cppreference-doxygen-web.tag.xml=http://en.cppreference.com/w/"

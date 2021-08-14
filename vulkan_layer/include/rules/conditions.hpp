@@ -5,7 +5,7 @@
 #include <memory>
 #include <stdexcept>
 
-namespace CheekyLayer
+namespace CheekyLayer::rules::conditions
 {
 	class hash_condition : public selector_condition
 	{

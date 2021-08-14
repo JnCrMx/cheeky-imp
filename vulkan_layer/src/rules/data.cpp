@@ -16,7 +16,7 @@
 #include <variant>
 #include <vulkan/vulkan_core.h>
 
-namespace CheekyLayer
+namespace CheekyLayer::rules::datas
 {
 	data_register<string_data> string_data::reg("string");
 	data_register<string_data> string_data::reg2("s");

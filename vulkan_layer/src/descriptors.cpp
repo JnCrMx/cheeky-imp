@@ -28,7 +28,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateDescriptorUpdateTemplate(
 	return r;
 }
 
-bool from_descriptorType(VkDescriptorType type, CheekyLayer::selector_type& outType)
+bool from_descriptorType(VkDescriptorType type, CheekyLayer::rules::selector_type& outType)
 {
 	switch(type)
 	{
@@ -36,13 +36,13 @@ bool from_descriptorType(VkDescriptorType type, CheekyLayer::selector_type& outT
 		case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
 		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
 		case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
-			outType = CheekyLayer::selector_type::Image;
+			outType = CheekyLayer::rules::selector_type::Image;
 			return true;
 		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
 		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
 		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
 		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
-			outType = CheekyLayer::selector_type::Buffer;
+			outType = CheekyLayer::rules::selector_type::Buffer;
 			return true;
 		default:
 			return false;
@@ -69,7 +69,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_UpdateDescriptorSetWithTemplate(
 		DescriptorBinding& binding = state.bindings[entry.dstBinding];
 		try
 		{
-			CheekyLayer::selector_type type;
+			CheekyLayer::rules::selector_type type;
 			if(!from_descriptorType(entry.descriptorType, type))
 				continue;
 			binding.type = type;
@@ -81,13 +81,13 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_UpdateDescriptorSetWithTemplate(
 			for(int j=0; j<entry.descriptorCount; j++)
 			{
 				const void* newPtr = ((uint8_t*)pData) + entry.offset + j*entry.stride;
-				if(type == CheekyLayer::selector_type::Image)
+				if(type == CheekyLayer::rules::selector_type::Image)
 				{
 					const VkDescriptorImageInfo* info = (const VkDescriptorImageInfo*) newPtr;
 
 					binding.arrayElements[entry.dstArrayElement + j] = {imageViews[info->imageView], *info};
 				}
-				else if(type == CheekyLayer::selector_type::Buffer)
+				else if(type == CheekyLayer::rules::selector_type::Buffer)
 				{
 					const VkDescriptorBufferInfo* info = (const VkDescriptorBufferInfo*) newPtr;
 

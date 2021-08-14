@@ -62,6 +62,9 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	\
 	DeviceHook(CmdCopyBufferToImage) \
 	DeviceHook(CmdCopyBuffer) \
+	\
+	DeviceHook(CreateFramebuffer) \
+	\
 	if(hook_draw_calls) \
 	{\
 		DeviceHook(CmdBindDescriptorSets) \
@@ -154,4 +157,11 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	DeviceDispatch(FreeCommandBuffers) \
 	DeviceDispatch(ResetCommandBuffer) \
 	DeviceDispatch(BeginCommandBuffer) \
-	DeviceDispatch(EndCommandBuffer)
+	DeviceDispatch(EndCommandBuffer) \
+	\
+	DeviceDispatch(CreateFramebuffer) \
+	DeviceDispatch(CreateEvent) \
+	DeviceDispatch(DestroyEvent) \
+	DeviceDispatch(CmdSetEvent) \
+	DeviceDispatch(GetEventStatus) \
+	DeviceDispatch(CmdCopyImageToBuffer)

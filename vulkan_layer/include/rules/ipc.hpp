@@ -10,7 +10,7 @@
 #include <memory>
 #include <future>
 
-namespace CheekyLayer { namespace ipc
+namespace CheekyLayer::rules::ipc
 {
 	class file_descriptor
 	{
@@ -64,4 +64,4 @@ namespace CheekyLayer { namespace ipc
 			size_t writeRaw(void* p, size_t size);
 			void receiveThread(std::future<void> exit);
 	};
-}}
+}

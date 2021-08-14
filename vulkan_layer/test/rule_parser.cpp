@@ -9,7 +9,7 @@ int main(int argc, char* argv[])
 {
 	std::string line = argv[1];
 
-	std::unique_ptr<CheekyLayer::rule> rule = std::make_unique<CheekyLayer::rule>();
+	std::unique_ptr<CheekyLayer::rules::rule> rule = std::make_unique<CheekyLayer::rules::rule>();
 	try
 	{
 		std::istringstream iss(line);

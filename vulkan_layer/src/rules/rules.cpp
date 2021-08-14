@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace CheekyLayer
+namespace CheekyLayer::rules
 {
 	condition_factory::map_type* condition_factory::map = NULL;
 	action_factory::map_type* action_factory::map = NULL;

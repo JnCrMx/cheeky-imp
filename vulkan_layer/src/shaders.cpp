@@ -23,7 +23,7 @@
 #include <stdexcept>
 
 using CheekyLayer::logger;
-using CheekyLayer::VkHandle;
+using CheekyLayer::rules::VkHandle;
 
 static uint64_t currentCustonShaderHandle = 0xABC1230000;
 std::map<VkHandle, VkHandle> customShaderHandles;
@@ -244,9 +244,9 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 			log << " Shader module collision: " << handle << " (formerly known as " << p->second << ") will be replaced";
 		}*/
 
-		CheekyLayer::rule_env.hashes[customHandle] = hash_string;
-		CheekyLayer::local_context ctx = {log};
-		CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Shader, customHandle, ctx);
+		CheekyLayer::rules::rule_env.hashes[customHandle] = hash_string;
+		CheekyLayer::rules::local_context ctx = {log};
+		CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::Shader, customHandle, ctx);
 	}
 
 	log << logger::end;

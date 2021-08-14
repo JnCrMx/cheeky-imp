@@ -9,7 +9,7 @@
 #include <string>
 #include <istream>
 
-namespace CheekyLayer
+namespace CheekyLayer::rules::conditions
 {
 	condition_register<hash_condition> hash_condition::reg("hash");
 	condition_register<mark_condition> mark_condition::reg("mark");

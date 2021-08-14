@@ -11,7 +11,7 @@
 #include <functional>
 #include <variant>
 
-namespace CheekyLayer
+namespace CheekyLayer::rules
 {
 	void skip_ws(std::istream& in);
 	void check_stream(std::istream& in, char expected);

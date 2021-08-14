@@ -1,3 +1,14 @@
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/609281088cfefc76f9d0ce82e1ff6c30cc3591e5.zip
+)
+# For Windows: Prevent overriding the parent project's compiler/linker settings
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
+include(GoogleTest)
+
 add_executable(test_reflection reflection.cpp)
 target_link_libraries(test_reflection PUBLIC cheeky_layer)
 add_test(reflection test_reflection)
@@ -39,3 +50,7 @@ add_test(reflection_string test_reflection_string)
 add_executable(test_reflection_array reflection_array.cpp)
 target_link_libraries(test_reflection_array PUBLIC cheeky_layer)
 add_test(reflection_array test_reflection_array)
+
+add_executable(test_reflection_flags reflection_flags.cpp)
+target_link_libraries(test_reflection_flags PUBLIC cheeky_layer gtest_main)
+gtest_discover_tests(test_reflection_flags)

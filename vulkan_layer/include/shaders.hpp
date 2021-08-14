@@ -3,7 +3,7 @@
 #include <map>
 #include "rules/execution_env.hpp"
 
-using CheekyLayer::VkHandle;
+using CheekyLayer::rules::VkHandle;
 extern std::map<VkHandle, VkHandle> customShaderHandles;
 
 #ifdef USE_GLSLANG

@@ -6,9 +6,13 @@
 #include <istream>
 #include <memory>
 #include <stdexcept>
+#include <vulkan/vulkan_core.h>
 
-namespace CheekyLayer
+namespace CheekyLayer::rules::actions
 {
+	/**
+	 * Is this a documentation?
+	 */
 	class mark_action : public action
 	{
 		public:
@@ -276,5 +280,42 @@ namespace CheekyLayer
 			std::unique_ptr<data> m_filename;
 
 			static action_register<preload_action> reg;
+	};
+
+	class dump_framebuffer_action : public action
+	{
+		public:
+			dump_framebuffer_action(selector_type type) : action(type) {
+				if(type != selector_type::Draw)
+					throw std::runtime_error("the \"dumpfb\" action is only supported for draw selectors, but not for "+to_string(type)+" selectors");
+			}
+			virtual void read(std::istream&);
+			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			int m_attachment;
+
+			std::mutex m_lock;
+
+			VkEvent m_event;
+			VkBuffer m_buffer;
+			VkDeviceMemory m_memory;
+
+			static action_register<dump_framebuffer_action> reg;
+	};
+
+	class every_action : public action
+	{
+		public:
+			every_action(selector_type type) : action(type) {}
+			virtual void read(std::istream&);
+			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			int m_i = 0;
+			int m_n;
+			std::unique_ptr<action> m_action;
+
+			static action_register<every_action> reg;
 	};
 }

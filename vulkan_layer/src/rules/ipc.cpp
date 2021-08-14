@@ -16,7 +16,7 @@
 #include <string.h>
 #include <poll.h>
 
-namespace CheekyLayer { namespace ipc
+namespace CheekyLayer::rules::ipc
 {
 	local_file::local_file(std::string filename)
 	{
@@ -180,7 +180,7 @@ namespace CheekyLayer { namespace ipc
 					additional_info info2 = { .receive = info };
 					local_context ctx = { .logger = log, .info = &info2 };
 
-					execute_rules(rules, selector_type::Receive, 0, ctx);
+					execute_rules(::rules, selector_type::Receive, 0, ctx);
 
 					log << logger::end;
 
@@ -215,7 +215,7 @@ namespace CheekyLayer { namespace ipc
 						additional_info info2 = { .receive = info };
 						local_context ctx = { .logger = log, .info = &info2 };
 
-						execute_rules(rules, selector_type::Receive, 0, ctx);
+						execute_rules(::rules, selector_type::Receive, 0, ctx);
 
 						log << logger::end;
 					}
@@ -249,7 +249,7 @@ namespace CheekyLayer { namespace ipc
 						additional_info info2 = { .receive = info };
 						local_context ctx = { .logger = log, .info = &info2 };
 
-						execute_rules(rules, selector_type::Receive, 0, ctx);
+						execute_rules(::rules, selector_type::Receive, 0, ctx);
 
 						log << logger::end;
 					}
@@ -268,4 +268,4 @@ namespace CheekyLayer { namespace ipc
 		if(::logger)
 			*::logger << logger::begin << "receiving thread for fd \"" << m_name << "\" exited" << logger::end;
 	}
-}}
+}

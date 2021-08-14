@@ -16,8 +16,9 @@
 #include <vulkan/vulkan_enums.hpp>
 
 using CheekyLayer::logger;
-using CheekyLayer::VkHandle;
+using CheekyLayer::rules::VkHandle;
 
+std::map<VkFramebuffer, FramebufferInfo> framebuffers;
 std::map<VkCommandBuffer, CommandBufferState> commandBufferStates;
 std::map<VkPipeline, PipelineState> pipelineStates;
 
@@ -33,8 +34,8 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_AllocateCommandBuffers(
 		log << pCommandBuffers[i] << (i==pAllocateInfo->commandBufferCount-1?"}":",");
 		commandBufferStates[pCommandBuffers[i]] = {device};
 
-		CheekyLayer::rule_env.on_EndCommandBuffer[pCommandBuffers[i]] = {};
-		CheekyLayer::rule_env.on_QueueSubmit[pCommandBuffers[i]] = {};
+		CheekyLayer::rules::rule_env.on_EndCommandBuffer[pCommandBuffers[i]] = {};
+		CheekyLayer::rules::rule_env.on_QueueSubmit[pCommandBuffers[i]] = {};
 	}
 	log << logger::end;
 
@@ -55,11 +56,25 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_FreeCommandBuffers(
 		log << pCommandBuffers[i] << (i==commandBufferCount-1?"}":",");
 		commandBufferStates.erase(pCommandBuffers[i]);
 
-		CheekyLayer::rule_env.on_EndCommandBuffer.erase(pCommandBuffers[i]);
-		CheekyLayer::rule_env.on_QueueSubmit.erase(pCommandBuffers[i]);
+		CheekyLayer::rules::rule_env.on_EndCommandBuffer.erase(pCommandBuffers[i]);
+		CheekyLayer::rules::rule_env.on_QueueSubmit.erase(pCommandBuffers[i]);
 	}
 	log << logger::end;
 	device_dispatch[GetKey(device)].FreeCommandBuffers(device, commandPool, commandBufferCount, pCommandBuffers);
+}
+
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateFramebuffer(
+    VkDevice                                    device,
+    const VkFramebufferCreateInfo*              pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkFramebuffer*                              pFramebuffer)
+{
+	VkResult result = device_dispatch[GetKey(device)].CreateFramebuffer(device, pCreateInfo, pAllocator, pFramebuffer);
+
+	FramebufferInfo i(pCreateInfo);
+	framebuffers[*pFramebuffer] = i;
+
+	return result;
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateGraphicsPipelines(
@@ -80,11 +95,11 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateGraphicsPipelines(
 			return customShaderHandles[s.module];
 		});
 
-		CheekyLayer::pipeline_info pinfo = {shaderStages, info};
-		CheekyLayer::additional_info info2 = { .pipeline = pinfo };
+		CheekyLayer::rules::pipeline_info pinfo = {shaderStages, info};
+		CheekyLayer::rules::additional_info info2 = { .pipeline = pinfo };
 
-		CheekyLayer::local_context ctx = { .logger = log, .info = &info2 };
-		CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Pipeline, VK_NULL_HANDLE, ctx);
+		CheekyLayer::rules::local_context ctx = { .logger = log, .info = &info2 };
+		CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::Pipeline, VK_NULL_HANDLE, ctx);
 
 		for(auto o : ctx.overrides)
 		{
@@ -118,9 +133,9 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateGraphicsPipelines(
 				VkPipelineShaderStageCreateInfo shaderInfo = info.pStages[j];
 				VkHandle customHandle = customShaderHandles[shaderInfo.module];
 
-				auto p = CheekyLayer::rule_env.hashes.find(customHandle);
+				auto p = CheekyLayer::rules::rule_env.hashes.find(customHandle);
 				std::string hash = "unknown";
-				if(p != CheekyLayer::rule_env.hashes.end())
+				if(p != CheekyLayer::rules::rule_env.hashes.end())
 					hash = p->second;
 
 				state.stages[j] = {shaderInfo.stage, shaderInfo.module, customHandle, hash, std::string(shaderInfo.pName)};
@@ -283,11 +298,11 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdEndRenderPass(
 		CommandBufferState& state = commandBufferStates[commandBuffer];
 
 		scoped_lock l(global_lock);
-		auto p = CheekyLayer::rule_env.on_EndRenderPass.find(commandBuffer);
-		if(p != CheekyLayer::rule_env.on_EndRenderPass.end() && !p->second.empty())
+		auto p = CheekyLayer::rules::rule_env.on_EndRenderPass.find(commandBuffer);
+		if(p != CheekyLayer::rules::rule_env.on_EndRenderPass.end() && !p->second.empty())
 		{
 			CheekyLayer::active_logger log = *logger << logger::begin;
-			CheekyLayer::local_context ctx = {.logger = log, .commandBuffer = commandBuffer, .device = state.device, .commandBufferState = &state };
+			CheekyLayer::rules::local_context ctx = {.logger = log, .commandBuffer = commandBuffer, .device = state.device, .commandBufferState = &state };
 
 			for(auto& f : p->second)
 			{
@@ -336,8 +351,8 @@ void verbose_vertex_attributes(CheekyLayer::active_logger& log, CommandBufferSta
 		}
 		log << " | " << std::setw(8) << "-";
 
-		auto p = CheekyLayer::rule_env.hashes.find((VkHandle)state.indexBuffer);
-		if(p != CheekyLayer::rule_env.hashes.end())
+		auto p = CheekyLayer::rules::rule_env.hashes.find((VkHandle)state.indexBuffer);
+		if(p != CheekyLayer::rules::rule_env.hashes.end())
 		{
 			log << " | " << p->second;
 		}
@@ -358,8 +373,8 @@ void verbose_vertex_attributes(CheekyLayer::active_logger& log, CommandBufferSta
 		if(state.vertexBuffers.size() > b.binding)
 		{
 			VkBuffer buffer = state.vertexBuffers[b.binding];
-			auto p = CheekyLayer::rule_env.hashes.find((VkHandle)buffer);
-			if(p != CheekyLayer::rule_env.hashes.end())
+			auto p = CheekyLayer::rules::rule_env.hashes.find((VkHandle)buffer);
+			if(p != CheekyLayer::rules::rule_env.hashes.end())
 			{
 				log << " | " << p->second;
 			}
@@ -390,7 +405,7 @@ void verbose_vertex_attributes(CheekyLayer::active_logger& log, PipelineState& p
 void verbose_descriptors(CheekyLayer::active_logger& log, CommandBufferState& state)
 {
 	log << "  descriptors:\n";
-	log << "    | set | binding |   type | exact type |         offset | elements\n";
+	log << "    | set | binding |   type |                exact type |         offset | elements\n";
 	for(int i=0; i<state.descriptorSets.size(); i++)
 	{
 		VkDescriptorSet set = state.descriptorSets[i];
@@ -403,7 +418,7 @@ void verbose_descriptors(CheekyLayer::active_logger& log, CommandBufferState& st
 					<< std::setw(3) << i << " | " 
 					<< std::setw(7) << binding << " | " 
 					<< std::setw(6) << to_string(info.type) << " | "
-					<< vk::to_string((vk::DescriptorType)info.exactType) << " | ";
+					<< std::setw(25) << vk::to_string((vk::DescriptorType)info.exactType) << " | ";
 				if(state.descriptorDynamicOffsets.size() > binding)
 					log << std::setw(14) << state.descriptorDynamicOffsets[binding];
 				else
@@ -449,7 +464,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(
 			for(auto it = ds.bindings.begin(); it != ds.bindings.end(); it++)
 			{
 				DescriptorBinding& binding = it->second;
-				if(binding.type == CheekyLayer::selector_type::Image)
+				if(binding.type == CheekyLayer::rules::selector_type::Image)
 				{
 					std::transform(binding.arrayElements.begin(), binding.arrayElements.end(), std::back_inserter(images), [](auto h){
 						return (VkImage) h.handle;
@@ -476,12 +491,12 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(
 			.pScissors = state.scissors.data()
 		}
 	};
-	CheekyLayer::draw_info info = {images, shaders, buffers, state.indexBuffer, &drawCall};
-	CheekyLayer::additional_info info2 = {info};
+	CheekyLayer::rules::draw_info info = {images, shaders, buffers, state.indexBuffer, &drawCall};
+	CheekyLayer::rules::additional_info info2 = {info};
 
 	CheekyLayer::active_logger log = *logger << logger::begin;
 
-	CheekyLayer::local_context ctx = {log, [&state, &commandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance](CheekyLayer::active_logger log){
+	CheekyLayer::rules::local_context ctx = {log, [&state, &commandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance](CheekyLayer::active_logger log){
 		log << "CmdDrawIndexed: on device " << state.device << " from command buffer " << commandBuffer << " with pipeline " << state.pipeline << '\n';
 
 		log << std::dec << std::setfill(' ');
@@ -499,7 +514,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(
 		verbose_vertex_attributes(log, pstate);
 		verbose_descriptors(log, state);
 	}, &info2, commandBuffer, state.device, {}, {}, &state};
-	CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Draw, VK_NULL_HANDLE, ctx);
+	CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::Draw, VK_NULL_HANDLE, ctx);
 
 	log << logger::end;
 
@@ -533,7 +548,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDraw(
 			for(auto it = ds.bindings.begin(); it != ds.bindings.end(); it++)
 			{
 				DescriptorBinding& binding = it->second;
-				if(binding.type == CheekyLayer::selector_type::Image)
+				if(binding.type == CheekyLayer::rules::selector_type::Image)
 				{
 					std::transform(binding.arrayElements.begin(), binding.arrayElements.end(), std::back_inserter(images), [](auto h){
 						return (VkImage) h.handle;
@@ -558,12 +573,12 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDraw(
 			.pScissors = state.scissors.data()
 		}
 	};
-	CheekyLayer::draw_info info = {images, shaders, buffers, state.indexBuffer, &drawCall};
-	CheekyLayer::additional_info info2 = {info};
+	CheekyLayer::rules::draw_info info = {images, shaders, buffers, state.indexBuffer, &drawCall};
+	CheekyLayer::rules::additional_info info2 = {info};
 
 	CheekyLayer::active_logger log = *logger << logger::begin;
 
-	CheekyLayer::local_context ctx = {log, [&state, &commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance](CheekyLayer::active_logger log){
+	CheekyLayer::rules::local_context ctx = {log, [&state, &commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance](CheekyLayer::active_logger log){
 		log << "CmdDraw: on device " << state.device << " from command buffer " << commandBuffer << " with pipeline " << state.pipeline << '\n';
 
 		log << std::dec << std::setfill(' ');
@@ -580,7 +595,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDraw(
 		verbose_vertex_attributes(log, pstate);
 		verbose_descriptors(log, state);
 	}, &info2, commandBuffer, state.device, {}, {}, &state};
-	CheekyLayer::execute_rules(rules, CheekyLayer::selector_type::Draw, VK_NULL_HANDLE, ctx);
+	CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::Draw, VK_NULL_HANDLE, ctx);
 
 	log << logger::end;
 
@@ -595,11 +610,11 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_EndCommandBuffer(
 	{
 		CommandBufferState& state = commandBufferStates[commandBuffer];
 
-		auto p = CheekyLayer::rule_env.on_EndCommandBuffer.find(commandBuffer);
-		if(p != CheekyLayer::rule_env.on_EndCommandBuffer.end() && !p->second.empty())
+		auto p = CheekyLayer::rules::rule_env.on_EndCommandBuffer.find(commandBuffer);
+		if(p != CheekyLayer::rules::rule_env.on_EndCommandBuffer.end() && !p->second.empty())
 		{
 			CheekyLayer::active_logger log = *logger << logger::begin;
-			CheekyLayer::local_context ctx = {log};
+			CheekyLayer::rules::local_context ctx = {log};
 
 			for(auto& f : p->second)
 			{
