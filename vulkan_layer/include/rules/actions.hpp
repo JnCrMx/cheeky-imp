@@ -10,8 +10,23 @@
 
 namespace CheekyLayer::rules::actions
 {
-	/**
-	 * Is this a documentation?
+	/** Marks a handle with the given string.
+	 * A handle can have multiple marks at the same time,
+	 * hence this actions appends a mark to the handle's list
+	 * of marks.
+	 *
+	 * \par Usage
+	 * \code{.unparsed}
+     * mark(<mark>)
+     * \endcode
+	 * \param <mark> The string to make the handle with. Must not contain ')'.
+	 * 
+	 * \par Example
+	 * This rule marks any image with the \ref conditions::hash_condition "hash" "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	 * with the string "my-image".
+	 * \code{.unparsed}
+	 * image{hash(e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855)} -> mark(my-image)
+	 * \endcode
 	 */
 	class mark_action : public action
 	{
@@ -26,6 +41,23 @@ namespace CheekyLayer::rules::actions
 			static action_register<mark_action> reg;
 	};
 
+	/** Removes one mark or all marks from a handle.
+	 * 
+	 * \par Usage
+	 * \code{.unparsed}
+	 * unmark(*)
+	 * unmark(<mark>)
+	 * \endcode
+	 * 1. Removes all marks from the handle.
+	 * 2. Removes on mark from the handle.
+	 * \param <mark> The mark to remove from the handle. Must not contain ')'.
+	 * 
+	 * \par Example
+	 * This rule removes the \ref actions::mark_action "mark" "hello" from all images \ref conditions::mark_condition "marked" with it.
+	 * \code{.unparsed}
+	 * image{mark(hello)} -> unmark(hello)
+	 * \endcode
+	 */
 	class unmark_action : public action
 	{
 		public:
@@ -294,12 +326,6 @@ namespace CheekyLayer::rules::actions
 			virtual std::ostream& print(std::ostream&);
 		private:
 			int m_attachment;
-
-			std::mutex m_lock;
-
-			VkEvent m_event;
-			VkBuffer m_buffer;
-			VkDeviceMemory m_memory;
 
 			static action_register<dump_framebuffer_action> reg;
 	};

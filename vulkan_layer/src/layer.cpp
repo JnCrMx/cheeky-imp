@@ -60,7 +60,7 @@ void load_plugin(std::filesystem::path path)
 	void* h = dlopen(path.c_str(), RTLD_LAZY);
 	if(!h)
 	{
-		*logger << logger::begin << logger::error << "dlopen failed: " << std::strerror(errno) << logger::end;
+		*logger << logger::begin << logger::error << "dlopen failed: " << dlerror() << logger::end;
 	}
 
 	*logger << logger::begin << "Loaded plugin from " << path << logger::end;
@@ -198,7 +198,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 	for(auto& r : rules)
 	{
 		CheekyLayer::active_logger log = *logger << logger::begin;
-		log << "    ";
+		log << '\t';
 		r->print(log.raw());
 		log << logger::end;
 	}
