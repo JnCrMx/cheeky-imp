@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstring>
 #include <exception>
+#include <glm/common.hpp>
 #include <ios>
 #include <istream>
 #include <iterator>
@@ -30,6 +31,8 @@
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_structs.hpp>
+#include <glm/packing.hpp>
+#include <glm/gtc/packing.hpp>
 
 #ifdef USE_IMAGE_TOOLS
 #include <block_compression.hpp>
@@ -904,8 +907,11 @@ namespace CheekyLayer::rules::actions
 
 	void dump_framebuffer_action::execute(selector_type, VkHandle, local_context &ctx, rule&)
 	{
-		m_lock.lock();
 		VkDevice device = ctx.device;
+
+		VkBuffer buffer;
+		VkDeviceMemory memory;
+		VkEvent event;
 
 		VkFramebuffer fb = ctx.commandBufferState->framebuffer;
 		VkImageView view = framebuffers[fb].attachments[m_attachment];
@@ -921,22 +927,22 @@ namespace CheekyLayer::rules::actions
 		bufferCreateInfo.size = size;
 		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 		bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-		device_dispatch[GetKey(device)].CreateBuffer(ctx.device, &bufferCreateInfo, nullptr, &m_buffer);
+		device_dispatch[GetKey(device)].CreateBuffer(ctx.device, &bufferCreateInfo, nullptr, &buffer);
 
-		device_dispatch[GetKey(device)].GetBufferMemoryRequirements(ctx.device, m_buffer, &req);
+		device_dispatch[GetKey(device)].GetBufferMemoryRequirements(ctx.device, buffer, &req);
 
 		VkMemoryAllocateInfo allocateInfo{};
 		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		allocateInfo.allocationSize = req.size;
 		allocateInfo.memoryTypeIndex = findMemoryType(deviceInfos[ctx.device].memory, 
 			req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-		device_dispatch[GetKey(device)].AllocateMemory(ctx.device, &allocateInfo, nullptr, &m_memory);
+		device_dispatch[GetKey(device)].AllocateMemory(ctx.device, &allocateInfo, nullptr, &memory);
 
-		device_dispatch[GetKey(device)].BindBufferMemory(ctx.device, m_buffer, m_memory, 0);
+		device_dispatch[GetKey(device)].BindBufferMemory(ctx.device, buffer, memory, 0);
 
 		VkEventCreateInfo eventCreateInfo{};
 		eventCreateInfo.sType = VK_STRUCTURE_TYPE_EVENT_CREATE_INFO;
-		device_dispatch[GetKey(device)].CreateEvent(device, &eventCreateInfo, nullptr, &m_event);
+		device_dispatch[GetKey(device)].CreateEvent(device, &eventCreateInfo, nullptr, &event);
 
 		VkBufferImageCopy copy{};
 		copy.imageSubresource = VkImageSubresourceLayers{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
@@ -952,15 +958,13 @@ namespace CheekyLayer::rules::actions
 
 		device_dispatch[GetKey(device)].CmdPipelineBarrier(ctx.commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
 			0, nullptr, 0, nullptr, 1, &barrier);
-		device_dispatch[GetKey(device)].CmdCopyImageToBuffer(ctx.commandBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_buffer, 1, &copy);
-		device_dispatch[GetKey(device)].CmdSetEvent(ctx.commandBuffer, m_event, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
-		m_lock.unlock();
+		device_dispatch[GetKey(device)].CmdCopyImageToBuffer(ctx.commandBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1, &copy);
+		device_dispatch[GetKey(device)].CmdSetEvent(ctx.commandBuffer, event, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 
-		std::thread thread([this, device, imageInfo, size](){
-			m_lock.lock();
+		std::thread thread([this, device, imageInfo, size, buffer, memory, event](){
 			for(;;)
 			{
-				if(device_dispatch[GetKey(device)].GetEventStatus(device, m_event) == VK_EVENT_SET)
+				if(device_dispatch[GetKey(device)].GetEventStatus(device, event) == VK_EVENT_SET)
 					break;
 				using std::chrono::operator""ms;
 				std::this_thread::sleep_for(10ms);
@@ -972,21 +976,79 @@ namespace CheekyLayer::rules::actions
 				{
 					scoped_lock l(global_lock);
 					char* p;
-					device_dispatch[GetKey(device)].MapMemory(device, m_memory, 0, size, 0, (void**)&p);
+					device_dispatch[GetKey(device)].MapMemory(device, memory, 0, size, 0, (void**)&p);
 					std::copy(p, p+size, data.begin());
-					device_dispatch[GetKey(device)].UnmapMemory(device, m_memory);
+					device_dispatch[GetKey(device)].UnmapMemory(device, memory);
 
-					device_dispatch[GetKey(device)].DestroyBuffer(device, m_buffer, nullptr);
-					device_dispatch[GetKey(device)].FreeMemory(device, m_memory, nullptr);
-					device_dispatch[GetKey(device)].DestroyEvent(device, m_event, nullptr);
-
-					m_lock.unlock();
+					device_dispatch[GetKey(device)].DestroyBuffer(device, buffer, nullptr);
+					device_dispatch[GetKey(device)].FreeMemory(device, memory, nullptr);
+					device_dispatch[GetKey(device)].DestroyEvent(device, event, nullptr);
 				}
 
 				auto t = std::chrono::high_resolution_clock::now();
 				std::chrono::duration<long> seconds = std::chrono::duration_cast<std::chrono::seconds>(t.time_since_epoch());
 
 				std::string name = std::to_string(seconds.count()) + "_" + std::to_string(m_attachment);
+
+#ifdef USE_IMAGE_TOOLS
+				bool decompression = image_tools::is_decompression_supported(imageInfo.format);
+				if(decompression || 
+					imageInfo.format == VK_FORMAT_R8G8B8A8_SRGB ||
+					imageInfo.format == VK_FORMAT_R16G16B16A16_SFLOAT ||
+					imageInfo.format == VK_FORMAT_R16G16_SFLOAT ||
+					imageInfo.format == VK_FORMAT_R16G16B16A16_UINT)
+				{
+					std::string filename = global_config["dumpDirectory"]+"/images/framebuffers/"+name+".png";
+					try
+					{
+						int w = imageInfo.extent.width;
+						int h = imageInfo.extent.height;
+
+						image_tools::image image(w, h);
+
+						if(decompression)
+							image_tools::decompress(imageInfo.format, (uint8_t*)data.data(), image, w, h);
+						else if(imageInfo.format == VK_FORMAT_R8G8B8A8_SRGB)
+							std::copy((uint32_t*)data.data(), ((uint32_t*)data.data())+w*h, image.begin());
+						else if(imageInfo.format == VK_FORMAT_R16G16B16A16_SFLOAT)
+							std::transform((uint64_t*)data.data(), ((uint64_t*)data.data())+w*h, image.begin(), [](uint64_t u){
+								glm::vec4 v = glm::unpackHalf4x16(u);
+								v = glm::clamp(v, glm::vec4(0.0), glm::vec4(1.0));
+								return image_tools::color(v);
+							});
+						else if(imageInfo.format == VK_FORMAT_R16G16_SFLOAT)
+							std::transform((uint32_t*)data.data(), ((uint32_t*)data.data())+w*h, image.begin(), [](uint64_t u){
+								glm::vec2 v = glm::unpackHalf2x16(u);
+								v = glm::clamp(v, glm::vec2(0.0), glm::vec2(1.0));
+								return image_tools::color(glm::vec4(v, 0.0, 1.0));
+							});
+						else if(imageInfo.format == VK_FORMAT_R16G16B16A16_UINT)
+							std::transform((uint64_t*)data.data(), ((uint64_t*)data.data())+w*h, image.begin(), [](uint64_t u){
+								glm::u16vec4 uv = glm::unpackUint4x16(u);
+								glm::vec4 v = glm::vec4(
+									((double)uv.r)/((double)UINT16_MAX),
+									((double)uv.g)/((double)UINT16_MAX),
+									((double)uv.b)/((double)UINT16_MAX),
+									((double)uv.a)/((double)UINT16_MAX));
+								v = glm::clamp(v, glm::vec4(0.0), glm::vec4(1.0));
+								return image_tools::color(v);
+							});
+
+						stbi_write_png(filename.c_str(), w, h, 4, image, w*4);
+						*::logger << logger::begin << std::dec << "Framebuffer #" << m_attachment << " of size " 
+							<< imageInfo.extent.width << "x" << imageInfo.extent.height
+							<< " and format " << vk::to_string((vk::Format)imageInfo.format)
+							<< " was encoded and written to PNG file \"" 
+							<< filename << "\"." << logger::end;
+					}
+					catch(const std::exception& ex)
+					{
+						*::logger << logger::begin << std::dec << logger::error << "Could not encode and write framebuffer to PNG file \"" 
+							<< filename << "\": " << ex.what() << logger::end;
+					}
+				}
+				else {
+#endif
 				std::string filename = global_config["dumpDirectory"]+"/images/framebuffers/"+name+".image";
 				try
 				{
@@ -994,40 +1056,17 @@ namespace CheekyLayer::rules::actions
 					if(!of.good())
 						throw std::runtime_error("ofstream is not good");
 					of.write(data.data(), data.size());
-					*::logger << logger::begin << "Framebuffer of size " 
+					*::logger << logger::begin << std::dec << "Framebuffer #" << m_attachment <<" of size " 
 						<< imageInfo.extent.width << "x" << imageInfo.extent.height << " (" << size 
-						<< " bytes) was written to file \"" << filename << "\"." << logger::end;
+						<< " bytes) and format " << vk::to_string((vk::Format)imageInfo.format)
+						<< " was written to file \"" << filename << "\"." << logger::end;
 				}
 				catch(const std::exception& ex)
 				{
-					*::logger << logger::begin << logger::error << "Could not write framebuffer of size " 
+					*::logger << logger::begin << std::dec << logger::error << "Could not write framebuffer of size " 
 						<< size << " to file \"" << filename << "\": " << ex.what() << logger::end;
 				}
-
 #ifdef USE_IMAGE_TOOLS
-				bool decompression = image_tools::is_decompression_supported(imageInfo.format);
-				if(decompression || imageInfo.format == VK_FORMAT_R8G8B8A8_SRGB)
-				{
-					std::string filename = global_config["dumpDirectory"]+"/images/framebuffers/"+name+".png";
-					try
-					{
-						image_tools::image image(imageInfo.extent.width, imageInfo.extent.height);
-
-						if(decompression)
-							image_tools::decompress(imageInfo.format, (uint8_t*)data.data(), image, imageInfo.extent.width, imageInfo.extent.height);
-						else
-							std::copy((uint32_t*)data.data(), ((uint32_t*)data.data())+imageInfo.extent.width*imageInfo.extent.height, image.begin());
-
-						stbi_write_png(filename.c_str(), imageInfo.extent.width, imageInfo.extent.height, 4, image, imageInfo.extent.width*4);
-						*::logger << logger::begin << "Framebuffer of size " 
-							<< imageInfo.extent.width << "x" << imageInfo.extent.height << " was encoded and written to PNG file \"" 
-							<< filename << "\"." << logger::end;
-					}
-					catch(const std::exception& ex)
-					{
-						*::logger << logger::begin << logger::error << "Could not encode and write framebuffer to PNG file \"" 
-							<< filename << "\": " << ex.what() << logger::end;
-					}
 				}
 #endif
 			}

@@ -116,6 +116,7 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	DeviceDispatch(GetImageMemoryRequirements) \
 	DeviceDispatch(BindImageMemory) \
 	DeviceDispatch(CreateImageView) \
+	DeviceDispatch(CreateSampler) \
 	\
 	DeviceDispatch(CreateBuffer) \
 	DeviceDispatch(DestroyBuffer) \
