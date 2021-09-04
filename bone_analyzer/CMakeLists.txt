@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(glm REQUIRED)
 
-file(GLOB_RECURSE sources src/**.cpp)
+file(GLOB_RECURSE sources src/joint_method.cpp)
 
 add_executable(bone_analyzer ${sources})
 

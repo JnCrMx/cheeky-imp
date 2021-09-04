@@ -82,9 +82,15 @@ int main(int argc, char* argv[])
 	{
 		std::vector<std::array<int, 3>> groupFaces;
 		std::copy_if(faces.begin(), faces.end(), std::back_inserter(groupFaces), [&it](std::array<int, 3> face){
-			return it->second.contains(std::to_string(face[0])) 
-				&& it->second.contains(std::to_string(face[1])) 
-				&& it->second.contains(std::to_string(face[2]));
+			for(int i=0; i<3; i++)
+			{
+				std::string s = std::to_string(face[i]);
+				if(!it->second.contains(s))
+					return false;
+				if(it->second[s] < 0.25f)
+					return false;
+			}
+			return true;
 		});
 		for(auto& face : groupFaces)
 		{
