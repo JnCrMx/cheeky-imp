@@ -16,3 +16,12 @@ but that might take quite a while.
 
 Most subprojects use *CMake*.
 Just create a ``build/`` subdirectory, open *bash* in it and do ``cmake ..`` and ``make``.
+
+## Tools
+
+| Tool/Directory | Description | Language | Platform |
+| -------------- | ----------- | -------- | -------- |
+| [bone_analyzer](bone_analyzer/) | Reconstructs bones for Blender from vertex groups. | C++ | *any*
+| [image_tools](image_tools/) | Compresses and decompresses BCx images. | C++ | *any*
+| [mesh_buffer_tools](mesh_buffer_tools/) | Extracts and patches meshes for Vulkan games. | C++ | *any*
+| [vulkan_layer](vulkan_layer/) | Configurable and programable Vulkan layer for hooking into games, and extracting and modifying shaders, textures and meshes. | C++ | Linux
