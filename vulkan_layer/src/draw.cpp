@@ -18,6 +18,7 @@
 using CheekyLayer::logger;
 using CheekyLayer::rules::VkHandle;
 
+std::map<VkPipelineLayout, PipelineLayoutInfo> pipelineLayouts;
 std::map<VkFramebuffer, FramebufferInfo> framebuffers;
 std::map<VkCommandBuffer, CommandBufferState> commandBufferStates;
 std::map<VkPipeline, PipelineState> pipelineStates;
@@ -73,6 +74,24 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateFramebuffer(
 
 	FramebufferInfo i(pCreateInfo);
 	framebuffers[*pFramebuffer] = i;
+
+	return result;
+}
+
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreatePipelineLayout(
+    VkDevice                                    device,
+    const VkPipelineLayoutCreateInfo*           pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkPipelineLayout*                           pPipelineLayout)
+{
+	VkResult result = device_dispatch[GetKey(device)].CreatePipelineLayout(device, pCreateInfo, pAllocator, pPipelineLayout);
+
+	if(result == VK_SUCCESS)
+	{
+		PipelineLayoutInfo& info = pipelineLayouts[*pPipelineLayout];
+		info.setLayouts = std::vector<VkDescriptorSetLayout>(pCreateInfo->pSetLayouts, pCreateInfo->pSetLayouts+pCreateInfo->setLayoutCount);
+		info.pushConstantRanges = std::vector<VkPushConstantRange>(pCreateInfo->pPushConstantRanges, pCreateInfo->pPushConstantRanges+pCreateInfo->pushConstantRangeCount);
+	}
 
 	return result;
 }
@@ -437,6 +456,12 @@ void verbose_descriptors(CheekyLayer::active_logger& log, CommandBufferState& st
 	}
 }
 
+void verbose_commandbuffer_state(CheekyLayer::active_logger& log, CommandBufferState& state)
+{
+	log << "  command buffer state:\n";
+	log << "    transformFeedback = " << std::boolalpha << state.transformFeedback << '\n';
+}
+
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(
     VkCommandBuffer                             commandBuffer,
     uint32_t                                    indexCount,
@@ -488,7 +513,8 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(
 		.firstInstance = firstInstance,
 		.commandBufferState = CheekyLayer::reflection::VkCommandBufferState{
 			.scissorCount = static_cast<uint32_t>(state.scissors.size()),
-			.pScissors = state.scissors.data()
+			.pScissors = state.scissors.data(),
+			.transformFeedback = state.transformFeedback
 		}
 	};
 	CheekyLayer::rules::draw_info info = {images, shaders, buffers, state.indexBuffer, &drawCall};
@@ -509,6 +535,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(
 		log << "    firstInstance = " << firstInstance << '\n';
 
 		PipelineState& pstate = pipelineStates[state.pipeline];
+		verbose_commandbuffer_state(log, state);
 		verbose_pipeline_stages(log, pstate);
 		verbose_vertex_attributes(log, state, pstate, true);
 		verbose_vertex_attributes(log, pstate);
@@ -570,7 +597,8 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDraw(
 		.firstInstance = firstInstance,
 		.commandBufferState = CheekyLayer::reflection::VkCommandBufferState{
 			.scissorCount = static_cast<uint32_t>(state.scissors.size()),
-			.pScissors = state.scissors.data()
+			.pScissors = state.scissors.data(),
+			.transformFeedback = state.transformFeedback
 		}
 	};
 	CheekyLayer::rules::draw_info info = {images, shaders, buffers, state.indexBuffer, &drawCall};
@@ -590,6 +618,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDraw(
 		log << "    firstInstance = " << firstInstance << '\n';
 
 		PipelineState& pstate = pipelineStates[state.pipeline];
+		verbose_commandbuffer_state(log, state);
 		verbose_pipeline_stages(log, pstate);
 		verbose_vertex_attributes(log, state, pstate, false);
 		verbose_vertex_attributes(log, pstate);
@@ -603,12 +632,37 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDraw(
 		quick_dispatch.CmdDraw(commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
 }
 
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBeginTransformFeedbackEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstCounterBuffer,
+    uint32_t                                    counterBufferCount,
+    const VkBuffer*                             pCounterBuffers,
+    const VkDeviceSize*                         pCounterBufferOffsets)
+{
+	CommandBufferState& state = commandBufferStates[commandBuffer];
+	state.transformFeedback = true;
+	quick_dispatch.CmdBeginTransformFeedbackEXT(commandBuffer, firstCounterBuffer, counterBufferCount, pCounterBuffers, pCounterBufferOffsets);
+}
+
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdEndTransformFeedbackEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstCounterBuffer,
+    uint32_t                                    counterBufferCount,
+    const VkBuffer*                             pCounterBuffers,
+    const VkDeviceSize*                         pCounterBufferOffsets)
+{
+	CommandBufferState& state = commandBufferStates[commandBuffer];
+	state.transformFeedback = false;
+	quick_dispatch.CmdEndTransformFeedbackEXT(commandBuffer, firstCounterBuffer, counterBufferCount, pCounterBuffers, pCounterBufferOffsets);
+}
+
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_EndCommandBuffer(
     VkCommandBuffer                             commandBuffer)
 {
 	if(evalRulesInDraw)
 	{
 		CommandBufferState& state = commandBufferStates[commandBuffer];
+		state.transformFeedback = false;
 
 		auto p = CheekyLayer::rules::rule_env.on_EndCommandBuffer.find(commandBuffer);
 		if(p != CheekyLayer::rules::rule_env.on_EndCommandBuffer.end() && !p->second.empty())

@@ -84,6 +84,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_UpdateDescriptorSetWithTemplate(VkDe
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_AllocateCommandBuffers(VkDevice, const VkCommandBufferAllocateInfo*, VkCommandBuffer*);
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_FreeCommandBuffers(VkDevice, VkCommandPool, uint32_t, const VkCommandBuffer*);
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateFramebuffer(VkDevice, const VkFramebufferCreateInfo*, const VkAllocationCallbacks*, VkFramebuffer*);
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreatePipelineLayout(VkDevice, const VkPipelineLayoutCreateInfo*, const VkAllocationCallbacks*, VkPipelineLayout*);
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateGraphicsPipelines(VkDevice, VkPipelineCache, uint32_t, const VkGraphicsPipelineCreateInfo*, const VkAllocationCallbacks*, VkPipeline*);
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindDescriptorSets(VkCommandBuffer, VkPipelineBindPoint, VkPipelineLayout, uint32_t, uint32_t, const VkDescriptorSet*, uint32_t, const uint32_t*);
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindPipeline(VkCommandBuffer, VkPipelineBindPoint, VkPipeline);
@@ -95,4 +96,6 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBeginRenderPass(VkCommandBuffer, 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdEndRenderPass(VkCommandBuffer);
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(VkCommandBuffer, uint32_t, uint32_t, uint32_t, int32_t, uint32_t);
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDraw(VkCommandBuffer, uint32_t, uint32_t, uint32_t, uint32_t);
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBeginTransformFeedbackEXT(VkCommandBuffer, uint32_t, uint32_t, const VkBuffer*, const VkDeviceSize*);
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdEndTransformFeedbackEXT(VkCommandBuffer, uint32_t, uint32_t, const VkBuffer*, const VkDeviceSize*);
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_EndCommandBuffer(VkCommandBuffer);

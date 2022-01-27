@@ -8,6 +8,8 @@ namespace CheekyLayer { namespace reflection {
 	struct VkCommandBufferState {
 		uint32_t scissorCount;
 		VkRect2D *pScissors;
+
+		VkBool32 transformFeedback;
 	};
 
 	struct VkCmdDrawIndexed {
@@ -38,6 +40,7 @@ namespace CheekyLayer { namespace reflection {
 			.members = inner_reflection_map{ \
 				{"scissorCount", VkReflectInfo{ .name = "scissorCount", .type = "uint32_t", .pointer = false, .offset = offsetof(VkCommandBufferState, scissorCount) }}, \
 				{"pScissors", VkReflectInfo{ .name = "pScissors", .type = "VkRect2D", .pointer = true, .array = true, .arrayLength = "scissorCount", .offset = offsetof(VkCommandBufferState, pScissors) }}, \
+				{"transformFeedback", VkReflectInfo{ .name = "transformFeedback", .type = "VkBool32", .pointer = false, .offset = offsetof(VkCommandBufferState, transformFeedback) }}, \
 			} \
 		} \
 	}

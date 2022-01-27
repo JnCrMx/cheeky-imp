@@ -59,6 +59,7 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	\
 	DeviceHook(CreateShaderModule) \
 	DeviceHook(CreateGraphicsPipelines) \
+	DeviceHook(CreatePipelineLayout) \
 	\
 	DeviceHook(CmdCopyBufferToImage) \
 	DeviceHook(CmdCopyBuffer) \
@@ -77,6 +78,8 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 		DeviceHook(CmdEndRenderPass) \
 		DeviceHook(CmdDraw) \
 		DeviceHook(CmdDrawIndexed) \
+		DeviceHook(CmdBeginTransformFeedbackEXT) \
+		DeviceHook(CmdEndTransformFeedbackEXT) \
 		\
 		DeviceHook(CreateDescriptorUpdateTemplate) \
 		DeviceHook(UpdateDescriptorSetWithTemplate) \
@@ -149,6 +152,8 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	DeviceDispatch(CmdPipelineBarrier) \
 	DeviceDispatch(CmdBeginRenderPass) \
 	DeviceDispatch(CmdEndRenderPass) \
+	DeviceDispatch(CmdBeginTransformFeedbackEXT) \
+	DeviceDispatch(CmdEndTransformFeedbackEXT) \
 	\
 	DeviceDispatch(CreateDescriptorUpdateTemplate) \
 	DeviceDispatch(UpdateDescriptorSetWithTemplate) \

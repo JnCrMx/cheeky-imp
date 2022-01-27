@@ -42,6 +42,8 @@ struct CommandBufferState
 
 	VkRenderPass renderpass;
 	VkFramebuffer framebuffer;
+
+	bool transformFeedback;
 };
 
 struct FramebufferInfo
@@ -60,6 +62,13 @@ struct FramebufferInfo
 	}
 };
 
+struct PipelineLayoutInfo
+{
+	std::vector<VkDescriptorSetLayout> setLayouts;
+	std::vector<VkPushConstantRange> pushConstantRanges;
+};
+
+extern std::map<VkPipelineLayout, PipelineLayoutInfo> pipelineLayouts;
 extern std::map<VkFramebuffer, FramebufferInfo> framebuffers;
 extern std::map<VkPipeline, PipelineState> pipelineStates;
 extern std::map<VkCommandBuffer, CommandBufferState> commandBufferStates;

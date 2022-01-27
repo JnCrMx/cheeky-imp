@@ -21,6 +21,7 @@
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
 #include "draw.hpp"
+#include "utils.hpp"
 
 using CheekyLayer::logger;
 
@@ -129,6 +130,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 		engineName = pCreateInfo->pApplicationInfo->pEngineName;
 
 	std::string logfile = global_config["logFile"];
+	replace(logfile, "{{pid}}", std::to_string(getpid()));
 	if(!global_config["application"].empty())
 	{
 		if(global_config["application"] != applicationName)
@@ -366,7 +368,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_GetDeviceQueue(
 		// now we are "ready"
 		CheekyLayer::active_logger log = *logger << logger::begin;
 		CheekyLayer::rules::local_context ctx = { .logger = log };
-		CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::DeviceCreate, device, ctx);
+		CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::DeviceCreate, (VkHandle) device, ctx);
 		log << logger::end;
 	}
 }
@@ -389,7 +391,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyDevice(VkDevice device, const
 	{
 		CheekyLayer::active_logger log = *logger << logger::begin;
 		CheekyLayer::rules::local_context ctx = { .logger = log };
-		CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::DeviceDestroy, device, ctx);
+		CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::DeviceDestroy, (VkHandle) device, ctx);
 		log << logger::end;
 	}
 

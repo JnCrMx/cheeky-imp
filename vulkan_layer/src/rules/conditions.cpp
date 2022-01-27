@@ -169,7 +169,7 @@ namespace CheekyLayer::rules::conditions
 	{
 		rule dummy{};
 		data_value v1 = m_left->get(type, m_dtype, handle, ctx, dummy);
-		data_value v2 = m_left->get(type, m_dtype, handle, ctx, dummy);
+		data_value v2 = m_right->get(type, m_dtype, handle, ctx, dummy);
 
 		std::partial_ordering result = std::partial_ordering::unordered;
 		switch(m_dtype)
