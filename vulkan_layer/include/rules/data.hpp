@@ -97,4 +97,18 @@ namespace CheekyLayer::rules::datas
 
 			static data_register<string_clean_data> reg;
 	};
+
+	class number_data : public data
+	{
+		public:
+			number_data(selector_type type) : data(type) {}
+			virtual void read(std::istream&);
+			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual bool supports(selector_type, data_type);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			double m_number;
+
+			static data_register<number_data> reg;
+	};
 }

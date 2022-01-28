@@ -8,6 +8,7 @@
 #include <any>
 #include <cctype>
 #include <cstdint>
+#include <iomanip>
 #include <iterator>
 #include <memory>
 #include <ostream>
@@ -25,6 +26,7 @@ namespace CheekyLayer::rules::datas
 	data_register<received_data> received_data::reg("received");
 	data_register<convert_data> convert_data::reg("convert");
 	data_register<string_clean_data> string_clean_data::reg("strclean");
+	data_register<number_data> number_data::reg("number");
 
 	void string_data::read(std::istream& in)
 	{
@@ -329,6 +331,32 @@ namespace CheekyLayer::rules::datas
 		out << "strclean(";
 		m_data->print(out);
 		out << ")";
+		return out;
+	}
+
+	void number_data::read(std::istream& in)
+	{
+		in >> m_number;
+		skip_ws(in);
+		check_stream(in, ')');
+	}
+
+	data_value number_data::get(selector_type, data_type type, VkHandle, local_context &, rule &)
+	{
+		if(type != data_type::Number)
+			throw std::runtime_error("cannot return data type "+to_string(type));
+		
+		return m_number;
+	}
+
+	bool number_data::supports(selector_type, data_type type)
+	{
+		return type == data_type::Number;
+	}
+
+	std::ostream& number_data::print(std::ostream& out)
+	{
+		out << "number(" << std::setprecision(10) << m_number << ")";
 		return out;
 	}
 }

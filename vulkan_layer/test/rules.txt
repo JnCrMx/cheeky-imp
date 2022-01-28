@@ -27,3 +27,6 @@ receive{} -> overload(target, FileFromData, strclean(convert(raw, string, receiv
 device_create{} -> seq()
 device_destroy{} -> seq()
 draw{with(image{})} -> on(EndRenderPass, seq())
+image{compare(number(123), ==, number(123))} -> seq()
+image{compare(number(123.4567), ==, number(123.4567))} -> seq()
+image{compare(number(123.456789), ==, number(123.56789))} -> seq()
