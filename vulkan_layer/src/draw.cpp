@@ -117,7 +117,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateGraphicsPipelines(
 		CheekyLayer::rules::pipeline_info pinfo = {shaderStages, info};
 		CheekyLayer::rules::additional_info info2 = { .pipeline = pinfo };
 
-		CheekyLayer::rules::local_context ctx = { .logger = log, .info = &info2 };
+		CheekyLayer::rules::local_context ctx = { .logger = log, .info = &info2, .device = device };
 		CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::Pipeline, VK_NULL_HANDLE, ctx);
 
 		for(auto o : ctx.overrides)

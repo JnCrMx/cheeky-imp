@@ -20,3 +20,6 @@
 [submodule "external/bc7enc16"]
 	path = external/bc7enc16
 	url = https://github.com/richgel999/bc7enc16
+[submodule "external/exprtk"]
+	path = external/exprtk
+	url = https://github.com/ArashPartow/exprtk

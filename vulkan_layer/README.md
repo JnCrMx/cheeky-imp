@@ -29,3 +29,4 @@ A configurable and programmable Vulkan layer made for hooking into games, and ex
 | [Vulkan-ValidationLayers](https://github.com/KhronosGroup/Vulkan-ValidationLayers) | We need one source file of it for determining the size of images. | Submodule [``external/``](../external/)``Vulkan-ValidationLayers`` |
 | [image_tools](../image_tools/) | Automatic (de)compression of images. | Part of *cheeky-imp* |
 | [Doxygen](https://www.doxygen.nl) | Generating documentation | Must be installed manually on the system (*optional*). |
+| [exprtk](http://www.partow.net/programming/exprtk/) | ``math`` data | Submodule [``external/``](../external/)``exprtk`` |

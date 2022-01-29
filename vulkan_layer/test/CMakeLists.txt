@@ -27,7 +27,7 @@ target_link_libraries(test_rule_parser PUBLIC cheeky_layer)
 file(STRINGS rules.txt RULES)
 set(COUNTER 1)
 foreach(RULE ${RULES})
-    add_test(rule_parser_${COUNTER} test_rule_parser ${RULE})
+    add_test(rule_parser_${COUNTER} test_rule_parser "${RULE}")
     MATH(EXPR COUNTER "${COUNTER}+1")
 endforeach()
 
