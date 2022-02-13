@@ -126,4 +126,46 @@ namespace CheekyLayer::rules::datas
 
 			static data_register<math_data> reg;
 	};
+
+	enum class raw_type
+	{
+		SInt8, SInt16, SInt32, SInt64,
+		UInt8, UInt16, UInt32, UInt64,
+
+		Float, Double
+	};
+	raw_type raw_type_from_string(std::string string);
+	std::string to_string(raw_type type);
+
+	class unpack_data : public data
+	{
+
+		public:
+			unpack_data(selector_type type) : data(type) {}
+			virtual void read(std::istream&);
+			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual bool supports(selector_type, data_type);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			raw_type m_rawType;
+			size_t m_offset;
+			std::unique_ptr<data> m_src;
+
+			static data_register<unpack_data> reg;
+	};
+
+	class pack_data : public data
+	{
+		public:
+			pack_data(selector_type type) : data(type) {}
+			virtual void read(std::istream&);
+			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual bool supports(selector_type, data_type);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			raw_type m_rawType;
+			std::unique_ptr<data> m_src;
+
+			static data_register<pack_data> reg;
+	};
 }
