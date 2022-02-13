@@ -87,6 +87,8 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 		DeviceHook(AllocateCommandBuffers) \
 		DeviceHook(FreeCommandBuffers) \
 		DeviceHook(EndCommandBuffer) \
+		\
+		DeviceHook(QueuePresentKHR) \
 	}\
 
 #define InstanceDispatch(name) \
@@ -164,6 +166,8 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	DeviceDispatch(ResetCommandBuffer) \
 	DeviceDispatch(BeginCommandBuffer) \
 	DeviceDispatch(EndCommandBuffer) \
+	\
+	DeviceDispatch(QueuePresentKHR) \
 	\
 	DeviceDispatch(CreateFramebuffer) \
 	DeviceDispatch(CreateEvent) \

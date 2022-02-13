@@ -121,6 +121,8 @@ namespace CheekyLayer::rules
 			return selector_type::DeviceCreate;
 		if(s=="device_destroy")
 			return selector_type::DeviceDestroy;
+		if(s=="present")
+			return selector_type::Present;
 		throw std::runtime_error("unknown selector_type \""+s+"\"");
 	}
 
@@ -146,6 +148,8 @@ namespace CheekyLayer::rules
 				return "device_create";
 			case selector_type::DeviceDestroy:
 				return "device_destroy";
+			case selector_type::Present:
+				return "present";
 			default:
 				return "unknown" + std::to_string((int)type);
 		}

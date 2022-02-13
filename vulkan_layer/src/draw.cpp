@@ -682,3 +682,17 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_EndCommandBuffer(
 
 	return quick_dispatch.EndCommandBuffer(commandBuffer);
 }
+
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_QueuePresentKHR(
+    VkQueue                                     queue,
+    const VkPresentInfoKHR*                     pPresentInfo)
+{
+	VkDevice device = queueDevices[queue];
+
+	CheekyLayer::active_logger log = *logger << logger::begin;
+	CheekyLayer::rules::local_context ctx = { .logger = log };
+	CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::Present, (VkHandle) device, ctx);
+	log << logger::end;
+
+	return device_dispatch[GetKey(device)].QueuePresentKHR(queue, pPresentInfo);
+}

@@ -38,6 +38,8 @@ extern std::map<VkDevice, VkQueue> transferQueues;
 extern std::map<VkDevice, VkCommandPool> transferPools;
 extern std::map<VkDevice, VkCommandBuffer> transferCommandBuffers;
 
+extern std::map<VkQueue, VkDevice> queueDevices;
+
 struct VkDeviceInfo {
     VkPhysicalDeviceProperties general;
     VkPhysicalDeviceMemoryProperties memory;
@@ -99,3 +101,4 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDraw(VkCommandBuffer, uint32_t, u
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBeginTransformFeedbackEXT(VkCommandBuffer, uint32_t, uint32_t, const VkBuffer*, const VkDeviceSize*);
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdEndTransformFeedbackEXT(VkCommandBuffer, uint32_t, uint32_t, const VkBuffer*, const VkDeviceSize*);
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_EndCommandBuffer(VkCommandBuffer);
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_QueuePresentKHR(VkQueue, const VkPresentInfoKHR*);

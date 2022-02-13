@@ -26,7 +26,8 @@ namespace CheekyLayer::rules
 		Init,
 		Receive,
 		DeviceCreate,
-		DeviceDestroy
+		DeviceDestroy,
+		Present
 	};
 	selector_type from_string(std::string);
 	std::string to_string(selector_type);
