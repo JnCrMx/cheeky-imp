@@ -3,6 +3,7 @@
 #include "utils.hpp"
 #include "shaders.hpp"
 #include <fstream>
+#include <filesystem>
 #include <iterator>
 #include <sys/types.h>
 #include <vulkan/vulkan_core.h>
@@ -112,9 +113,15 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 
 	if(global_config.map<bool>("dump", CheekyLayer::config::to_bool))
 	{
-		std::ofstream out(global_config["dumpDirectory"]+"/shaders/"+hash_string+".spv", std::ios_base::binary);
-		if(out.good())
-			out.write((char*)pCreateInfo->pCode, (size_t)pCreateInfo->codeSize);
+		{
+			std::string outputPath = global_config["dumpDirectory"]+"/shaders/"+hash_string+".spv";
+			if(!std::filesystem::exists(outputPath))
+			{
+				std::ofstream out(outputPath, std::ios_base::binary);
+				if(out.good())
+					out.write((char*)pCreateInfo->pCode, (size_t)pCreateInfo->codeSize);
+			}
+		}
 
 #ifdef USE_SPIRV
 		try

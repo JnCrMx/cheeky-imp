@@ -40,6 +40,8 @@ std::map<VkDevice, VkCommandPool> transferPools;
 std::map<VkDevice, VkCommandBuffer> transferCommandBuffers;
 std::map<VkDevice, VkDeviceInfo> deviceInfos;
 
+std::map<VkQueue, VkDevice> queueDevices;
+
 void update_has_rules()
 {
 	has_rules[CheekyLayer::rules::selector_type::Buffer] = false;
@@ -261,7 +263,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyInstance(VkInstance instance,
 
 	*logger << logger::begin << "DestroyInstance: " << instance << logger::end;
 
-	for(auto& [name, fd] : CheekyLayer::rules::rule_env.fds)
+	/*for(auto& [name, fd] : CheekyLayer::rules::rule_env.fds)
 	{
 		fd->close();
 	}
@@ -269,7 +271,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyInstance(VkInstance instance,
 
 	for(auto& t : CheekyLayer::rules::rule_env.threads)
 		t.join();
-	CheekyLayer::rules::rule_env.threads.clear();
+	CheekyLayer::rules::rule_env.threads.clear();*/
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,
@@ -334,6 +336,8 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_GetDeviceQueue(
 	*logger << logger::begin << "GetDeviceQueue: " << device << ", " << queueFamilyIndex << ", " << queueIndex << " -> " << *pQueue << logger::end;
 
 	device_dispatch[GetKey(device)].GetDeviceQueue(device, queueFamilyIndex, queueIndex, pQueue);
+
+	queueDevices[*pQueue] = device;
 
 	if(!(deviceInfos[device].queueFamilies[queueFamilyIndex].queueFlags & VK_QUEUE_GRAPHICS_BIT))
 		return;

@@ -4,6 +4,8 @@
 #include "utils.hpp"
 #include <vulkan/vulkan_core.h>
 
+#include <filesystem>
+
 using CheekyLayer::logger;
 using CheekyLayer::rules::VkHandle;
 
@@ -81,9 +83,13 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBuffer(VkCommandBuffer comman
         log << " hash=" << hash;
         if(global_config.map<bool>("dump", CheekyLayer::config::to_bool))
 		{
-            std::ofstream out(global_config["dumpDirectory"]+"/buffers/"+hash_string+".buf", std::ios_base::binary);
-            if(out.good())
-                out.write((char*)data, (size_t)size);
+            std::string outputPath = global_config["dumpDirectory"]+"/buffers/"+hash_string+".buf";
+            if(!std::filesystem::exists(outputPath))
+            {
+                std::ofstream out(outputPath, std::ios_base::binary);
+                if(out.good())
+                    out.write((char*)data, (size_t)size);
+            }
         }
 
         if(global_config.map<bool>("override", CheekyLayer::config::to_bool) && has_override(hash_string))

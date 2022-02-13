@@ -164,9 +164,15 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBufferToImage(
 		log << " hash=" << hash;
 		if(global_config.map<bool>("dump", CheekyLayer::config::to_bool))
 		{
-			std::ofstream out(global_config["dumpDirectory"]+"/images/"+hash_string+".image", std::ios_base::binary);
-			if(out.good())
-				out.write((char*)data, (size_t)size);
+			{
+				std::string outputPath = global_config["dumpDirectory"]+"/images/"+hash_string+".image";
+				if(!std::filesystem::exists(outputPath))
+				{
+					std::ofstream out(outputPath, std::ios_base::binary);
+					if(out.good())
+						out.write((char*)data, (size_t)size);
+				}
+			}
 
 #if defined(USE_IMAGE_TOOLS) && defined(EXPORT_PNG)
 			if(image_tools::is_decompression_supported(imgInfo.format))
