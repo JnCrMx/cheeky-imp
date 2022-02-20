@@ -1,0 +1,61 @@
+#!/bin/bash
+
+if [ ! -f vhmesh.txt ]; then
+	echo "No vhmesh.txt file!"
+	exit 2
+fi
+
+if [ $# -ne 1 ]; then
+    echo "Syntax: vhmeshinstall <file>"
+    exit 2
+fi
+
+file=$1
+if [ ! -f "$file" ]; then
+	echo "File $file not found!"
+	exit 2
+fi
+
+echo "Exporting parts from Blender file $file ..."
+blender -b $file --python $VH_LIB/blender_export_mesh2.py >/dev/null 2>/dev/null
+
+name=${file%.*}
+
+while read line; do
+	index=$(echo $line | cut -f6 -d" ")
+	rm $VH_LAYER_OVERRIDE/buffers/$index.buf
+
+	additional=( $(echo $line | cut -f7- -d" ") )
+	for i in ${!additional[*]}
+	do
+		if ! ((i % 2)); then
+			rm $VH_LAYER_OVERRIDE/buffers/${additional[$i]}.buf
+		fi
+	done
+done <vhmesh.txt
+
+while read line; do	
+	part=$(echo $line | cut -f1 -d" ")
+	descriptor=$(echo $line | cut -f2 -d" ")
+	
+	indexCount=$(echo $line | cut -f3 -d" ")
+	firstIndex=$(echo $line | cut -f4 -d" ")
+	vertexOffset=$(echo $line | cut -f5 -d" ")
+	
+	index=$(echo $line | cut -f6 -d" ")
+	
+	additional=( $(echo $line | cut -f7- -d" ") )
+	additional2=[]
+	for i in ${!additional[*]}
+	do
+		if ! ((i % 2)); then
+			additional2[$(($i / 2 * 3 + 0))]=$VH_LAYER_DUMP/buffers/${additional[$i]}.buf
+			additional2[$(($i / 2 * 3 + 1))]=$VH_LAYER_OVERRIDE/buffers/${additional[$i]}.buf
+		else
+			additional2[$(($i / 2 * 3 + 2))]=${additional[$i]}
+		fi
+	done
+	
+	echo "Packing mesh for part $part from ${name}_$part.obj ..."
+	$VH_BIN/mesh_buffer_tools/patch $VH_ROOT/descriptors/$descriptor.txt ${name}_$part.obj $indexCount $firstIndex $vertexOffset $VH_LAYER_DUMP/buffers/$index.buf $VH_LAYER_OVERRIDE/buffers/$index.buf ${additional2[*]}
+done <vhmesh.txt

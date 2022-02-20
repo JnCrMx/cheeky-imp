@@ -1,0 +1,53 @@
+#!/bin/bash
+
+if [ ! -f vhimage.txt ]; then
+	echo "No vhimage.txt file!"
+	exit 2
+fi
+
+if [ $# -lt 1 ]; then
+    echo "Syntax: vhimageinstall <image> [mip count]"
+    exit 2
+fi
+
+file=$1
+mipCount=$2
+if [ ! -f "$file" ]; then
+	echo "File $file not found!"
+	exit 2
+fi
+
+if [ -z "${mipCount}" ]; then
+	mipCount=1000
+fi
+
+
+if [ $mipCount -lt 0 ]; then
+	((mipCount=-$mipCount))
+	reverseMips=1
+	i=$(wc -l vhimage.txt | cut -f1 -d" ")
+else
+	reverseMips=0
+	i=1
+fi
+
+while read line; do
+	hash=$(echo $line | cut -f1 -d" ")
+	format=$(echo $line | cut -f2 -d" ")
+	width=$(echo $line | cut -f3 -d" ")
+	height=$(echo $line | cut -f4 -d" ")
+
+	if [ $i -gt $mipCount ]; then
+		echo "Removing image $hash ($format at ${width}x${height}) from overrides ..."
+		rm $VH_LAYER_OVERRIDE/images/$hash.image 2>/dev/null
+	else
+		echo "Compressing image $hash ($format at ${width}x${height}) from $file ..."
+		$VH_BIN/image_tools/pack $format $file $VH_LAYER_OVERRIDE/images/$hash.image $width $height
+	fi
+	
+	if [ $reverseMips == 1 ]; then
+		((--i))
+	else
+		((++i))
+	fi
+done <vhimage.txt

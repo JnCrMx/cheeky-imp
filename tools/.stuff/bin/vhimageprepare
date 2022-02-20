@@ -1,0 +1,20 @@
+#!/bin/bash
+
+if [ ! -f vhimage.txt ]; then
+	echo "No vhimage.txt file!"
+	exit 2
+fi
+
+line=$(head -n1 vhimage.txt)
+hash=$(echo $line | cut -f1 -d" ")
+format=$(echo $line | cut -f2 -d" ")
+width=$(echo $line | cut -f3 -d" ")
+height=$(echo $line | cut -f4 -d" ")
+
+echo "Decompressing image $hash ($format at ${width}x${height}) to base.png ..."
+$VH_BIN/image_tools/unpack $format $VH_LAYER_DUMP/images/$hash.image base.png $width $height
+
+cat >.directory <<EOF
+[Desktop Entry]
+Icon=${PWD}/base.png
+EOF

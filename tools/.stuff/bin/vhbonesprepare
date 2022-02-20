@@ -1,0 +1,17 @@
+#!/bin/bash
+
+if [ ! -f vhmesh.txt ]; then
+	echo "No vhmesh.txt file!"
+	exit 2
+fi
+if [ ! -f vhpose.txt ]; then
+	echo "No vhpose.txt file!"
+	exit 2
+fi
+
+args=$(cat vhmesh.txt | cut -d" " -f1 | sed -E 's/(.*)/\1\nbase_\1.obj\nbase_\1.obj.json\nbones\/\1.json/')
+pose=$(cat vhpose.txt | head -n1 | cut -d" " -f1)
+
+mkdir -p bones
+
+$VH_BIN/bone_analyzer poses/$pose.json ${args[*]}

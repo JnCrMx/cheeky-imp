@@ -1,0 +1,16 @@
+#!/bin/bash
+
+if [ ! -f vhimage.txt ]; then
+	echo "No vhimage.txt file!"
+	exit 2
+fi
+
+while read line; do
+	hash=$(echo $line | cut -f1 -d" ")
+	format=$(echo $line | cut -f2 -d" ")
+	width=$(echo $line | cut -f3 -d" ")
+	height=$(echo $line | cut -f3 -d" ")
+
+	echo "Removing image $hash ($format at ${width}x${height}) from overrides ..."
+	rm $VH_LAYER_OVERRIDE/images/$hash.image 2>/dev/null
+done <vhimage.txt

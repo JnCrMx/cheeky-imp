@@ -1,0 +1,10 @@
+#!/bin/bash
+
+if [ -f vhimage.txt ]; then
+	vhimageuninstall $@
+elif [ -f vhmesh.txt ]; then
+	vhmeshuninstall $@
+else
+	echo "No information file found!"
+	exit 2
+fi

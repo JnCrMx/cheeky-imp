@@ -1,0 +1,10 @@
+#!/bin/bash
+
+if [ -f vhimage.txt ]; then
+	vhimagetest $@
+elif [ -f vhmesh.txt ]; then
+	vhmeshtest $@
+else
+	echo "No information file found!"
+	exit 2
+fi

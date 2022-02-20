@@ -1,0 +1,49 @@
+#!/bin/bash
+
+if [ ! -f vhimage.txt ]; then
+	echo "No vhimage.txt file!"
+	exit 2
+fi
+
+if [ $# -eq 1 ]; then
+	mode=mod
+
+	file=$1
+	if [ ! -f "$file" ]; then
+		echo "File $file not found!"
+		exit 2
+	fi
+	base=${file%.*}
+else
+	mode=base
+fi
+
+tmp=$(mktemp)
+
+test_dir=test
+mkdir -p $test_dir
+
+while read line; do
+	hash=$(echo $line | cut -f1 -d" ")
+	format=$(echo $line | cut -f2 -d" ")
+	width=$(echo $line | cut -f3 -d" ")
+	height=$(echo $line | cut -f4 -d" ")
+
+	if [ $mode == "mod" ]; then
+		out=$test_dir/$base.$width.$height.png
+
+		echo "Compressing and decompressing image ($format at ${width}x${height}) from $file to $out ..."
+		#java -jar $VH_LIB/bc.jar c $format $file $tmp $width $height
+		$VH_BIN/image_tools/pack $format $file $tmp $width $height
+		
+		#java -jar $VH_LIB/bc.jar d $format $tmp $out $width $height
+		$VH_BIN/image_tools/unpack $format $tmp $out $width $height
+	else
+		out_base=$test_dir/base.$width.$height.png
+
+		echo "Decompressing image $hash ($format at ${width}x${height}) to $out_base ..."
+		#java -jar $VH_LIB/bc.jar d $format $VH_LAYER_DUMP/images/$hash.image $out_base $width $height
+		$VH_BIN/image_tools/unpack $format $VH_LAYER_DUMP/images/$hash.image $out_base $width $height
+	fi
+done <vhimage.txt
+rm "$tmp"

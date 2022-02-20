@@ -1,0 +1,9 @@
+#!/bin/bash
+
+if [ "$1" == "export" ]; then
+	export VK_LAYER_PATH="$VH_LIB/layer"
+	export VK_INSTANCE_LAYERS=VK_LAYER_CHEEKYIMP_CheekyLayer
+	export CHEEKY_LAYER_CONFIG="$VH_LAYER_ROOT/config.txt"
+fi
+
+echo "VK_LAYER_PATH=\"$VH_LIB/layer\" VK_INSTANCE_LAYERS=VK_LAYER_CHEEKYIMP_CheekyLayer CHEEKY_LAYER_CONFIG=\"$VH_LAYER_ROOT/config.txt\""

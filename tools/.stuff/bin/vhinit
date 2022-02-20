@@ -1,0 +1,33 @@
+#!/bin/bash
+
+askdump() {
+	read -p "Do you want to dump $1? " -r
+	if [[ $REPLY =~ ^[Yy]$ ]]; then
+		if [ ! -d "$VH_LAYER_DUMP/$1" ]; then
+			if [ -d "$VH_LAYER_DUMP/$1_" ]; then
+				mv "$VH_LAYER_DUMP/$1_" "$VH_LAYER_DUMP/$1"
+			else
+				mkdir -p "$VH_LAYER_DUMP/$1"
+			fi
+		fi
+		echo "We will dump $1!"
+	else
+		if [ -d "$VH_LAYER_DUMP/$1" ]; then
+			mv "$VH_LAYER_DUMP/$1" "$VH_LAYER_DUMP/$1_"
+		fi
+		echo "We will not dump $1!"
+	fi
+}
+
+mkdir -p "$VH_LAYER_DUMP"
+mkdir -p "$VH_LAYER_OVERRIDE"
+
+askdump "shaders"
+askdump "buffers"
+askdump "images"
+
+mkdir -p "$VH_LAYER_OVERRIDE/shaders"
+mkdir -p "$VH_LAYER_OVERRIDE/buffers"
+mkdir -p "$VH_LAYER_OVERRIDE/images"
+
+envsubst < "$VH_LAYER_ROOT/config_base.txt" > "$VH_LAYER_ROOT/config.txt"

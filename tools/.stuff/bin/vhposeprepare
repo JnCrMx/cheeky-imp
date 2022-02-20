@@ -1,0 +1,17 @@
+#!/bin/bash
+
+if [ ! -f vhpose.txt ]; then
+	echo "No vhpose.txt file!"
+	exit 2
+fi
+
+
+while read line; do
+	pose=$(echo $line | cut -f1 -d" ")
+	IFS=' ' read -ra parts <<< "$line"
+	parts=(${parts[@]:1})
+	
+	echo "Unpacking pose $pose (${parts[@]}) ..."
+	#java -jar $VH_LIB/mbt.jar pose poses/$pose.bin poses/$pose.json "${parts[@]}"
+	$VH_BIN/mesh_buffer_tools/pose poses/$pose/ poses/$pose.json ${parts[@]}
+done <vhpose.txt
