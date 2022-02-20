@@ -34,7 +34,7 @@ for x in f:
   import_obj(part)
 f.close()
 
-bpy.data.texts.load(os.getenv("VH_LIB")+"/blender_pose.py")
+bpy.data.texts.load(os.getenv("VH_LIB")+"/blender_pose2.py")
 bpy.data.texts.load(os.getenv("VH_LIB")+"/blender_bone_import2.py")
 
 bpy.ops.file.pack_all()
