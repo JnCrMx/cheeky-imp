@@ -17,6 +17,7 @@ namespace CheekyLayer::rules::conditions
 	condition_register<not_condition> not_condition::reg("not");
 	condition_register<or_condition> or_condition::reg("or");
 	condition_register<compare_condition> compare_condition::reg("compare");
+	condition_register<custom_condition> custom_condition::reg("custom");
 
 	bool hash_condition::test(selector_type stype, VkHandle handle, local_context&)
 	{
@@ -269,6 +270,22 @@ namespace CheekyLayer::rules::conditions
 		out << ", " << op_to_string(m_op) << ", ";
 		m_right->print(out);
 		out << ")";
+		return out;
+	}
+
+	bool custom_condition::test(selector_type, VkHandle, local_context& ctx)
+	{
+		return ctx.customTag == m_tag;
+	}
+
+	void custom_condition::read(std::istream& in)
+	{
+		std::getline(in, m_tag, ')');
+	}
+
+	std::ostream& custom_condition::print(std::ostream& out)
+	{
+		out << "custom(" << m_tag << ")";
 		return out;
 	}
 }

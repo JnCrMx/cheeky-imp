@@ -45,6 +45,12 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateImage(
 	VkImage*                                    pImage)
 {
 	VkResult ret = device_dispatch[GetKey(device)].CreateImage(device, pCreateInfo, pAllocator, pImage);
+	if(ret != VK_SUCCESS)
+	{
+		*logger << logger::begin << logger::error << "CreateImage: " << pCreateInfo->extent.width << "x" << pCreateInfo->extent.height
+				<< " @ " << pCreateInfo->mipLevels << " samples=" << pCreateInfo->samples << " pImage=" << pImage << " FAILED!" << logger::end;
+		return ret;
+	}
 	images[*pImage] = *pCreateInfo;
 
 	VkMemoryRequirements memRequirements;

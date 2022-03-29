@@ -17,6 +17,7 @@
 #include <ShaderLang.h>
 #include <ResourceLimits.h>
 #include <GlslangToSpv.h>
+std::map<VkShaderModule, ReflectionInfo> shaderReflections;
 #endif
 
 #include <streambuf>
@@ -49,6 +50,7 @@ struct ShaderCacheEntry
 {
 	uint32_t* pointer;
 	size_t size;
+	ReflectionInfo reflectionInfo;
 };
 std::map<std::string, ShaderCacheEntry> shaderCache;
 
@@ -63,7 +65,9 @@ EShLanguage string_to_stage(std::string string)
 	throw std::runtime_error("unknown stage: "+string);
 }
 
-std::tuple<bool, std::string> compileShader(EShLanguage stage, std::string glslCode, std::vector<unsigned int>& shaderCode)
+#include <iostream>
+
+std::tuple<bool, std::string> compileShader(EShLanguage stage, std::string glslCode, std::vector<unsigned int>& shaderCode, ReflectionInfo& reflectionInfo)
 {
 	const char * shaderStrings[1];
 	shaderStrings[0] = glslCode.data();
@@ -89,6 +93,34 @@ std::tuple<bool, std::string> compileShader(EShLanguage stage, std::string glslC
 	{
 		return {false, std::string(program.getInfoLog())};
 	}
+
+	program.buildReflection(EShReflectionIntermediateIO | EShReflectionSeparateBuffers | 
+		EShReflectionAllBlockVariables | EShReflectionUnwrapIOBlocks | EShReflectionAllIOVariables);
+
+	reflectionInfo.bufferVariableReflection.resize(program.getNumBufferVariables());
+	for(int i=0; i<reflectionInfo.bufferVariableReflection.size(); i++)
+	{
+		reflectionInfo.bufferVariableReflection[i] = {program.getBufferVariable(i)};
+	}
+
+	reflectionInfo.bufferBlockReflection.resize(program.getNumBufferBlocks());
+	for(int i=0; i<reflectionInfo.bufferBlockReflection.size(); i++)
+	{
+		reflectionInfo.bufferBlockReflection[i] = {program.getBufferBlock(i)};
+	}
+
+	reflectionInfo.uniformVariableReflection.resize(program.getNumUniformVariables());
+	for(int i=0; i<reflectionInfo.uniformVariableReflection.size(); i++)
+	{
+		reflectionInfo.uniformVariableReflection[i] = {program.getUniform(i), program.getUniformTType(i)};
+	}
+
+	reflectionInfo.uniformBlockReflection.resize(program.getNumUniformBlocks());
+	for(int i=0; i<reflectionInfo.uniformBlockReflection.size(); i++)
+	{
+		reflectionInfo.uniformBlockReflection[i] = {program.getUniformBlock(i), program.getUniformBlockTType(i)};
+	}
+
 	glslang::GlslangToSpv(*program.getIntermediate(stage), shaderCode);
 	glslang::FinalizeProcess();
 
@@ -103,6 +135,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 
 #ifdef USE_GLSLANG
 	std::map<std::string, ShaderCacheEntry>::iterator it;
+	std::optional<ReflectionInfo> reflectionInfo;
 #endif
 
 	char hash[65];
@@ -188,6 +221,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 		{
 			pCreateInfo->pCode = it->second.pointer;
 			pCreateInfo->codeSize = it->second.size;
+			reflectionInfo = it->second.reflectionInfo;
 			log << " found cached shader override! " << "size=" << it->second.size;
 		}
 		else
@@ -214,7 +248,8 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 			if(!code.empty())
 			{
 				std::vector<uint32_t> spv;
-				auto [result, message] = compileShader(stage, code, spv);
+				ReflectionInfo info;
+				auto [result, message] = compileShader(stage, code, spv, info);
 
 				if(result)
 				{
@@ -227,7 +262,8 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 					pCreateInfo->pCode = buffer;
 					pCreateInfo->codeSize = length;
 
-					shaderCache[hash_string] = {buffer, length};
+					shaderCache[hash_string] = {buffer, length, info};
+					reflectionInfo = info;
 				}
 				else
 				{
@@ -244,6 +280,12 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 	{
 		VkHandle handle = (VkHandle)*pShaderModule;
 		VkHandle customHandle = customShaderHandles[handle] = (VkHandle) currentCustonShaderHandle++;
+
+		if(reflectionInfo.has_value())
+		{
+			shaderReflections[*pShaderModule] = reflectionInfo.value();
+			log << " stored shader reflections for " << *pShaderModule << " :D";
+		}
 
 		/*auto p = CheekyLayer::rule_env.hashes.find(handle);
 		if(p != CheekyLayer::rule_env.hashes.end() && hash_string != p->second)

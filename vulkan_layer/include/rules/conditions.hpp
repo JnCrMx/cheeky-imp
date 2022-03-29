@@ -106,4 +106,20 @@ namespace CheekyLayer::rules::conditions
 
     		static condition_register<compare_condition> reg;
 	};
+
+	class custom_condition : public selector_condition
+	{
+		public:
+			custom_condition(selector_type type) : selector_condition(type) {
+				if(type != selector_type::Custom)
+					throw std::runtime_error("the \"custom\" condition is only supported for custom selectors, but not for "+to_string(type)+" selectors");
+			}
+			virtual void read(std::istream&);
+			virtual bool test(selector_type, VkHandle, local_context&);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			std::string m_tag;
+
+    		static condition_register<custom_condition> reg;
+	};
 }

@@ -65,6 +65,8 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	DeviceHook(CmdCopyBuffer) \
 	\
 	DeviceHook(CreateFramebuffer) \
+	DeviceHook(CreateSwapchainKHR) \
+	DeviceHook(QueuePresentKHR) \
 	\
 	if(hook_draw_calls) \
 	{\
@@ -87,8 +89,6 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 		DeviceHook(AllocateCommandBuffers) \
 		DeviceHook(FreeCommandBuffers) \
 		DeviceHook(EndCommandBuffer) \
-		\
-		DeviceHook(QueuePresentKHR) \
 	}\
 
 #define InstanceDispatch(name) \
@@ -103,7 +103,12 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	InstanceDispatch(GetPhysicalDeviceMemoryProperties) \
 	InstanceDispatch(GetPhysicalDeviceProperties) \
 	InstanceDispatch(GetPhysicalDeviceQueueFamilyProperties) \
-	InstanceDispatch(EnumeratePhysicalDevices)
+	InstanceDispatch(EnumeratePhysicalDevices) \
+	\
+	InstanceDispatch(DestroySurfaceKHR) \
+	InstanceDispatch(GetPhysicalDeviceSurfaceCapabilitiesKHR) \
+	InstanceDispatch(GetPhysicalDeviceSurfaceFormatsKHR) \
+	InstanceDispatch(GetPhysicalDeviceSurfacePresentModesKHR)
 
 #define InitDeviceDispatch() \
 	DeviceDispatch(GetDeviceProcAddr) \
@@ -156,6 +161,7 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	DeviceDispatch(CmdEndRenderPass) \
 	DeviceDispatch(CmdBeginTransformFeedbackEXT) \
 	DeviceDispatch(CmdEndTransformFeedbackEXT) \
+	DeviceDispatch(CmdPushConstants) \
 	\
 	DeviceDispatch(CreateDescriptorUpdateTemplate) \
 	DeviceDispatch(UpdateDescriptorSetWithTemplate) \
@@ -167,11 +173,18 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	DeviceDispatch(BeginCommandBuffer) \
 	DeviceDispatch(EndCommandBuffer) \
 	\
+	DeviceDispatch(CreateSwapchainKHR) \
 	DeviceDispatch(QueuePresentKHR) \
+	DeviceDispatch(GetSwapchainImagesKHR) \
+	DeviceDispatch(CreateSemaphore) \
 	\
 	DeviceDispatch(CreateFramebuffer) \
 	DeviceDispatch(CreateEvent) \
 	DeviceDispatch(DestroyEvent) \
 	DeviceDispatch(CmdSetEvent) \
 	DeviceDispatch(GetEventStatus) \
-	DeviceDispatch(CmdCopyImageToBuffer)
+	DeviceDispatch(CmdCopyImageToBuffer) \
+	\
+	DeviceDispatch(CreateFence) \
+	DeviceDispatch(ResetFences) \
+	DeviceDispatch(WaitForFences)

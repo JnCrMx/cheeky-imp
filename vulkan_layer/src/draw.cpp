@@ -105,6 +105,8 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateGraphicsPipelines(
     VkPipeline*                                 pPipelines)
 {
 	CheekyLayer::active_logger log = *logger << logger::begin;
+
+	std::vector<decltype(std::declval<CheekyLayer::rules::local_context>().creationConsumers)> consumers;
 	for(int i=0; i<createInfoCount; i++)
 	{
 		VkGraphicsPipelineCreateInfo* info = const_cast<VkGraphicsPipelineCreateInfo*>(pCreateInfos+i);
@@ -131,6 +133,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateGraphicsPipelines(
 				log << logger::error << "Failed to process override \"" << o << "\": " << e.what();
 			}
 		}
+		consumers.push_back(ctx.creationConsumers);
 	}
 	log << logger::end;
 
@@ -165,6 +168,9 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateGraphicsPipelines(
 				info.pVertexInputState->pVertexAttributeDescriptions + info.pVertexInputState->vertexAttributeDescriptionCount);
 
 			pipelineStates[pPipelines[i]] = std::move(state);
+
+			for(auto& consumer : consumers[i])
+				consumer(pPipelines[i]);
 		}
 	}
 
@@ -683,16 +689,43 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_EndCommandBuffer(
 	return quick_dispatch.EndCommandBuffer(commandBuffer);
 }
 
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateSwapchainKHR(
+    VkDevice                                    device,
+    const VkSwapchainCreateInfoKHR*             pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkSwapchainKHR*                             pSwapchain)
+{
+	VkResult result = device_dispatch[GetKey(device)].CreateSwapchainKHR(device, pCreateInfo, pAllocator, pSwapchain);
+	if(result != VK_SUCCESS)
+		return result;
+
+	CheekyLayer::rules::swapchain_info info = {pCreateInfo};
+	CheekyLayer::rules::additional_info info2 = {.swapchain = info};
+
+	CheekyLayer::active_logger log = *logger << logger::begin;
+	CheekyLayer::rules::local_context ctx = { .logger = log, .info = &info2, .device = device};
+
+	CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::SwapchainCreate, (VkHandle) (*pSwapchain), ctx);
+	log << logger::end;
+
+	return VK_SUCCESS;
+}
+
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_QueuePresentKHR(
     VkQueue                                     queue,
     const VkPresentInfoKHR*                     pPresentInfo)
 {
 	VkDevice device = queueDevices[queue];
 
+	CheekyLayer::rules::present_info info = {pPresentInfo};
+	CheekyLayer::rules::additional_info info2 = {.present = info};
+
 	CheekyLayer::active_logger log = *logger << logger::begin;
-	CheekyLayer::rules::local_context ctx = { .logger = log };
-	CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::Present, (VkHandle) device, ctx);
+	CheekyLayer::rules::local_context ctx = { .logger = log, .info = &info2, .device = device, .canceled = false };
+	CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::Present, (VkHandle) queue, ctx);
 	log << logger::end;
 
-	return device_dispatch[GetKey(device)].QueuePresentKHR(queue, pPresentInfo);
+	if(!ctx.canceled)
+		return device_dispatch[GetKey(device)].QueuePresentKHR(queue, pPresentInfo);
+	return VK_SUCCESS;
 }

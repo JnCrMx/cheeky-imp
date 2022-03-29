@@ -89,11 +89,23 @@ namespace CheekyLayer::rules
 		size_t size;
 	};
 
+	struct present_info
+	{
+		const VkPresentInfoKHR* info;
+	};
+
+	struct swapchain_info
+	{
+		const VkSwapchainCreateInfoKHR* info;
+	};
+
 	union additional_info
 	{
 		draw_info draw;
 		pipeline_info pipeline;
 		receive_info receive;
+		present_info present;
+		swapchain_info swapchain;
 	};
 
 	struct local_context
@@ -106,5 +118,7 @@ namespace CheekyLayer::rules
 		bool canceled = false;
 		std::vector<std::string> overrides;
 		CommandBufferState* commandBufferState;
+		std::string customTag;
+		std::vector<std::function<void(VkHandle)>> creationConsumers;
 	};
 }

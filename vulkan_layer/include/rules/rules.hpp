@@ -27,9 +27,11 @@ namespace CheekyLayer::rules
 		Receive,
 		DeviceCreate,
 		DeviceDestroy,
-		Present
+		Present,
+		SwapchainCreate,
+		Custom
 	};
-	selector_type from_string(std::string);
+	selector_type from_string(const std::string&);
 	std::string to_string(selector_type);
 
 	class selector_condition
@@ -55,12 +57,12 @@ namespace CheekyLayer::rules
 
 	struct condition_factory
 	{
-    	typedef std::map<std::string, std::unique_ptr<selector_condition>(*)(selector_type stype)> map_type;
+    	using map_type = std::map<std::string, std::unique_ptr<selector_condition>(*)(selector_type stype)>;
 
 		public:
 			static std::unique_ptr<selector_condition> make_unique_condition(std::string const& s, selector_type stype)
 			{
-	        	map_type::iterator it = getMap()->find(s);
+	        	auto it = getMap()->find(s);
     	    	if(it == getMap()->end())
         	    	throw std::runtime_error("unknown condition type '"+s+"' for selector type "+to_string(stype));
 	        	return it->second(stype);
@@ -68,7 +70,7 @@ namespace CheekyLayer::rules
 
 		protected:
     		static map_type * getMap() {
-        		if(!map) { map = new map_type; } 
+        		if(map == nullptr) { map = new map_type; } 
 	        	return map; 
     		}
 
@@ -90,7 +92,7 @@ namespace CheekyLayer::rules
 		public:
 			bool test(selector_type, VkHandle, local_context&);
 			std::ostream& print(std::ostream& out);
-			selector_type get_type() { return m_type; };
+			[[nodiscard]] selector_type get_type() const { return m_type; };
 		private:
 			selector_type m_type;
 			std::vector<std::unique_ptr<selector_condition>> m_conditions;
@@ -122,12 +124,12 @@ namespace CheekyLayer::rules
 
 	struct action_factory
 	{
-    	typedef std::map<std::string, std::unique_ptr<action>(*)(selector_type stype)> map_type;
+    	using map_type = std::map<std::string, std::unique_ptr<action>(*)(selector_type stype)>;
 
 		public:
 			static std::unique_ptr<action> make_unique_action(std::string const& s, selector_type stype)
 			{
-	        	map_type::iterator it = getMap()->find(s);
+	        	auto it = getMap()->find(s);
     	    	if(it == getMap()->end())
         	    	throw std::runtime_error("unknown action type '"+s+"' for selector type "+to_string(stype));
 	        	return it->second(stype);
@@ -135,7 +137,7 @@ namespace CheekyLayer::rules
 
 		protected:
     		static map_type * getMap() {
-        		if(!map) { map = new map_type; } 
+        		if(map == nullptr) { map = new map_type; } 
 	        	return map; 
     		}
 
@@ -158,7 +160,7 @@ namespace CheekyLayer::rules
 		Number
 	};
 	std::string to_string(data_type);
-	data_type data_type_from_string(std::string);
+	data_type data_type_from_string(const std::string&);
 
 	using data_value = std::variant<std::string, std::vector<uint8_t>, VkHandle, double>;
 
@@ -186,12 +188,12 @@ namespace CheekyLayer::rules
 
 	struct data_factory
 	{
-    	typedef std::map<std::string, std::unique_ptr<data>(*)(selector_type stype)> map_type;
+    	using map_type = std::map<std::string, std::unique_ptr<data>(*)(selector_type stype)>;
 
 		public:
 			static std::unique_ptr<data> make_unique_data(std::string const& s, selector_type stype)
 			{
-	        	map_type::iterator it = getMap()->find(s);
+	        	auto it = getMap()->find(s);
     	    	if(it == getMap()->end())
         	    	throw std::runtime_error("unknown data type '"+s+"' for selector type "+to_string(stype));
 	        	return it->second(stype);
@@ -199,7 +201,7 @@ namespace CheekyLayer::rules
 
 		protected:
     		static map_type * getMap() {
-        		if(!map) { map = new map_type; } 
+        		if(map == nullptr) { map = new map_type; } 
 	        	return map; 
     		}
 
@@ -220,10 +222,10 @@ namespace CheekyLayer::rules
 			void execute(selector_type type, VkHandle handle, local_context& ctx);
 			std::ostream& print(std::ostream& out);
 			void disable();
-			selector_type get_type() {
+			[[nodiscard]] selector_type get_type() const {
 				return m_selector->get_type();
 			}
-			bool is_enabled() {
+			[[nodiscard]] bool is_enabled() const {
 				return !m_disabled;
 			}
 		private:

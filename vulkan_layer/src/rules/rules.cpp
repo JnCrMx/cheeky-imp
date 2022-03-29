@@ -10,9 +10,9 @@
 
 namespace CheekyLayer::rules
 {
-	condition_factory::map_type* condition_factory::map = NULL;
-	action_factory::map_type* action_factory::map = NULL;
-	data_factory::map_type* data_factory::map = NULL;
+	condition_factory::map_type* condition_factory::map = nullptr;
+	action_factory::map_type* action_factory::map = nullptr;
+	data_factory::map_type* data_factory::map = nullptr;
 
 	void skip_ws(std::istream& in)
 	{
@@ -22,9 +22,9 @@ namespace CheekyLayer::rules
 
 	void check_stream(std::istream &in, char expected)
 	{
-		char c = in.get();
+		int c = in.get();
 		if(c != expected)
-			throw std::runtime_error("expected '"+std::string(1, expected)+"' but got '"+std::string(1, c)+"' instead");
+			throw std::runtime_error("expected '"+std::string(1, expected)+"' but got '"+std::string(1, static_cast<char>(c))+"' instead");
 	}
 
 	std::unique_ptr<action> read_action(std::istream& in, selector_type type)
@@ -89,7 +89,7 @@ namespace CheekyLayer::rules
 			selector.m_conditions.push_back(read_condition(in, selector.m_type));
 
 			skip_ws(in);
-			char seperator = in.peek();
+			int seperator = in.peek();
 			if(seperator != ',')
 				continue;
 			in.get();
@@ -101,7 +101,7 @@ namespace CheekyLayer::rules
 		return in;
 	}
 
-	selector_type from_string(std::string s)
+	selector_type from_string(const std::string& s)
 	{
 		if(s=="image")
 			return selector_type::Image;
@@ -123,6 +123,10 @@ namespace CheekyLayer::rules
 			return selector_type::DeviceDestroy;
 		if(s=="present")
 			return selector_type::Present;
+		if(s=="swapchain_create")
+			return selector_type::SwapchainCreate;
+		if(s=="custom")
+			return selector_type::Custom;
 		throw std::runtime_error("unknown selector_type \""+s+"\"");
 	}
 
@@ -150,6 +154,10 @@ namespace CheekyLayer::rules
 				return "device_destroy";
 			case selector_type::Present:
 				return "present";
+			case selector_type::SwapchainCreate:
+				return "swapchain_create";
+			case selector_type::Custom:
+				return "custom";
 			default:
 				return "unknown" + std::to_string((int)type);
 		}
@@ -172,7 +180,7 @@ namespace CheekyLayer::rules
 		}
 	}
 
-	data_type data_type_from_string(std::string s)
+	data_type data_type_from_string(const std::string& s)
 	{
 		if(s=="string")
 			return data_type::String;
@@ -209,7 +217,7 @@ namespace CheekyLayer::rules
 	void rule::disable()
 	{
 		m_disabled = true;
-		if(rule_disable_callback)
+		if(rule_disable_callback != nullptr)
 		{
 			rule_disable_callback(this);
 		}
@@ -223,7 +231,7 @@ namespace CheekyLayer::rules
 			{
 				r->execute(type, handle, ctx);
 			}
-			catch(std::runtime_error& ex)
+			catch(std::exception& ex)
 			{
 				ctx.logger << logger::error << "Failed to execute a rule: " << ex.what();
 			}
