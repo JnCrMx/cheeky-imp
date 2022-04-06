@@ -6,13 +6,21 @@ import json
 def import_obj(part):
 	bpy.ops.import_scene.obj(filepath=f"base_{part}.obj")
 	obj = bpy.context.selected_objects[0]
-	
+
 	if(path.exists(f"texture/{part}/base.png")):
 		mat = obj.material_slots[0].material
 		bsdf = mat.node_tree.nodes["Principled BSDF"]
+		color_input = bsdf.inputs['Base Color']
+
+		if(os.getenv('BLENDER_SHADER_TYPE') == 'toon'):
+			mat.node_tree.nodes.remove(bsdf)
+			bsdf = mat.node_tree.nodes.new("ShaderNodeBsdfToon")
+			mat.node_tree.links.new(mat.node_tree.nodes["Material Output"].inputs["Surface"], bsdf.outputs["BSDF"])
+			color_input = bsdf.inputs['Color']
+
 		texImage = mat.node_tree.nodes.new('ShaderNodeTexImage')
 		texImage.image = bpy.data.images.load(f"texture/{part}/base.png")
-		mat.node_tree.links.new(bsdf.inputs['Base Color'], texImage.outputs['Color'])
+		mat.node_tree.links.new(color_input, texImage.outputs['Color'])
 	
 	if(path.exists(f"base_{part}.obj.json")):
 		with open(f"base_{part}.obj.json") as f:
@@ -21,17 +29,18 @@ def import_obj(part):
 				g = obj.vertex_groups.new(name = part+"_"+group)
 				for index, weight in vertices.items():
 					g.add([int(index)], weight, 'REPLACE')
-	
+
 	obj.name = part
 	obj.data.use_auto_smooth = True
 	obj.select_set(False)
 
+bpy.context.scene.render.engine = 'CYCLES'
 bpy.ops.object.delete()
 
 f = open("vhmesh.txt", "r")
 for x in f:
-  part=x.split()[0]
-  import_obj(part)
+	part=x.split()[0]
+	import_obj(part)
 f.close()
 
 bpy.data.texts.load(os.getenv("VH_LIB")+"/blender_pose2.py")
