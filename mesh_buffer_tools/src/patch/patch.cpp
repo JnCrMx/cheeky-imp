@@ -182,6 +182,13 @@ int main(int argc, char *argv[])
 		if(std::find(vertexPositions.begin(), vertexPositions.end(), vertex) == vertexPositions.end())
 			vertexPositions.push_back(vertex);
 	}
+
+	std::erase_if(vertexPositions, [&patchBuffers, vertex_offset](int pos){
+		void* p = patchBuffers[0]->at(pos + vertex_offset);
+		uint8_t* buf = (uint8_t*)p;
+		return buf[0];
+	});
+
 	std::cout << index_count << " index and " << vertexPositions.size() << " vertex positions usable" << std::endl;
 
 	std::vector<unsigned short> rawIndices;
@@ -267,7 +274,9 @@ int main(int argc, char *argv[])
 		{
 			for(auto jt = it->second.begin(); jt != it->second.end(); ++jt)
 			{
-				vertexWeights[std::stoi(jt->first)].push_back({std::stoi(it->first), jt->second});
+				std::string group = it->first;
+				group = group.substr(group.rfind('_')+1);
+				vertexWeights[std::stoi(jt->first)].push_back({std::stoi(group), jt->second});
 			}
 		}
 
@@ -317,7 +326,7 @@ int main(int argc, char *argv[])
 	}
 
 	vertices.resize(std::min(uniqueVertices.size(), vertexPositions.size()));
-	for(int i=0; i<std::min(uniqueVertices.size(), vertexPositions.size()); i++)
+	for(int i=0; i<vertices.size(); i++)
 	{
 		glm::vec3 position 	= uniqueVertices[i].position;
 		glm::vec2 texCoord 	= uniqueVertices[i].texCoord;
@@ -348,8 +357,17 @@ int main(int argc, char *argv[])
 	for(int i=0; i<std::min(indices.size(), static_cast<unsigned long>(index_count)); i++)
 	{
 		obj_vertex v = make_vertex(indices[i], positions, texCoords, normals, vertexWeights);
-		int index = std::distance(uniqueVertices.begin(), std::find(uniqueVertices.begin(), uniqueVertices.end(), v));
-		rawIndices.push_back(index);
+		auto found = std::find(uniqueVertices.begin(), uniqueVertices.begin()+vertices.size(), v);
+		if(found == uniqueVertices.end())
+		{
+			std::cerr << "Something went really wrong, the vertex is not in uniqueVertices!" << std::endl;
+		}
+		long index = std::distance(uniqueVertices.begin(), found);
+		if(index != static_cast<unsigned short>(index))
+		{
+			std::cerr << "Overflow: " << index << " != " << static_cast<unsigned short>(index) << std::endl;
+		}
+		rawIndices.push_back(static_cast<unsigned short>(index));
 	}
 
 	for(int i=0; i<vertices.size(); i++)
