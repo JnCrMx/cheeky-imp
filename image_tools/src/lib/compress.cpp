@@ -20,10 +20,11 @@ namespace image_tools
 		return (r<<11 | g<<5 | b);
 	}
 
-	void writeColorBlock(const std::array<float, 16> in, uint8_t* out)
+	void writeColorBlock(const std::array<float, 16>& in, uint8_t* out)
 	{
-		float max = *std::max_element(in.begin(), in.end());
-		float min = *std::min_element(in.begin(), in.end());
+		auto [minp, maxp] = std::minmax_element(in.begin(), in.end());
+		float min = *minp;
+		float max = *maxp;
 
 		if(max == min)
 		{
@@ -95,12 +96,11 @@ namespace image_tools
 					buf += 8;
 				}
 
-				glm::vec4 max = *std::max_element(colors.begin(), colors.end(), [](glm::vec4 a, glm::vec4 b){
+				auto [minp, maxp] = std::minmax_element(colors.begin(), colors.end(), [](glm::vec4 a, glm::vec4 b){
 					return shortcolor(a) < shortcolor(b);
 				});
-				glm::vec4 min = *std::min_element(colors.begin(), colors.end(), [](glm::vec4 a, glm::vec4 b){
-					return shortcolor(a) < shortcolor(b);
-				});
+				glm::vec4 max = *maxp;
+				glm::vec4 min = *minp;
 
 				if(shortcolor(min) == shortcolor(max))
 				{

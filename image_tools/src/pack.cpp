@@ -17,7 +17,12 @@ using namespace image_tools;
 
 int main(int argc, char* argv[])
 {
-	assert(argc == 6);
+	if(argc != 6)
+	{
+		std::cerr << "Usage: " << argv[0] << " [format] [input-file] [output-file] [width] [height]" << std::endl;
+		return 2;
+	}
+
 	std::string format		= argv[1];
 	std::string inputPath	= argv[2];
 	std::string outputPath	= argv[3];
@@ -46,7 +51,7 @@ int main(int argc, char* argv[])
 	{
 		compressBC5(image, out, width, height);
 	}
-	else if(format=="BC7")
+	else if(format=="BC7" || format=="BC7-noalpha")
 	{
 		compressBC7(image, out, width, height);
 	}

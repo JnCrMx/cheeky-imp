@@ -1,7 +1,7 @@
 #include <bits/stdint-uintn.h>
 #include <fstream>
 #include <string>
-#include <assert.h>
+#include <iostream>
 
 #include "block_compression.hpp"
 #include "image.hpp"
@@ -13,7 +13,12 @@ using namespace image_tools;
 
 int main(int argc, char* argv[])
 {
-	assert(argc == 6);
+	if(argc != 6)
+	{
+		std::cerr << "Usage: " << argv[0] << " [format] [input-file] [output-file] [width] [height]" << std::endl;
+		return 2;
+	}
+
 	std::string format		= argv[1];
 	std::string inputPath	= argv[2];
 	std::string outputPath	= argv[3];
@@ -55,6 +60,10 @@ int main(int argc, char* argv[])
 		decompressBC5(data.data(), image, width, height);
 	}
 	else if(format=="BC7")
+	{
+		decompressBC7(data.data(), image, width, height, true);
+	}
+	else if(format=="BC7-noalpha")
 	{
 		decompressBC7(data.data(), image, width, height, false);
 	}
