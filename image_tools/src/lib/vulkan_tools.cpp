@@ -25,6 +25,7 @@ namespace image_tools
 			case VK_FORMAT_BC5_UNORM_BLOCK:
 			case VK_FORMAT_BC5_SNORM_BLOCK:
 				return true;
+			case VK_FORMAT_BC7_UNORM_BLOCK:
 			case VK_FORMAT_BC7_SRGB_BLOCK:
 				return true;
 			default:
@@ -57,6 +58,7 @@ namespace image_tools
 			case VK_FORMAT_BC5_UNORM_BLOCK:
 			case VK_FORMAT_BC5_SNORM_BLOCK:
 				return true;
+			case VK_FORMAT_BC7_UNORM_BLOCK:
 			case VK_FORMAT_BC7_SRGB_BLOCK:
 				return true;
 			default:
@@ -89,6 +91,7 @@ namespace image_tools
 			case VK_FORMAT_BC5_SNORM_BLOCK:
 				compressBC5(in, out, w, h);
 				break;
+			case VK_FORMAT_BC7_UNORM_BLOCK:
 			case VK_FORMAT_BC7_SRGB_BLOCK:
 				compressBC7(in, out, w, h);
 				break;
@@ -126,8 +129,9 @@ namespace image_tools
 			case VK_FORMAT_BC5_SNORM_BLOCK:
 				decompressBC5(in, out, w, h);
 				break;
+			case VK_FORMAT_BC7_UNORM_BLOCK:
 			case VK_FORMAT_BC7_SRGB_BLOCK:
-				decompressBC7(in, out, w, h, false);
+				decompressBC7(in, out, w, h, true);
 				break;
 			default:
 				throw std::runtime_error("format not supported: "+vk::to_string(vk::Format(format)));
