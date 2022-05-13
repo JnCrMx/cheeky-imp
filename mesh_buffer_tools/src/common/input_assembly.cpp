@@ -53,8 +53,32 @@ namespace mbt
 			val.vec2 = glm::unpackHalf2x16(*(uint*)p);
 			return val;
 		}
+		if(format=="R16G16B16A16_FLOAT")
+		{
+			val.vec4 = glm::unpackHalf4x16(*(glm::uint64*)p);
+			return val;
+		}
+		if(format=="R32G32_FLOAT")
+		{
+			val.vec2 = *(glm::vec2*)p;
+			return val;
+		}
+		if(format=="R32G32B32A32_FLOAT")
+		{
+			val.vec4 = *(glm::vec4*)p;
+			return val;
+		}
+		if(format=="R32G32B32A32_SINT")
+		{
+			glm::ivec4 v = *(glm::ivec4*)p;
+			val.u8vec4.x = v.x;
+			val.u8vec4.y = v.y;
+			val.u8vec4.z = v.z;
+			val.u8vec4.w = v.w;
+			return val;
+		}
 
-		throw std::runtime_error("unknown format");
+		throw std::runtime_error("unknown format: "+format);
 	}
 
 	void input_attribute::write(attribute_value val, void *pointer)
@@ -86,7 +110,27 @@ namespace mbt
 			*(uint*)p = glm::packHalf2x16(val.vec2);
 			return;
 		}
+		if(format=="R16G16B16A16_FLOAT")
+		{
+			*(glm::uint64*)p = glm::packHalf4x16(val.vec4);
+			return;
+		}
+		if(format=="R32G32_FLOAT")
+		{
+			*(glm::vec2*)p = val.vec2;
+			return;
+		}
+		if(format=="R32G32B32A32_FLOAT")
+		{
+			*(glm::vec4*)p = val.vec4;
+			return;
+		}
+		if(format=="R32G32B32A32_SINT")
+		{
+			*(glm::ivec4*)p = {val.u8vec4.x, val.u8vec4.y, val.u8vec4.z, val.u8vec4.w};
+			return;
+		}
 
-		throw std::runtime_error("unknown format");
+		throw std::runtime_error("unknown format: "+format);
 	}
 }
