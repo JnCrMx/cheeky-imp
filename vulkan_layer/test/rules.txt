@@ -36,3 +36,5 @@ image{compare(math(3sin(x)*y\\, x => number(3), y => number(3)), ==, number(3))}
 image{compare(math(x/y\\, x => number(3), y => number(3)), ==, number(3))} -> seq()
 image{compare(unpack(Float, 0, string(1234)), ==, number(3))} -> seq()
 image{compare(unpack(Float, 0, pack(Float, number(3))), ==, number(3))} -> seq()
+image{} -> logx(reduce(unpack(Array, Float, 3, 0, string(1234)), string, string(), string()))
+image{} -> logx(reduce(map(unpack(Array, Float, 3, 0, string(1234)), string, convert(number, string, current_element())), string, string(), concat(current_reduction(), current_element(), string( ))))
