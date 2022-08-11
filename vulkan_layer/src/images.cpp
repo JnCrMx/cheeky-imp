@@ -60,6 +60,21 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateImage(
 			<< " @ " << pCreateInfo->mipLevels << " samples=" << pCreateInfo->samples
 			<< " memory=" << memRequirements.size << " image=" << *pImage << logger::end;
 
+	if(device_dispatch[GetKey(device)].SetDebugUtilsObjectNameEXT)
+	{
+		std::ostringstream names{};
+		names << "Image " << std::hex << (VkHandle)(*pImage);
+		std::string name = names.str();
+		*logger << logger::begin << name << logger::end;
+
+		VkDebugUtilsObjectNameInfoEXT info{};
+		info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+		info.objectType = VK_OBJECT_TYPE_IMAGE;
+		info.objectHandle = (uint64_t) *pImage;
+		info.pObjectName = name.c_str();
+		device_dispatch[GetKey(device)].SetDebugUtilsObjectNameEXT(device, &info);
+	}
+
 	return ret;
 }
 
@@ -165,9 +180,22 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBufferToImage(
 			CheekyLayer::rules::rule_env.hashes[(VkHandle)dstImage] = hash_string;
 			CheekyLayer::rules::local_context ctx = { .logger = log, .device = device };
 			CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::Image, (VkHandle)dstImage, ctx);
+
+			if(device_dispatch[GetKey(device)].SetDebugUtilsObjectNameEXT)
+			{
+				std::string name = "Image "+hash_string;
+
+				VkDebugUtilsObjectNameInfoEXT info{};
+				info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+				info.objectType = VK_OBJECT_TYPE_IMAGE;
+				info.objectHandle = (uint64_t) dstImage;
+				info.pObjectName = name.c_str();
+				device_dispatch[GetKey(device)].SetDebugUtilsObjectNameEXT(device, &info);
+			}
 		}
 
 		log << " hash=" << hash;
+
 		if(global_config.map<bool>("dump", CheekyLayer::config::to_bool))
 		{
 			{

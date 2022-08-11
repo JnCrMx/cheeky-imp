@@ -21,6 +21,21 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateBuffer(VkDevice device, co
     buffers[*pBuffer] = *pCreateInfo;
     bufferDevices[*pBuffer] = device;
 
+    if(device_dispatch[GetKey(device)].SetDebugUtilsObjectNameEXT)
+    {
+		std::ostringstream names{};
+        names << "Buffer " << std::hex << (VkHandle)(*pBuffer);
+        std::string name = names.str();
+		*logger << logger::begin << name << logger::end;
+
+        VkDebugUtilsObjectNameInfoEXT info{};
+        info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+        info.objectType = VK_OBJECT_TYPE_BUFFER;
+        info.objectHandle = (uint64_t) *pBuffer;
+        info.pObjectName = name.c_str();
+        device_dispatch[GetKey(device)].SetDebugUtilsObjectNameEXT(device, &info);
+    }
+
     return ret;
 }
 
@@ -95,6 +110,19 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBuffer(VkCommandBuffer comman
 		CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::Buffer, (VkHandle)dstBuffer, ctx);
 
         log << " hash=" << hash;
+
+        if(device_dispatch[GetKey(device)].SetDebugUtilsObjectNameEXT)
+        {
+			std::string name = "Buffer "+hash_string;
+
+            VkDebugUtilsObjectNameInfoEXT info{};
+            info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+            info.objectType = VK_OBJECT_TYPE_BUFFER;
+            info.objectHandle = (uint64_t) dstBuffer;
+            info.pObjectName = name.c_str();
+            device_dispatch[GetKey(device)].SetDebugUtilsObjectNameEXT(device, &info);
+        }
+
         if(global_config.map<bool>("dump", CheekyLayer::config::to_bool))
 		{
             std::string outputPath = global_config["dumpDirectory"]+"/buffers/"+hash_string+".buf";
