@@ -28,6 +28,9 @@ namespace CheekyLayer::rules
 	enum selector_type : int;
 	struct local_context;
 
+	struct data_list;
+	using data_value = std::variant<std::string, std::vector<uint8_t>, VkHandle, double, data_list>;
+
 	struct stored_handle
 	{
 		VkHandle handle;
@@ -62,6 +65,8 @@ namespace CheekyLayer::rules
 			std::map<std::string, stored_handle> handles;
 
 			std::vector<std::thread> threads;
+
+			std::map<std::string, data_value> global_variables;
 	};
 
 	inline global_context rule_env;
@@ -120,5 +125,11 @@ namespace CheekyLayer::rules
 		CommandBufferState* commandBufferState;
 		std::string customTag;
 		std::vector<std::function<void(VkHandle)>> creationConsumers;
+
+		int currentIndex;
+		data_value* currentElement;
+		data_value* currentReduction;
+
+		std::map<std::string, data_value> local_variables;
 	};
 }

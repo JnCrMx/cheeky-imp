@@ -344,4 +344,55 @@ namespace CheekyLayer::rules::actions
 
 			static action_register<every_action> reg;
 	};
+	
+	class buffer_copy_action : public action
+	{
+		public:
+			buffer_copy_action(selector_type type) : action(type) {}
+			virtual void read(std::istream&);
+			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			std::unique_ptr<data> m_src;
+			std::unique_ptr<data> m_dst;
+
+			VkDeviceSize m_srcOffset;
+			VkDeviceSize m_dstOffset;
+
+			VkDeviceSize m_size;
+
+			static action_register<buffer_copy_action> reg;
+	};
+
+	class set_global_action : public action
+	{
+		public:
+			set_global_action(selector_type type) : action(type) {}
+			virtual void read(std::istream&);
+			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			data_type m_dtype;
+			std::string m_name;
+			std::unique_ptr<data> m_data;
+
+			static action_register<set_global_action> reg;
+			static action_register<set_global_action> reg2;
+	};
+
+	class set_local_action : public action
+	{
+		public:
+			set_local_action(selector_type type) : action(type) {}
+			virtual void read(std::istream&);
+			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			data_type m_dtype;
+			std::string m_name;
+			std::unique_ptr<data> m_data;
+
+			static action_register<set_local_action> reg;
+			static action_register<set_local_action> reg2;
+	};
 }

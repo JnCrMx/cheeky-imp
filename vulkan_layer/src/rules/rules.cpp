@@ -175,6 +175,8 @@ namespace CheekyLayer::rules
 				return "handle";
 			case data_type::Number:
 				return "number";
+			case data_type::List:
+				return "list";
 			default:
 				return "unknown" + std::to_string((int)type);
 		}
@@ -190,6 +192,8 @@ namespace CheekyLayer::rules
 			return data_type::Handle;
 		if(s=="number")
 			return data_type::Number;
+		if(s=="list" || s=="vector" || s=="array")
+			return data_type::List;
 		throw std::runtime_error("unknown data_type \""+s+"\"");
 	}
 
@@ -231,7 +235,7 @@ namespace CheekyLayer::rules
 			{
 				r->execute(type, handle, ctx);
 			}
-			catch(std::exception& ex)
+			catch(const std::exception& ex)
 			{
 				ctx.logger << logger::error << "Failed to execute a rule: " << ex.what();
 			}

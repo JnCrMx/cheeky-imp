@@ -13,6 +13,7 @@
 
 namespace CheekyLayer::rules
 {
+	#define RULE_ERROR(message) (std::runtime_error(std::string(__PRETTY_FUNCTION__)+": "+(message)))
 	void skip_ws(std::istream& in);
 	void check_stream(std::istream& in, char expected);
 
@@ -157,12 +158,16 @@ namespace CheekyLayer::rules
 		String,
 		Raw,
 		Handle,
-		Number
+		Number,
+		List
 	};
 	std::string to_string(data_type);
 	data_type data_type_from_string(const std::string&);
 
-	using data_value = std::variant<std::string, std::vector<uint8_t>, VkHandle, double>;
+	struct data_list
+	{
+		std::vector<data_value> values;
+	};
 
 	class data
 	{

@@ -22,6 +22,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <experimental/iterator>
 
 #include <sys/socket.h>
 #include <netdb.h>
@@ -62,6 +63,11 @@ namespace CheekyLayer::rules::actions
 	action_register<preload_action> preload_action::reg("preload");
 	action_register<dump_framebuffer_action> dump_framebuffer_action::reg("dumbfb");
 	action_register<every_action> every_action::reg("every");
+	action_register<buffer_copy_action> buffer_copy_action::reg("buffer_copy");
+	action_register<set_global_action> set_global_action::reg("set_global");
+	action_register<set_global_action> set_global_action::reg2("global=");
+	action_register<set_local_action> set_local_action::reg("set_local");
+	action_register<set_local_action> set_local_action::reg2("local=");
 
 	void mark_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule&)
 	{
@@ -231,21 +237,33 @@ namespace CheekyLayer::rules::actions
 			return;
 		}
 
+		const auto locals = ctx.local_variables;
+		ctx.logger << " Saving locals: ";
+		std::transform(locals.begin(), locals.end(), std::experimental::make_ostream_joiner(ctx.logger.raw(), ", "), [](const auto& a){
+			return a.first;
+		});
+
 		switch(m_event)
 		{
 			case EndCommandBuffer:
-				rule_env.onEndCommandBuffer(ctx.commandBuffer, [this, type, handle, &rule](local_context& ctx2){
-					this->m_action->execute(type, handle, ctx2, rule);
+				rule_env.onEndCommandBuffer(ctx.commandBuffer, [this, type, handle, &rule, locals](local_context& ctx2){
+					local_context deref = ctx2;
+					deref.local_variables = locals;
+					this->m_action->execute(type, handle, deref, rule);
 				});
 				break;
 			case QueueSubmit:
-				rule_env.onQueueSubmit(ctx.commandBuffer, [this, type, handle, &rule](local_context& ctx2){
-					this->m_action->execute(type, handle, ctx2, rule);
+				rule_env.onQueueSubmit(ctx.commandBuffer, [this, type, handle, &rule, locals](local_context& ctx2){
+					local_context deref = ctx2;
+					deref.local_variables = locals;
+					this->m_action->execute(type, handle, deref, rule);
 				});
 				break;
 			case EndRenderPass:
-				rule_env.onEndRenderPass(ctx.commandBuffer, [this, type, handle, &rule](local_context& ctx2){
-					this->m_action->execute(type, handle, ctx2, rule);
+				rule_env.onEndRenderPass(ctx.commandBuffer, [this, type, handle, &rule, locals](local_context& ctx2){
+					local_context deref = ctx2;
+					deref.local_variables = locals;
+					this->m_action->execute(type, handle, deref, rule);
 				});
 				break;
 		}
@@ -1113,5 +1131,133 @@ namespace CheekyLayer::rules::actions
 		m_action->print(out);
 		out << ")";
 		return out;
+	}
+
+	void buffer_copy_action::execute(selector_type stype, VkHandle handle, local_context& ctx, rule& rule)
+	{
+		VkHandle src = std::get<VkHandle>(m_src->get(stype, data_type::Handle, handle, ctx, rule));
+		VkHandle dst = std::get<VkHandle>(m_dst->get(stype, data_type::Handle, handle, ctx, rule));
+		
+		std::vector<uint8_t> transferBuffer(m_size);
+
+		memoryAccess(ctx.device, (VkBuffer)src, [&transferBuffer, this, &ctx](void* ptr, VkDeviceSize size){
+			uint8_t* uptr = (uint8_t*)ptr;
+			ctx.logger << "Reading " << std::min(m_size, size) << " bytes! ";
+			std::copy(uptr, uptr + std::min(m_size, size), transferBuffer.begin());
+		}, m_srcOffset);
+		memoryAccess(ctx.device, (VkBuffer)dst, [&transferBuffer, this, &ctx](void* ptr, VkDeviceSize size){
+			uint8_t* uptr = (uint8_t*)ptr;
+			ctx.logger << "Writing " << std::min(m_size, size) << " bytes! ";
+			std::copy(transferBuffer.begin(), transferBuffer.begin() + std::min(m_size, size), uptr);
+		}, m_dstOffset);
+	}
+
+	void buffer_copy_action::read(std::istream& in)
+	{
+		m_src = read_data(in, m_type);
+		skip_ws(in);
+		check_stream(in, ',');
+		skip_ws(in);
+
+		m_dst = read_data(in, m_type);
+		skip_ws(in);
+		check_stream(in, ',');
+		skip_ws(in);
+
+		in >> m_srcOffset;
+		skip_ws(in);
+		check_stream(in, ',');
+		skip_ws(in);
+
+		in >> m_dstOffset;
+		skip_ws(in);
+		check_stream(in, ',');
+		skip_ws(in);
+
+		in >> m_size;
+		skip_ws(in);
+		check_stream(in, ')');
+	}
+
+	std::ostream& buffer_copy_action::print(std::ostream& out)
+	{
+		out << "buffer_copy(";
+		m_src->print(out);
+		out << ", ";
+		m_dst->print(out);
+		out << ", " << m_srcOffset << ", " << m_dstOffset << ", " << m_size << ")";
+		return out;
+	}
+
+	void set_global_action::execute(selector_type stype, VkHandle handle, local_context& ctx, rule& rule)
+	{
+		rule_env.global_variables[m_name] = m_data->get(stype, m_dtype, handle, ctx, rule);
+	}
+
+	void set_global_action::read(std::istream& in)
+	{
+		std::string dtype;
+		std::getline(in, dtype, ',');
+		skip_ws(in);
+		m_dtype = data_type_from_string(dtype);
+
+		std::getline(in, m_name, ',');
+		skip_ws(in);
+
+		m_data = read_data(in, m_type);
+		if(!m_data->supports(m_type, m_dtype))
+		{
+			std::ostringstream of;
+			of << "Data \"";
+			m_data->print(of);
+			of << "\" does not support type " << to_string(m_dtype) << " for selector " << to_string(m_type) << ".";
+			throw RULE_ERROR(of.str());
+		}
+
+		skip_ws(in);
+		check_stream(in, ')');
+	}
+
+	std::ostream& set_global_action::print(std::ostream& out)
+	{
+		out << "set_global(" << to_string(m_dtype) << ", " << m_name << ", ";
+		m_data->print(out);
+		return out << ")";
+	}
+
+	void set_local_action::execute(selector_type stype, VkHandle handle, local_context& ctx, rule& rule)
+	{
+		ctx.local_variables[m_name] = m_data->get(stype, m_dtype, handle, ctx, rule);
+	}
+
+	void set_local_action::read(std::istream& in)
+	{
+		std::string dtype;
+		std::getline(in, dtype, ',');
+		skip_ws(in);
+		m_dtype = data_type_from_string(dtype);
+
+		std::getline(in, m_name, ',');
+		skip_ws(in);
+
+		m_data = read_data(in, m_type);
+		if(!m_data->supports(m_type, m_dtype))
+		{
+			std::ostringstream of;
+			of << "Data \"";
+			m_data->print(of);
+			of << "\" does not support type " << to_string(m_dtype) << " for selector " << to_string(m_type) << ".";
+			throw RULE_ERROR(of.str());
+		}
+
+		skip_ws(in);
+		check_stream(in, ')');
+	}
+
+	std::ostream& set_local_action::print(std::ostream& out)
+	{
+		out << "set_local(" << to_string(m_dtype) << ", " << m_name << ", ";
+		m_data->print(out);
+		return out << ")";
 	}
 }

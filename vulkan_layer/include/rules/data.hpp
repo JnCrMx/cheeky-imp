@@ -53,6 +53,25 @@ namespace CheekyLayer::rules::datas
 			static data_register<vkstruct_data> reg;
 	};
 
+	class vkdescriptor_data : public data
+	{
+		public:
+			vkdescriptor_data(selector_type type) : data(type) {
+				if(type != selector_type::Draw)
+					throw std::runtime_error("the \"vkdescriptor\" data is only supported for draw selectors, but not for "+to_string(type)+" selectors");
+			}
+			virtual void read(std::istream&);
+			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual bool supports(selector_type, data_type);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			int m_set;
+			int m_binding;
+			int m_arrayIndex;
+
+			static data_register<vkdescriptor_data> reg;
+	};
+
 	class received_data : public data
 	{
 		public:
@@ -132,7 +151,9 @@ namespace CheekyLayer::rules::datas
 		SInt8, SInt16, SInt32, SInt64,
 		UInt8, UInt16, UInt32, UInt64,
 
-		Float, Double
+		Float, Double,
+
+		Array
 	};
 	raw_type raw_type_from_string(std::string string);
 	std::string to_string(raw_type type);
@@ -149,6 +170,7 @@ namespace CheekyLayer::rules::datas
 		private:
 			raw_type m_rawType;
 			size_t m_offset;
+			int m_count = -1;
 			std::unique_ptr<data> m_src;
 
 			static data_register<unpack_data> reg;
@@ -167,5 +189,102 @@ namespace CheekyLayer::rules::datas
 			std::unique_ptr<data> m_src;
 
 			static data_register<pack_data> reg;
+	};
+
+	class current_element_data : public data
+	{
+		public:
+			current_element_data(selector_type type) : data(type) {}
+			virtual void read(std::istream&);
+			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual bool supports(selector_type, data_type);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			static data_register<current_element_data> reg;
+	};
+
+	class current_index_data : public data
+	{
+		public:
+			current_index_data(selector_type type) : data(type) {}
+			virtual void read(std::istream&);
+			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual bool supports(selector_type, data_type);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			static data_register<current_index_data> reg;
+	};
+
+	class map_data : public data
+	{
+		public:
+			map_data(selector_type type) : data(type) {}
+			virtual void read(std::istream&);
+			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual bool supports(selector_type, data_type);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			std::unique_ptr<data> m_src;
+			data_type m_elementDstType;
+			std::unique_ptr<data> m_mapper;
+
+			static data_register<map_data> reg;
+	};
+
+	class current_reduction_data : public data
+	{
+		public:
+			current_reduction_data(selector_type type) : data(type) {}
+			virtual void read(std::istream&);
+			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual bool supports(selector_type, data_type);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			static data_register<current_reduction_data> reg;
+	};
+
+	class reduce_data : public data
+	{
+		public:
+			reduce_data(selector_type type) : data(type) {}
+			virtual void read(std::istream&);
+			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual bool supports(selector_type, data_type);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			std::unique_ptr<data> m_src;
+			data_type m_dstType;
+			std::unique_ptr<data> m_init;
+			std::unique_ptr<data> m_accumulator;
+
+			static data_register<reduce_data> reg;
+	};
+
+	class global_data : public data
+	{
+		public:
+			global_data(selector_type type) : data(type) {}
+			virtual void read(std::istream&);
+			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual bool supports(selector_type, data_type);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			std::string m_name;
+
+			static data_register<global_data> reg;
+	};
+
+	class local_data : public data
+	{
+		public:
+			local_data(selector_type type) : data(type) {}
+			virtual void read(std::istream&);
+			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual bool supports(selector_type, data_type);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			std::string m_name;
+
+			static data_register<local_data> reg;
 	};
 }
