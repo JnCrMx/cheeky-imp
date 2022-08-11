@@ -24,6 +24,14 @@ struct PipelineState
 
 inline VkLayerDispatchTable quick_dispatch;
 
+
+struct BufferBinding
+{
+	VkBuffer buffer;
+	VkDeviceSize offset;
+	VkDeviceSize size;
+};
+
 struct CommandBufferState
 {
 	VkDevice device;

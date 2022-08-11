@@ -13,6 +13,7 @@ std::map<VkBuffer, VkBufferCreateInfo> buffers;
 std::map<VkBuffer, VkDevice> bufferDevices;
 std::map<VkBuffer, VkDeviceMemory> bufferMemories;
 std::map<VkBuffer, VkDeviceSize> bufferMemoryOffsets;
+std::map<VkDeviceMemory, memory_map_info> memoryMappings;
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateBuffer(VkDevice device, const VkBufferCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkBuffer* pBuffer)
 {
@@ -51,7 +52,20 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_MapMemory(
 {
     *logger << logger::begin << "MapMemory: memory=" << memory << " offset=" << offset << " size=" << size << " flags=" << flags << logger::end;
     
-    return device_dispatch[GetKey(device)].MapMemory(device, memory, offset, size, flags, ppData);
+    VkResult result = device_dispatch[GetKey(device)].MapMemory(device, memory, offset, size, flags, ppData);
+    if(result == VK_SUCCESS)
+    {
+        memoryMappings[memory] = {.pointer = *ppData, .offset = offset, .size = size};
+    }
+    return result;
+}
+
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_UnmapMemory(
+    VkDevice                                    device,
+    VkDeviceMemory                              memory)
+{
+    memoryMappings.erase(memory);
+    device_dispatch[GetKey(device)].UnmapMemory(device, memory);
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBuffer(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferCopy* pRegions)

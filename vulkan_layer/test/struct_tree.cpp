@@ -3,6 +3,7 @@
 #include <ostream>
 #include <iomanip>
 #include <vector>
+#include <algorithm>
 
 #include "reflection/vkreflection.hpp"
 

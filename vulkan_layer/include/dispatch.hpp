@@ -41,7 +41,9 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	InstanceHook(EnumerateDeviceLayerProperties) \
 	InstanceHook(EnumerateDeviceExtensionProperties) \
 	InstanceHook(CreateDevice) \
-	InstanceHook(EnumeratePhysicalDevices)
+	InstanceHook(EnumeratePhysicalDevices) \
+	InstanceHook(GetPhysicalDeviceQueueFamilyProperties) \
+	InstanceHook(GetPhysicalDeviceQueueFamilyProperties2)
 
 #define DeviceHooks() \
 	DeviceHook(GetDeviceProcAddr) \
@@ -56,6 +58,7 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	DeviceHook(CreateBuffer) \
 	DeviceHook(BindBufferMemory) \
 	DeviceHook(MapMemory) \
+	DeviceHook(UnmapMemory) \
 	\
 	DeviceHook(CreateShaderModule) \
 	DeviceHook(CreateGraphicsPipelines) \
@@ -81,6 +84,7 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 		DeviceHook(CmdDraw) \
 		DeviceHook(CmdDrawIndexed) \
 		DeviceHook(CmdBeginTransformFeedbackEXT) \
+		DeviceHook(CmdBindTransformFeedbackBuffersEXT) \
 		DeviceHook(CmdEndTransformFeedbackEXT) \
 		\
 		DeviceHook(CreateDescriptorUpdateTemplate) \
@@ -89,6 +93,7 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 		DeviceHook(AllocateCommandBuffers) \
 		DeviceHook(FreeCommandBuffers) \
 		DeviceHook(EndCommandBuffer) \
+		DeviceHook(QueueSubmit) \
 	}\
 
 #define InstanceDispatch(name) \
@@ -103,6 +108,7 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	InstanceDispatch(GetPhysicalDeviceMemoryProperties) \
 	InstanceDispatch(GetPhysicalDeviceProperties) \
 	InstanceDispatch(GetPhysicalDeviceQueueFamilyProperties) \
+	InstanceDispatch(GetPhysicalDeviceQueueFamilyProperties2) \
 	InstanceDispatch(EnumeratePhysicalDevices) \
 	\
 	InstanceDispatch(DestroySurfaceKHR) \
@@ -113,6 +119,7 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 #define InitDeviceDispatch() \
 	DeviceDispatch(GetDeviceProcAddr) \
 	DeviceDispatch(DestroyDevice) \
+	DeviceDispatch(SetDebugUtilsObjectNameEXT) \
 	\
 	DeviceDispatch(GetDeviceQueue) \
 	DeviceDispatch(CreateCommandPool) \
@@ -136,6 +143,7 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	DeviceDispatch(FreeMemory) \
 	DeviceDispatch(MapMemory) \
 	DeviceDispatch(UnmapMemory) \
+	DeviceDispatch(FlushMappedMemoryRanges) \
 	\
 	DeviceDispatch(CreateShaderModule) \
 	DeviceDispatch(CreateGraphicsPipelines) \
@@ -160,6 +168,7 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
 	DeviceDispatch(CmdBeginRenderPass) \
 	DeviceDispatch(CmdEndRenderPass) \
 	DeviceDispatch(CmdBeginTransformFeedbackEXT) \
+	DeviceDispatch(CmdBindTransformFeedbackBuffersEXT) \
 	DeviceDispatch(CmdEndTransformFeedbackEXT) \
 	DeviceDispatch(CmdPushConstants) \
 	\

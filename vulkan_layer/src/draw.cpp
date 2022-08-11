@@ -331,7 +331,14 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdEndRenderPass(
 
 			for(auto& f : p->second)
 			{
-				f(ctx);
+				try
+				{
+					f(ctx);
+				}
+				catch(const std::exception& ex)
+				{
+					ctx.logger << logger::error << "Failed to execute a callback: " << ex.what();
+				}
 			}
 			p->second.clear();
 
@@ -355,7 +362,7 @@ void verbose_pipeline_stages(CheekyLayer::active_logger& log, PipelineState& pst
 	}
 }
 
-void verbose_vertex_attributes(CheekyLayer::active_logger& log, CommandBufferState& state, PipelineState& pstate, bool index)
+void verbose_vertex_bindings(CheekyLayer::active_logger& log, CommandBufferState& state, PipelineState& pstate, bool index)
 {
 	log << "  vertex bindings:\n";
 	log << "    | binding | stride |     rate | buffer\n";
@@ -543,7 +550,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(
 		PipelineState& pstate = pipelineStates[state.pipeline];
 		verbose_commandbuffer_state(log, state);
 		verbose_pipeline_stages(log, pstate);
-		verbose_vertex_attributes(log, state, pstate, true);
+		verbose_vertex_bindings(log, state, pstate, true);
 		verbose_vertex_attributes(log, pstate);
 		verbose_descriptors(log, state);
 	}, &info2, commandBuffer, state.device, {}, {}, &state};
@@ -626,7 +633,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDraw(
 		PipelineState& pstate = pipelineStates[state.pipeline];
 		verbose_commandbuffer_state(log, state);
 		verbose_pipeline_stages(log, pstate);
-		verbose_vertex_attributes(log, state, pstate, false);
+		verbose_vertex_bindings(log, state, pstate, false);
 		verbose_vertex_attributes(log, pstate);
 		verbose_descriptors(log, state);
 	}, &info2, commandBuffer, state.device, {}, {}, &state};
@@ -674,11 +681,18 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_EndCommandBuffer(
 		if(p != CheekyLayer::rules::rule_env.on_EndCommandBuffer.end() && !p->second.empty())
 		{
 			CheekyLayer::active_logger log = *logger << logger::begin;
-			CheekyLayer::rules::local_context ctx = {log};
+				CheekyLayer::rules::local_context ctx = {.logger = log, .device = state.device};
 
 			for(auto& f : p->second)
 			{
-				f(ctx);
+				try
+				{
+					f(ctx);
+				}
+				catch(const std::exception& ex)
+				{
+					ctx.logger << logger::error << "Failed to execute a callback: " << ex.what();
+				}
 			}
 			p->second.clear();
 

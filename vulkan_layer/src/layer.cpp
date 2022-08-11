@@ -342,7 +342,29 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateDevice(VkPhysicalDevice ph
 	physicalDevices[*pDevice] = physicalDevice;
 	deviceInfos[*pDevice] = {props, memProperties, families};
 
+	*logger << logger::begin << "Debug?" << std::boolalpha << fpGetDeviceProcAddr(*pDevice, "vkSetDebugUtilsObjectNameEXT") << logger::end;
+
 	return ret;
+}
+
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_GetPhysicalDeviceQueueFamilyProperties(
+    VkPhysicalDevice                            physicalDevice,
+    uint32_t*                                   pQueueFamilyPropertyCount,
+    VkQueueFamilyProperties*                    pQueueFamilyProperties)
+{
+	*pQueueFamilyPropertyCount = 1;
+	instance_dispatch.begin()->second.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties);
+	*pQueueFamilyPropertyCount = 1;
+}
+
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_GetPhysicalDeviceQueueFamilyProperties2(
+    VkPhysicalDevice                            physicalDevice,
+    uint32_t*                                   pQueueFamilyPropertyCount,
+    VkQueueFamilyProperties2*                   pQueueFamilyProperties)
+{
+	*pQueueFamilyPropertyCount = 1;
+	instance_dispatch.begin()->second.GetPhysicalDeviceQueueFamilyProperties2(physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties);
+	*pQueueFamilyPropertyCount = 1;
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_GetDeviceQueue(
