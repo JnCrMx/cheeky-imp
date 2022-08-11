@@ -52,6 +52,7 @@ struct CommandBufferState
 	VkFramebuffer framebuffer;
 
 	bool transformFeedback;
+	std::vector<BufferBinding> transformFeedbackBuffers;
 };
 
 struct FramebufferInfo

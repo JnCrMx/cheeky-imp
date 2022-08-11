@@ -473,6 +473,25 @@ void verbose_commandbuffer_state(CheekyLayer::active_logger& log, CommandBufferS
 {
 	log << "  command buffer state:\n";
 	log << "    transformFeedback = " << std::boolalpha << state.transformFeedback << '\n';
+	if(state.transformFeedback)
+	{
+		log << "    transformFeedbackBuffers:\n";
+		for(const auto& binding : state.transformFeedbackBuffers)
+		{
+			log << "      ";
+			VkBuffer buffer = binding.buffer;
+			auto p = CheekyLayer::rules::rule_env.hashes.find((VkHandle)buffer);
+			if(p != CheekyLayer::rules::rule_env.hashes.end())
+			{
+				log << p->second;
+			}
+			else
+			{
+				log << "unknown buffer " << buffer;
+			}
+			log << " + " << std::hex << binding.offset << std::dec << " (" << binding.size << " bytes)\n";
+		}
+	}
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(
@@ -657,6 +676,30 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBeginTransformFeedbackEXT(
 	quick_dispatch.CmdBeginTransformFeedbackEXT(commandBuffer, firstCounterBuffer, counterBufferCount, pCounterBuffers, pCounterBufferOffsets);
 }
 
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindTransformFeedbackBuffersEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstBinding,
+    uint32_t                                    bindingCount,
+    const VkBuffer*                             pBuffers,
+    const VkDeviceSize*                         pOffsets,
+    const VkDeviceSize*                         pSizes)
+{
+	if(evalRulesInDraw)
+	{
+		CommandBufferState& state = commandBufferStates[commandBuffer];
+
+		if(state.transformFeedbackBuffers.size() < (firstBinding + bindingCount))
+			state.transformFeedbackBuffers.resize(firstBinding + bindingCount);
+
+		for(int i=0; i<bindingCount; i++)
+		{
+			state.transformFeedbackBuffers[i+firstBinding] = {.buffer = pBuffers[i], .offset = pOffsets[i], .size = pSizes[i]};
+		}
+	}
+
+	quick_dispatch.CmdBindTransformFeedbackBuffersEXT(commandBuffer, firstBinding, bindingCount, pBuffers, pOffsets, pSizes);
+}
+
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdEndTransformFeedbackEXT(
     VkCommandBuffer                             commandBuffer,
     uint32_t                                    firstCounterBuffer,
@@ -666,6 +709,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdEndTransformFeedbackEXT(
 {
 	CommandBufferState& state = commandBufferStates[commandBuffer];
 	state.transformFeedback = false;
+	state.transformFeedbackBuffers.clear();
 	quick_dispatch.CmdEndTransformFeedbackEXT(commandBuffer, firstCounterBuffer, counterBufferCount, pCounterBuffers, pCounterBufferOffsets);
 }
 
