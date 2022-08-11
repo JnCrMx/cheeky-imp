@@ -23,3 +23,6 @@
 [submodule "external/exprtk"]
 	path = external/exprtk
 	url = https://github.com/ArashPartow/exprtk
+[submodule "external/SPIRV-Reflect"]
+	path = external/SPIRV-Reflect
+	url = https://github.com/KhronosGroup/SPIRV-Reflect

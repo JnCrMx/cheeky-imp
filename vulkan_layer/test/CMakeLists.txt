@@ -54,7 +54,3 @@ add_test(reflection_array test_reflection_array)
 add_executable(test_reflection_flags reflection_flags.cpp)
 target_link_libraries(test_reflection_flags PUBLIC cheeky_layer gtest_main)
 gtest_discover_tests(test_reflection_flags)
-
-add_executable(test_glslang glslang.cpp)
-target_link_libraries(test_glslang PUBLIC cheeky_layer)
-add_test(glslang test_glslang)

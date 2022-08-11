@@ -90,6 +90,10 @@ if(CHEEKY_LAYER_IMAGE_TOOLS)
     endif()
 endif()
 
+add_library(spirv-reflect STATIC external/SPIRV-Reflect/spirv_reflect.c)
+target_include_directories(spirv-reflect PUBLIC external/SPIRV-Reflect/)
+target_link_libraries(cheeky_layer PUBLIC spirv-reflect)
+
 if(CHEEKY_LAYER_DOCS)
     find_package(Doxygen)
     if(DOXYGEN_FOUND)

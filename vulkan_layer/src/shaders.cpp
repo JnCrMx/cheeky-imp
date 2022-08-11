@@ -17,7 +17,6 @@
 #include <ShaderLang.h>
 #include <ResourceLimits.h>
 #include <GlslangToSpv.h>
-std::map<VkShaderModule, ReflectionInfo> shaderReflections;
 #endif
 
 #include <streambuf>
@@ -27,8 +26,10 @@ std::map<VkShaderModule, ReflectionInfo> shaderReflections;
 using CheekyLayer::logger;
 using CheekyLayer::rules::VkHandle;
 
-static uint64_t currentCustonShaderHandle = 0xABC1230000;
+static uint64_t currentCustomShaderHandle = 0xABC1230000;
 std::map<VkHandle, VkHandle> customShaderHandles;
+
+std::map<VkHandle, spv_reflect::ShaderModule> shaderReflections;
 
 #ifdef USE_SPIRV
 std::string stage_to_string(spv::ExecutionModel stage)
@@ -50,7 +51,6 @@ struct ShaderCacheEntry
 {
 	uint32_t* pointer;
 	size_t size;
-	ReflectionInfo reflectionInfo;
 };
 std::map<std::string, ShaderCacheEntry> shaderCache;
 
@@ -67,7 +67,7 @@ EShLanguage string_to_stage(std::string string)
 
 #include <iostream>
 
-std::tuple<bool, std::string> compileShader(EShLanguage stage, std::string glslCode, std::vector<unsigned int>& shaderCode, ReflectionInfo& reflectionInfo)
+std::tuple<bool, std::string> compileShader(EShLanguage stage, std::string glslCode, std::vector<unsigned int>& shaderCode)
 {
 	const char * shaderStrings[1];
 	shaderStrings[0] = glslCode.data();
@@ -97,30 +97,6 @@ std::tuple<bool, std::string> compileShader(EShLanguage stage, std::string glslC
 	program.buildReflection(EShReflectionIntermediateIO | EShReflectionSeparateBuffers | 
 		EShReflectionAllBlockVariables | EShReflectionUnwrapIOBlocks | EShReflectionAllIOVariables);
 
-	reflectionInfo.bufferVariableReflection.resize(program.getNumBufferVariables());
-	for(int i=0; i<reflectionInfo.bufferVariableReflection.size(); i++)
-	{
-		reflectionInfo.bufferVariableReflection[i] = {program.getBufferVariable(i)};
-	}
-
-	reflectionInfo.bufferBlockReflection.resize(program.getNumBufferBlocks());
-	for(int i=0; i<reflectionInfo.bufferBlockReflection.size(); i++)
-	{
-		reflectionInfo.bufferBlockReflection[i] = {program.getBufferBlock(i)};
-	}
-
-	reflectionInfo.uniformVariableReflection.resize(program.getNumUniformVariables());
-	for(int i=0; i<reflectionInfo.uniformVariableReflection.size(); i++)
-	{
-		reflectionInfo.uniformVariableReflection[i] = {program.getUniform(i), program.getUniformTType(i)};
-	}
-
-	reflectionInfo.uniformBlockReflection.resize(program.getNumUniformBlocks());
-	for(int i=0; i<reflectionInfo.uniformBlockReflection.size(); i++)
-	{
-		reflectionInfo.uniformBlockReflection[i] = {program.getUniformBlock(i), program.getUniformBlockTType(i)};
-	}
-
 	glslang::GlslangToSpv(*program.getIntermediate(stage), shaderCode);
 	glslang::FinalizeProcess();
 
@@ -135,7 +111,6 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 
 #ifdef USE_GLSLANG
 	std::map<std::string, ShaderCacheEntry>::iterator it;
-	std::optional<ReflectionInfo> reflectionInfo;
 #endif
 
 	char hash[65];
@@ -221,7 +196,6 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 		{
 			pCreateInfo->pCode = it->second.pointer;
 			pCreateInfo->codeSize = it->second.size;
-			reflectionInfo = it->second.reflectionInfo;
 			log << " found cached shader override! " << "size=" << it->second.size;
 		}
 		else
@@ -248,8 +222,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 			if(!code.empty())
 			{
 				std::vector<uint32_t> spv;
-				ReflectionInfo info;
-				auto [result, message] = compileShader(stage, code, spv, info);
+				auto [result, message] = compileShader(stage, code, spv);
 
 				if(result)
 				{
@@ -262,8 +235,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 					pCreateInfo->pCode = buffer;
 					pCreateInfo->codeSize = length;
 
-					shaderCache[hash_string] = {buffer, length, info};
-					reflectionInfo = info;
+					shaderCache[hash_string] = {buffer, length};
 				}
 				else
 				{
@@ -279,12 +251,28 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 	if(result == VK_SUCCESS)
 	{
 		VkHandle handle = (VkHandle)*pShaderModule;
-		VkHandle customHandle = customShaderHandles[handle] = (VkHandle) currentCustonShaderHandle++;
+		VkHandle customHandle = customShaderHandles[handle] = (VkHandle) currentCustomShaderHandle++;
 
-		if(reflectionInfo.has_value())
+		spv_reflect::ShaderModule reflection(pCreateInfo->codeSize, pCreateInfo->pCode);
+		if(reflection.GetResult() == SPV_REFLECT_RESULT_SUCCESS)
 		{
-			shaderReflections[*pShaderModule] = reflectionInfo.value();
-			log << " stored shader reflections for " << *pShaderModule << " :D";
+			shaderReflections[customHandle] = std::move(reflection);
+		}
+		else
+		{
+			log << logger::error << "shader reflection failed!";
+		}
+
+		if(device_dispatch[GetKey(device)].SetDebugUtilsObjectNameEXT)
+		{
+			std::string name = "Shader "+hash_string;
+
+			VkDebugUtilsObjectNameInfoEXT info{};
+			info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+			info.objectType = VK_OBJECT_TYPE_SHADER_MODULE;
+			info.objectHandle = (uint64_t) *pShaderModule;
+			info.pObjectName = name.c_str();
+			device_dispatch[GetKey(device)].SetDebugUtilsObjectNameEXT(device, &info);
 		}
 
 		/*auto p = CheekyLayer::rule_env.hashes.find(handle);
