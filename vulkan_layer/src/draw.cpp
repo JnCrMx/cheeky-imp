@@ -787,3 +787,42 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_QueuePresentKHR(
 		return device_dispatch[GetKey(device)].QueuePresentKHR(queue, pPresentInfo);
 	return VK_SUCCESS;
 }
+
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_QueueSubmit(
+    VkQueue                                     queue,
+    uint32_t                                    submitCount,
+    const VkSubmitInfo*                         pSubmits,
+    VkFence                                     fence)
+{
+	VkDevice device = queueDevices[queue];
+	for(int i=0; i<submitCount; i++)
+	{
+		const auto& submit = pSubmits[i];
+		for(int j=0; j<submit.commandBufferCount; j++)
+		{
+			auto commandBuffer = submit.pCommandBuffers[j];
+			auto p = CheekyLayer::rules::rule_env.on_QueueSubmit.find(commandBuffer);
+			if(p != CheekyLayer::rules::rule_env.on_QueueSubmit.end() && !p->second.empty())
+			{
+				CheekyLayer::active_logger log = *logger << logger::begin;
+				CheekyLayer::rules::local_context ctx = {.logger = log, .device = device};
+
+				for(auto& f : p->second)
+				{
+					try
+					{
+						f(ctx);
+					}
+					catch(const std::exception& ex)
+					{
+						ctx.logger << logger::error << "Failed to execute a callback: " << ex.what();
+					}
+				}
+				p->second.clear();
+
+				log << logger::end;
+			}
+		}
+	}
+	return device_dispatch[GetKey(device)].QueueSubmit(queue, submitCount, pSubmits, fence);
+}
