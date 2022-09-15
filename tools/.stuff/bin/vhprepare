@@ -3,6 +3,9 @@
 if [ -f vhimage.txt ]; then
 	vhimageprepare $@
 elif [ -f vhmesh.txt ]; then
+	if [ -d texture ]; then
+		find texture/ -maxdepth 2 -mindepth 2 -name vhimage.txt -printf 'Processing %h\n' -execdir vhprepare \;
+	fi
 	vhmeshprepare $@
 	if [ -f vhpose.txt ]; then
 		vhposeprepare $@
