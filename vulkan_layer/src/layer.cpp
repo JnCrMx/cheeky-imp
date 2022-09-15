@@ -21,6 +21,7 @@
 #include "logger.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
+#include "rules/reader.hpp"
 #include "draw.hpp"
 #include "utils.hpp"
 
@@ -31,6 +32,7 @@ std::mutex transfer_lock;
 CheekyLayer::config global_config;
 CheekyLayer::logger* logger;
 std::vector<std::string> overrideCache;
+std::vector<std::string> dumpCache;
 
 std::vector<VkInstance> instances;
 std::vector<std::unique_ptr<CheekyLayer::rules::rule>> rules;
@@ -171,6 +173,8 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 	logger = new CheekyLayer::logger(out);
 
 	*logger << logger::begin << "Hello from " << CheekyLayer::Contants::LAYER_NAME
+		<< " version " << CheekyLayer::Contants::GIT_VERSION
+		<< " from " << __DATE__ << " " << __TIME__
 		<< " for application " << applicationName
 		<< " using engine " << engineName << logger::end;
 	*logger << logger::begin << "CreateInstance: " << *pInstance << " -> " << ret << logger::end;
@@ -192,36 +196,51 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 		{
 			*logger << logger::begin << logger::error << "Cannot find overrides for " << type << ": " << ex.what() << logger::end;
 		}
+
+		/*if(global_config.map<bool>("dump", CheekyLayer::config::to_bool))
+		{
+			try
+			{
+				std::filesystem::directory_iterator it(global_config["dumpDirectory"]+"/"+type);
+				int count = 0;
+				std::transform(std::filesystem::begin(it), std::filesystem::end(it), std::back_inserter(dumpCache), [&count](auto e){
+					count++;
+					return e.path().stem();
+				});
+				*logger << logger::begin << "Found " << count << " dumped resources for " << type << logger::end;
+				//dumpCache.reserve(dumpCache.size()*2);
+			}
+			catch (std::filesystem::filesystem_error& ex)
+			{
+				*logger << logger::begin << logger::error << "Cannot find dumped resources for " << type << ": " << ex.what() << logger::end;
+			}
+		}*/
 	}
 	load_plugins();
 
 	std::string rulefile = global_config["ruleFile"];
-	std::ifstream rulesIn(rulefile);
 	rules.clear();
-	if(rulesIn.good())
-	{
-		std::string line;
-		int lineNr = 0;
-		while(std::getline(rulesIn, line))
-		{
-			lineNr++;
-			if(!line.starts_with("#") && !line.empty())
-			{
-				try
-				{
-					std::unique_ptr<CheekyLayer::rules::rule> rule = std::make_unique<CheekyLayer::rules::rule>();
-					std::istringstream iss(line);
-					iss >> *rule;
 
-					rules.push_back(std::move(rule));
-				}
-				catch(const std::exception& ex)
-				{
-					*logger << logger::begin << logger::error << "Error in rulefile " << rulefile << " line " << lineNr << ": " << ex.what() << logger::end;
-				}
+	{
+		std::ifstream rulesIn(rulefile);
+		CheekyLayer::rules::numbered_streambuf numberer{rulesIn};
+		while(rulesIn.good())
+		{
+			try
+			{
+				std::unique_ptr<CheekyLayer::rules::rule> rule = std::make_unique<CheekyLayer::rules::rule>();
+				rulesIn >> *rule;
+
+				rules.push_back(std::move(rule));
+			}
+			catch(const std::exception& ex)
+			{
+				*logger << logger::begin << "Error at " << numberer.line() << ":" << numberer.col() << ":\n\t" << ex.what() << logger::end;
+				break;
 			}
 		}
 	}
+
 	*logger << logger::begin << "Loaded " << rules.size() << " rules:" << logger::end;
 	for(auto& r : rules)
 	{

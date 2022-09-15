@@ -38,6 +38,14 @@ namespace CheekyLayer::rules
 		VkDevice device;
 	};
 
+	enum data_type : int;
+	struct user_function
+	{
+		class data* data;
+		std::vector<data_type> arguments;
+		std::vector<class data*> default_arguments;
+	};
+
 	class global_context
 	{
 		public:
@@ -67,6 +75,8 @@ namespace CheekyLayer::rules
 			std::vector<std::thread> threads;
 
 			std::map<std::string, data_value> global_variables;
+
+			std::map<std::string, user_function> user_functions;
 	};
 
 	inline global_context rule_env;
@@ -89,9 +99,10 @@ namespace CheekyLayer::rules
 
 	struct receive_info
 	{
-		ipc::socket* socket;
+		ipc::file_descriptor* socket;
 		uint8_t* buffer;
 		size_t size;
+		int extra = 0;
 	};
 
 	struct present_info
@@ -131,5 +142,7 @@ namespace CheekyLayer::rules
 		data_value* currentReduction;
 
 		std::map<std::string, data_value> local_variables;
+
+		void* customPointer;
 	};
 }

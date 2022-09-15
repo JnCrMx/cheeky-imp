@@ -8,6 +8,7 @@
 #include <mutex>
 #include <memory>
 #include <map>
+#include <set>
 #include <vulkan/vulkan_core.h>
 
 #include "config.hpp"
@@ -30,6 +31,7 @@ extern CheekyLayer::config global_config;
 extern CheekyLayer::logger* logger;
 
 extern std::vector<std::string> overrideCache;
+extern std::vector<std::string> dumpCache;
 
 extern std::vector<std::unique_ptr<CheekyLayer::rules::rule>> rules;
 extern std::map<CheekyLayer::rules::selector_type, bool> has_rules;

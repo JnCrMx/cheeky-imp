@@ -8,6 +8,8 @@
 #include <stdexcept>
 #include <string>
 
+#include <iostream>
+
 namespace CheekyLayer::rules
 {
 	condition_factory::map_type* condition_factory::map = nullptr;
@@ -16,15 +18,16 @@ namespace CheekyLayer::rules
 
 	void skip_ws(std::istream& in)
 	{
-		while(in.peek()==' ')
-			in.get();
+		while(std::isspace(in.peek()))
+			(void)in.get();
 	}
 
 	void check_stream(std::istream &in, char expected)
 	{
+		skip_ws(in);
 		int c = in.get();
 		if(c != expected)
-			throw std::runtime_error("expected '"+std::string(1, expected)+"' but got '"+std::string(1, static_cast<char>(c))+"' instead");
+			throw std::runtime_error("expected '"+std::string(1, expected)+"' but got '"+std::string(1, static_cast<char>(c))+"' ("+std::to_string(c)+") instead");
 	}
 
 	std::unique_ptr<action> read_action(std::istream& in, selector_type type)
@@ -32,6 +35,7 @@ namespace CheekyLayer::rules
 		std::string actionType;
 		if(!std::getline(in, actionType, '('))
 			throw std::runtime_error("cannot read action type");
+		skip_ws(in);
 		std::unique_ptr<action> cptr = action_factory::make_unique_action(actionType, type);
 		cptr->read(in);
 		return cptr;
@@ -39,8 +43,10 @@ namespace CheekyLayer::rules
 
 	std::istream& operator>>(std::istream& in, rule& rule)
 	{
+		skip_ws(in);
 		rule.m_selector = std::make_unique<selector>();
 		in >> *rule.m_selector;
+		skip_ws(in);
 
 		std::string arrow;
 		in >> arrow;
@@ -51,8 +57,8 @@ namespace CheekyLayer::rules
 		rule.m_action = read_action(in, rule.m_selector->m_type);
 
 		skip_ws(in);
-		if(in.good())
-			throw std::runtime_error("found characters after end of rule");
+		/*if(in.good())
+			throw std::runtime_error("found characters after end of rule");*/
 
 		return in;
 	}
@@ -62,6 +68,7 @@ namespace CheekyLayer::rules
 		std::string conditionType;
 		if(!std::getline(in, conditionType, '('))
 			throw std::runtime_error("cannot read condition type");
+		skip_ws(in);
 		std::unique_ptr<selector_condition> cptr = condition_factory::make_unique_condition(conditionType, type);
 		cptr->read(in);
 		return cptr;
@@ -72,6 +79,7 @@ namespace CheekyLayer::rules
 		std::string dataType;
 		if(!std::getline(in, dataType, '('))
 			throw std::runtime_error("cannot read data type");
+		skip_ws(in);
 		std::unique_ptr<data> cptr = data_factory::make_unique_data(dataType, type);
 		cptr->read(in);
 		return cptr;
@@ -86,6 +94,7 @@ namespace CheekyLayer::rules
 
 		while(in.peek() != '}')
 		{
+			skip_ws(in);
 			selector.m_conditions.push_back(read_condition(in, selector.m_type));
 
 			skip_ws(in);

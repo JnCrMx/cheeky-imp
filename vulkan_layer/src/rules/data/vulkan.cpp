@@ -106,17 +106,39 @@ namespace CheekyLayer::rules::datas
 		const DescriptorState& descriptorState = descriptorStates.at(set);
 		const DescriptorBinding& binding = descriptorState.bindings.at(m_binding);
 		const DescriptorElement& element = binding.arrayElements.at(m_arrayIndex);
-		return element.handle;
+
+		data_value handle = element.handle;
+
+		const auto& info = element.info;
+		if(std::holds_alternative<VkDescriptorBufferInfo>(info))
+		{
+			const auto& bufferInfo = std::get<VkDescriptorBufferInfo>(info);
+			data_value offset = static_cast<double>(bufferInfo.offset);
+			data_value range = static_cast<double>(bufferInfo.range);
+
+			return data_list{handle, offset, range};
+		}
+		else if(std::holds_alternative<VkDescriptorImageInfo>(info))
+		{
+			const auto& imageInfo = std::get<VkDescriptorImageInfo>(info);
+			data_value layout = static_cast<double>(static_cast<std::underlying_type_t<VkImageLayout>>(imageInfo.imageLayout));
+			data_value view = static_cast<VkHandle>(imageInfo.imageView);
+			data_value sampler = static_cast<VkHandle>(imageInfo.sampler);
+
+			return data_list{handle, layout, view, sampler};
+		}
+
+		return data_list{handle};
 	}
 
 	bool vkdescriptor_data::supports(selector_type stype, data_type dtype)
 	{
-		return stype == Draw && dtype == Handle;
+		return stype == Draw && dtype == List;
 	}
 
 	std::ostream& vkdescriptor_data::print(std::ostream& out)
 	{
-		out << "vkdescriptor(" << m_set << ", " << m_binding << ")";
+		out << "vkdescriptor(" << m_set << ", " << m_binding << ", " << m_arrayIndex << ")";
 		return out;
 	}
 }

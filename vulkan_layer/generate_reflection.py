@@ -67,7 +67,7 @@ for enum in vkreg.tree.findall("enums"):
         if "protect" in val.attrib:
             continue
         vName = val.attrib["name"]
-        if "RESERVED" in vName:
+        if "RESERVED" in vName or "_RESERVE_" in vName:
             continue
         if vName.endswith("_EXT"):
             continue

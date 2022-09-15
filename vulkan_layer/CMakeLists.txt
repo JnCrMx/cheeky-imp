@@ -119,3 +119,13 @@ endif(CHEEKY_LAYER_DOCS)
 
 enable_testing()
 add_subdirectory(test)
+
+FetchContent_Declare(cmake_git_version_tracking                   
+  GIT_REPOSITORY https://github.com/andrew-hardin/cmake-git-version-tracking.git
+  GIT_TAG 904dbda1336ba4b9a1415a68d5f203f576b696bb
+)
+FetchContent_MakeAvailable(cmake_git_version_tracking)
+target_link_libraries(cheeky_layer PRIVATE cmake_git_version_tracking)
+
+#target_link_libraries(cheeky_layer PUBLIC -fsanitize=address)
+#target_compile_options(cheeky_layer PUBLIC -fsanitize=address)

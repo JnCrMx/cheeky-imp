@@ -196,16 +196,17 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBufferToImage(
 
 		log << " hash=" << hash;
 
-		if(global_config.map<bool>("dump", CheekyLayer::config::to_bool))
+		if(global_config.map<bool>("dump", CheekyLayer::config::to_bool)/* && should_dump(hash_string)*/)
 		{
+			/*{
+				scoped_lock l(global_lock);
+				dumpCache.push_back(hash_string);
+			}*/
 			{
 				std::string outputPath = global_config["dumpDirectory"]+"/images/"+hash_string+".image";
-				if(!std::filesystem::exists(outputPath))
-				{
-					std::ofstream out(outputPath, std::ios_base::binary);
-					if(out.good())
-						out.write((char*)data, (size_t)size);
-				}
+				std::ofstream out(outputPath, std::ios_base::binary);
+				if(out.good())
+					out.write((char*)data, (size_t)size);
 			}
 
 #if defined(USE_IMAGE_TOOLS) && defined(EXPORT_PNG)

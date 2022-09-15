@@ -287,4 +287,34 @@ namespace CheekyLayer::rules::datas
 
 			static data_register<local_data> reg;
 	};
+
+	class split_data : public data
+	{
+		public:
+			split_data(selector_type type) : data(type) {}
+			virtual void read(std::istream&);
+			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual bool supports(selector_type, data_type);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			std::unique_ptr<data> m_data;
+			std::string m_delimiter;
+
+			static data_register<split_data> reg;
+	};
+
+	class call_function_data : public data
+	{
+		public:
+			call_function_data(selector_type type) : data(type) {}
+			virtual void read(std::istream&);
+			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual bool supports(selector_type, data_type);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			std::string m_function;
+			std::vector<std::unique_ptr<data>> m_args;
+
+			static data_register<call_function_data> reg;
+	};
 }

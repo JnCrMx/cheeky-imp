@@ -80,7 +80,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_UpdateDescriptorSetWithTemplate(
 			
 			for(int j=0; j<entry.descriptorCount; j++)
 			{
-				const void* newPtr = ((uint8_t*)pData) + entry.offset + j*entry.stride;
+				const void* newPtr = (static_cast<const uint8_t*>(pData)) + entry.offset + j*entry.stride;
 				if(type == CheekyLayer::rules::selector_type::Image)
 				{
 					const VkDescriptorImageInfo* info = (const VkDescriptorImageInfo*) newPtr;

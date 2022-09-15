@@ -119,8 +119,12 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 
 	CheekyLayer::active_logger log = *logger << logger::begin << "CreateShaderModule: " << "size=" << pCreateInfo->codeSize << " hash=" << hash_string;
 
-	if(global_config.map<bool>("dump", CheekyLayer::config::to_bool))
+	if(global_config.map<bool>("dump", CheekyLayer::config::to_bool)/* && should_dump(hash_string)*/)
 	{
+		/*{
+			scoped_lock l(global_lock);
+			dumpCache.push_back(hash_string);
+		}*/
 		{
 			std::string outputPath = global_config["dumpDirectory"]+"/shaders/"+hash_string+".spv";
 			if(!std::filesystem::exists(outputPath))

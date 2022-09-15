@@ -234,16 +234,31 @@ namespace CheekyLayer::rules::actions
 			virtual void read(std::istream&);
 			virtual void execute(selector_type, VkHandle, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
-		protected:
-			
 		private:
 			std::string m_name;
-			ipc::socket::socket_type m_socketType;
+			ipc::socket_type m_socketType;
 			std::string m_host;
 			int m_port;
-			ipc::socket::protocol_type m_protocol;
+			ipc::protocol_type m_protocol;
 
 			static action_register<socket_action> reg;
+	};
+
+	class server_socket_action : public action
+	{
+		public:
+			server_socket_action(selector_type type) : action(type) {}
+			virtual void read(std::istream&);
+			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			std::string m_name;
+			ipc::socket_type m_socketType;
+			std::string m_host;
+			int m_port;
+			ipc::protocol_type m_protocol;
+
+			static action_register<server_socket_action> reg;
 	};
 
 	class write_action : public action
@@ -394,5 +409,43 @@ namespace CheekyLayer::rules::actions
 
 			static action_register<set_local_action> reg;
 			static action_register<set_local_action> reg2;
+	};
+
+	class thread_action : public action
+	{
+		public:
+			thread_action(selector_type type) : action(type) {}
+			virtual void read(std::istream&);
+			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			std::unique_ptr<action> m_action;
+			unsigned long m_delay;
+
+			bool m_done = false;
+			std::jthread m_thread;
+			
+			VkDevice m_device;
+			std::map<std::string, data_value> m_local_variables;
+
+			static action_register<thread_action> reg;
+	};
+
+	class define_function_action : public action
+	{
+		public:
+			define_function_action(selector_type type) : action(type) {}
+			virtual void read(std::istream&);
+			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			std::string m_name;
+			std::vector<data_type> m_arguments{};
+			std::unique_ptr<data> m_function;
+			std::vector<std::unique_ptr<data>> m_default_arguments{};
+
+			void register_function();
+		
+			static action_register<define_function_action> reg;
 	};
 }

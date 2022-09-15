@@ -54,3 +54,11 @@ add_test(reflection_array test_reflection_array)
 add_executable(test_reflection_flags reflection_flags.cpp)
 target_link_libraries(test_reflection_flags PUBLIC cheeky_layer gtest_main)
 gtest_discover_tests(test_reflection_flags)
+
+add_executable(test_rule_parser_multiline rule_parser_multiline.cpp)
+target_link_libraries(test_rule_parser_multiline PUBLIC cheeky_layer)
+add_test(rule_parser_multiline1 test_rule_parser_multiline ${CMAKE_CURRENT_SOURCE_DIR}/rules.txt)
+add_test(rule_parser_multiline2 test_rule_parser_multiline ${CMAKE_CURRENT_SOURCE_DIR}/rules_multiline.txt)
+
+add_executable(test_server_socket server_socket.cpp)
+target_link_libraries(test_server_socket PUBLIC cheeky_layer)

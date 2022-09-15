@@ -1,4 +1,5 @@
 #include "rules/actions.hpp"
+#include "descriptors.hpp"
 #include "dispatch.hpp"
 #include "logger.hpp"
 #include "layer.hpp"
@@ -13,6 +14,7 @@
 #include <cstring>
 #include <exception>
 #include <glm/common.hpp>
+#include <iomanip>
 #include <ios>
 #include <istream>
 #include <iterator>
@@ -23,6 +25,8 @@
 #include <string>
 #include <thread>
 #include <experimental/iterator>
+
+#include <iostream>
 
 #include <sys/socket.h>
 #include <netdb.h>
@@ -57,6 +61,7 @@ namespace CheekyLayer::rules::actions
 	action_register<log_extended_action> log_extended_action::reg("logx");
 	action_register<override_action> override_action::reg("override");
 	action_register<socket_action> socket_action::reg("socket");
+	action_register<server_socket_action> server_socket_action::reg("server_socket");
 	action_register<write_action> write_action::reg("write");
 	action_register<store_action> store_action::reg("store");
 	action_register<overload_action> overload_action::reg("overload");
@@ -68,6 +73,8 @@ namespace CheekyLayer::rules::actions
 	action_register<set_global_action> set_global_action::reg2("global=");
 	action_register<set_local_action> set_local_action::reg("set_local");
 	action_register<set_local_action> set_local_action::reg2("local=");
+	action_register<thread_action> thread_action::reg("thread");
+	action_register<define_function_action> define_function_action::reg("function");
 
 	void mark_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule&)
 	{
@@ -357,12 +364,14 @@ namespace CheekyLayer::rules::actions
 
 	void log_action::read(std::istream& in)
 	{
-		std::getline(in, m_text, ')');
+		in >> std::quoted(m_text);
+		skip_ws(in);
+		check_stream(in, ')');
 	}
 
 	std::ostream& log_action::print(std::ostream& out)
 	{
-		out << "log(" << m_text << ")";
+		out << "log(" << std::quoted(m_text) << ")";
 		return out;
 	}
 
@@ -443,6 +452,45 @@ namespace CheekyLayer::rules::actions
 		return out;
 	}
 
+	void server_socket_action::execute(selector_type, VkHandle, local_context &, rule &)
+	{
+		if(rule_env.fds.count(m_name))
+			throw std::runtime_error("file descriptor with name "+m_name+" already exists");
+
+		rule_env.fds[m_name] = std::make_unique<ipc::server_socket>(m_socketType, m_host, m_port, m_protocol);
+		rule_env.fds[m_name]->m_name = m_name;
+	}
+
+	void server_socket_action::read(std::istream& in)
+	{
+		std::getline(in, m_name, ',');
+		skip_ws(in);
+
+		std::string type;
+		std::getline(in, type, ',');
+		m_socketType = ipc::socket::socket_type_from_string(type);
+		skip_ws(in);
+
+		std::getline(in, m_host, ',');
+		skip_ws(in);
+
+		in >> m_port;
+		skip_ws(in);
+		check_stream(in, ',');
+		skip_ws(in);
+
+		std::string protocol;
+		std::getline(in, protocol, ')');
+		m_protocol = ipc::socket::protocol_type_from_string(protocol);
+	}
+
+	std::ostream& server_socket_action::print(std::ostream& out)
+	{
+		out << "server_socket(" << m_name << ", " << ipc::socket::socket_type_to_string(m_socketType) << ", " << m_host << ", " << m_port
+			<< ", " << ipc::socket::protocol_type_to_string(m_protocol) << ")";
+		return out;
+	}
+
 	void write_action::execute(selector_type stype, VkHandle handle, local_context& ctx, rule& rule)
 	{
 		if(!rule_env.fds.count(m_fd))
@@ -450,11 +498,17 @@ namespace CheekyLayer::rules::actions
 
 		auto& fd = rule_env.fds[m_fd];
 
+		int extra = 0;
+		if(stype == Receive || (stype == Custom && ctx.customTag == "connect"))
+		{
+			extra = ctx.info->receive.extra;
+		}
+
 		if(m_data->supports(stype, data_type::Raw))
 		{
 			data_value val = m_data->get(stype, data_type::Raw, handle, ctx, rule);
 			auto& v = std::get<std::vector<uint8_t>>(val);
-			if(fd->write(v) < 0)
+			if(fd->write(v, extra) < 0)
 				throw std::runtime_error("failed to send data to file descriptor \""+m_fd+"\": " + strerror(errno));
 		}
 		else if(m_data->supports(stype, data_type::String))
@@ -462,7 +516,7 @@ namespace CheekyLayer::rules::actions
 			data_value val = m_data->get(stype, data_type::String, handle, ctx, rule);
 			auto& s = std::get<std::string>(val);
 			std::vector<uint8_t> v(s.begin(), s.end());
-			if(fd->write(v) < 0)
+			if(fd->write(v, extra) < 0)
 				throw std::runtime_error("failed to write data to file descriptor \""+m_fd+"\": " + strerror(errno));
 		}
 		else
@@ -1012,6 +1066,7 @@ namespace CheekyLayer::rules::actions
 				bool decompression = image_tools::is_decompression_supported(imageInfo.format);
 				if(decompression || 
 					imageInfo.format == VK_FORMAT_R8G8B8A8_SRGB ||
+					imageInfo.format == VK_FORMAT_R8G8B8A8_UNORM ||
 					imageInfo.format == VK_FORMAT_R16G16B16A16_SFLOAT ||
 					imageInfo.format == VK_FORMAT_R16G16_SFLOAT ||
 					imageInfo.format == VK_FORMAT_R16G16B16A16_UINT)
@@ -1026,7 +1081,7 @@ namespace CheekyLayer::rules::actions
 
 						if(decompression)
 							image_tools::decompress(imageInfo.format, (uint8_t*)data.data(), image, w, h);
-						else if(imageInfo.format == VK_FORMAT_R8G8B8A8_SRGB)
+						else if(imageInfo.format == VK_FORMAT_R8G8B8A8_SRGB || imageInfo.format == VK_FORMAT_R8G8B8A8_UNORM)
 							std::copy((uint32_t*)data.data(), ((uint32_t*)data.data())+w*h, image.begin());
 						else if(imageInfo.format == VK_FORMAT_R16G16B16A16_SFLOAT)
 							std::transform((uint64_t*)data.data(), ((uint64_t*)data.data())+w*h, image.begin(), [](uint64_t u){
@@ -1135,21 +1190,41 @@ namespace CheekyLayer::rules::actions
 
 	void buffer_copy_action::execute(selector_type stype, VkHandle handle, local_context& ctx, rule& rule)
 	{
-		VkHandle src = std::get<VkHandle>(m_src->get(stype, data_type::Handle, handle, ctx, rule));
-		VkHandle dst = std::get<VkHandle>(m_dst->get(stype, data_type::Handle, handle, ctx, rule));
+		VkHandle srcHandle, dstHandle;
+		VkDeviceSize srcOffset = 0, dstOffset = 0;
+		if(m_src->supports(stype, data_type::List))
+		{
+			data_list src = std::get<data_list>(m_src->get(stype, data_type::List, handle, ctx, rule));
+			srcHandle = std::get<VkHandle>(src.values.at(0));
+			srcOffset = std::get<double>(src.values.at(1));
+		}
+		else
+		{
+			srcHandle = std::get<VkHandle>(m_src->get(stype, data_type::Handle, handle, ctx, rule));
+		}
+		if(m_dst->supports(stype, data_type::List))
+		{
+			data_list dst = std::get<data_list>(m_dst->get(stype, data_type::List, handle, ctx, rule));
+			dstHandle = std::get<VkHandle>(dst.values.at(0));
+			dstOffset = std::get<double>(dst.values.at(1));
+		}
+		else
+		{
+			dstHandle = std::get<VkHandle>(m_dst->get(stype, data_type::Handle, handle, ctx, rule));
+		}
 		
 		std::vector<uint8_t> transferBuffer(m_size);
 
-		memoryAccess(ctx.device, (VkBuffer)src, [&transferBuffer, this, &ctx](void* ptr, VkDeviceSize size){
+		memoryAccess(ctx.device, (VkBuffer) srcHandle, [&transferBuffer, this, &ctx](void* ptr, VkDeviceSize size){
 			uint8_t* uptr = (uint8_t*)ptr;
 			ctx.logger << "Reading " << std::min(m_size, size) << " bytes! ";
 			std::copy(uptr, uptr + std::min(m_size, size), transferBuffer.begin());
-		}, m_srcOffset);
-		memoryAccess(ctx.device, (VkBuffer)dst, [&transferBuffer, this, &ctx](void* ptr, VkDeviceSize size){
+		}, srcOffset + m_srcOffset);
+		memoryAccess(ctx.device, (VkBuffer) dstHandle, [&transferBuffer, this, &ctx](void* ptr, VkDeviceSize size){
 			uint8_t* uptr = (uint8_t*)ptr;
 			ctx.logger << "Writing " << std::min(m_size, size) << " bytes! ";
 			std::copy(transferBuffer.begin(), transferBuffer.begin() + std::min(m_size, size), uptr);
-		}, m_dstOffset);
+		}, dstOffset + m_dstOffset);
 	}
 
 	void buffer_copy_action::read(std::istream& in)
@@ -1259,5 +1334,135 @@ namespace CheekyLayer::rules::actions
 		out << "set_local(" << to_string(m_dtype) << ", " << m_name << ", ";
 		m_data->print(out);
 		return out << ")";
+	}
+
+	void thread_action::execute(selector_type, VkHandle, local_context& ctx, rule& rule)
+	{
+		m_device = ctx.device;
+		m_local_variables = ctx.local_variables;
+		if(m_done) return;
+		m_done = true;
+
+		m_thread = std::jthread([this, &rule](std::stop_token stop_token){
+			std::mutex mutex;
+			std::unique_lock<std::mutex> lock(mutex);
+			do
+			{
+				CheekyLayer::active_logger log = *::logger << logger::begin;
+
+				CheekyLayer::rules::local_context ctx = { .logger = log, .device = m_device, .customTag = "thread", .local_variables = m_local_variables };
+				try
+				{
+					m_action->execute(selector_type::Custom, VK_NULL_HANDLE, ctx, rule);
+				}
+				catch(const std::exception& ex)
+				{
+					ctx.logger << logger::error << "Failed to execute a rule on thread: " << ex.what();
+				}
+				log << logger::end;
+			}
+			while(!std::condition_variable_any().wait_for(lock, stop_token, std::chrono::milliseconds(m_delay), [&stop_token]{return stop_token.stop_requested();}));
+		});
+	}
+
+	void thread_action::read(std::istream& in)
+	{
+		m_action = read_action(in, m_type);
+		skip_ws(in);
+		check_stream(in, ',');
+		skip_ws(in);
+
+		in >> m_delay;
+		check_stream(in, ')');
+	}
+
+	std::ostream& thread_action::print(std::ostream& out)
+	{
+		out << "thread(";
+		m_action->print(out);
+		return out << ", " << m_delay << ")";
+	}
+
+	void define_function_action::read(std::istream& in)
+	{
+		std::getline(in, m_name, ',');
+		check_stream(in, '(');
+
+		std::string sig;
+		std::getline(in, sig, ')');
+		{
+			std::istringstream iss(sig);
+			skip_ws(iss);
+
+			std::string t;
+			while(std::getline(iss, t, ','))
+			{
+				skip_ws(iss);
+				m_arguments.push_back(data_type_from_string(t));
+			}
+		}
+		check_stream(in, ',');
+		skip_ws(in);
+		m_function = read_data(in, m_type); // TODO: FIX usage of m_type
+		skip_ws(in);
+
+		while(in.peek() != ')')
+		{
+			m_default_arguments.push_back(read_data(in, m_type)); // TODO: FIX usage of m_type
+
+			skip_ws(in);
+			char seperator = in.peek();
+			if(seperator != ',')
+				continue;
+			in.get();
+			skip_ws(in);
+		}
+		check_stream(in, ')');
+
+		for(int i=0; i<m_default_arguments.size(); i++)
+		{
+			int index = i + m_arguments.size() - m_default_arguments.size();
+			auto t = m_arguments.at(i);
+			if(!m_default_arguments.at(i)->supports(m_type, t)) // TODO: FIX usage of m_type
+				throw RULE_ERROR("default argument "+std::to_string(i)+" does not support type "+to_string(t));
+		}
+
+		if(!rule_env.user_functions.contains(m_name))
+		{
+			register_function();
+		}
+	}
+
+	std::ostream& define_function_action::print(std::ostream& out)
+	{
+		out << "function(" << m_name << ", (";
+		std::transform(m_arguments.begin(), m_arguments.end(), std::experimental::make_ostream_joiner(out, ", "),
+			static_cast<std::string(*)(data_type)>(to_string));
+		out << "), ";
+		m_function->print(out);
+		if(m_default_arguments.empty())
+			return out << ")";
+		for(auto& arg : m_default_arguments)
+		{
+			out << ", ";
+			arg->print(out);
+		}
+		return out << ")";
+	}
+
+	void define_function_action::execute(selector_type, VkHandle, local_context &, rule &)
+	{
+		register_function();
+	}
+
+	void define_function_action::register_function()
+	{
+		user_function fnc = {
+			.data = m_function.get(),
+			.arguments = m_arguments,
+			.default_arguments{m_default_arguments.size()}
+		};
+		std::transform(m_default_arguments.cbegin(), m_default_arguments.cend(), fnc.default_arguments.begin(), std::mem_fn(&std::unique_ptr<data>::get));
+		rule_env.user_functions[m_name] = std::move(fnc);
 	}
 }

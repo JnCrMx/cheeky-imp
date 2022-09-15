@@ -181,6 +181,9 @@ namespace CheekyLayer::rules::conditions
 			case data_type::String:
 				result = std::get<std::string>(v1) <=> std::get<std::string>(v2);
 				break;
+			case data_type::Raw:
+				result = std::get<std::vector<uint8_t>>(v1) <=> std::get<std::vector<uint8_t>>(v2);
+				break;
 			default:
 				break;
 		}
@@ -259,8 +262,10 @@ namespace CheekyLayer::rules::conditions
 			m_dtype = data_type::Number;
 		else if(m_left->supports(m_type, data_type::String) && m_right->supports(m_type, data_type::String))
 			m_dtype = data_type::String;
+		else if(m_left->supports(m_type, data_type::Raw) && m_right->supports(m_type, data_type::Raw))
+			m_dtype = data_type::Raw;
 		else 
-			throw std::runtime_error("only numbers and strings can be compared");
+			throw std::runtime_error("only numbers and strings and raw data can be compared");
 	}
 
 	std::ostream& compare_condition::print(std::ostream& out)

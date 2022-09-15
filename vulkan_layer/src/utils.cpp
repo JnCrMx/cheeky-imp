@@ -21,6 +21,11 @@ void sha256_string(const uint8_t *buf, size_t len, char outputBuffer[65])
 	outputBuffer[64] = 0;
 }
 
+bool should_dump(std::string hash)
+{
+	return std::find(dumpCache.begin(), dumpCache.end(), hash) == dumpCache.end();
+}
+
 bool has_override(std::string hash)
 {
 	return std::find(overrideCache.begin(), overrideCache.end(), hash) != overrideCache.end();

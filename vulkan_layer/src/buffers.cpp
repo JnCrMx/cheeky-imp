@@ -123,11 +123,14 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBuffer(VkCommandBuffer comman
             device_dispatch[GetKey(device)].SetDebugUtilsObjectNameEXT(device, &info);
         }
 
-        if(global_config.map<bool>("dump", CheekyLayer::config::to_bool))
+        if(global_config.map<bool>("dump", CheekyLayer::config::to_bool)/* && should_dump(hash_string)*/)
 		{
             std::string outputPath = global_config["dumpDirectory"]+"/buffers/"+hash_string+".buf";
-            if(!std::filesystem::exists(outputPath))
             {
+                /*{
+				    scoped_lock l(global_lock);
+                    dumpCache.push_back(hash_string);
+                }*/
                 std::ofstream out(outputPath, std::ios_base::binary);
                 if(out.good())
                     out.write((char*)data, (size_t)size);

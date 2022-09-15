@@ -39,6 +39,8 @@ namespace CheekyLayer::rules
 	{
 		public:
 			selector_condition(selector_type type) : m_type(type) {}
+			virtual ~selector_condition() = default;
+
 			virtual void read(std::istream&) = 0;
 			virtual bool test(selector_type, VkHandle, local_context&) = 0;
 			virtual std::ostream& print(std::ostream& out)
@@ -106,6 +108,8 @@ namespace CheekyLayer::rules
 	{
 		public:
 			action(selector_type type) : m_type(type) {}
+			virtual ~action() = default;
+
 			virtual void read(std::istream&) = 0;
 			virtual void execute(selector_type, VkHandle, local_context&, rule&) = 0;
 			virtual std::ostream& print(std::ostream& out)
@@ -166,6 +170,9 @@ namespace CheekyLayer::rules
 
 	struct data_list
 	{
+		data_list() = default;
+		data_list(const std::initializer_list<data_value>&& v) : values(v) {}
+
 		std::vector<data_value> values;
 	};
 
@@ -173,6 +180,8 @@ namespace CheekyLayer::rules
 	{
 		public:
 			data(selector_type type) : m_type(type) {}
+			virtual ~data() = default;
+
 			virtual void read(std::istream&) = 0;
 			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&) = 0;
 			virtual bool supports(selector_type, data_type) = 0;

@@ -14,10 +14,12 @@ namespace CheekyLayer::rules::datas
 	data_register<received_data> received_data::reg("received");
 	data_register<string_clean_data> string_clean_data::reg("strclean");
 	data_register<number_data> number_data::reg("number");
+	data_register<split_data> split_data::reg("split");
 
 	void string_data::read(std::istream& in)
 	{
-		std::getline(in, m_string, ')');
+		in >> std::quoted(m_string);
+		check_stream(in, ')');
 	}
 
 	data_value string_data::get(selector_type, data_type type, VkHandle, local_context &, rule &)
@@ -46,7 +48,7 @@ namespace CheekyLayer::rules::datas
 
 	std::ostream& string_data::print(std::ostream& out)
 	{
-		out << "string(" << m_string << ")";
+		out << "string(" << std::quoted(m_string) << ")";
 		return out;
 	}
 
@@ -192,6 +194,53 @@ namespace CheekyLayer::rules::datas
 	std::ostream& number_data::print(std::ostream& out)
 	{
 		out << "number(" << std::setprecision(10) << m_number << ")";
+		return out;
+	}
+
+	void split_data::read(std::istream& in)
+	{
+		m_data = read_data(in, m_type);
+		skip_ws(in);
+		check_stream(in, ',');
+		skip_ws(in);
+
+		if(!m_data->supports(m_type, data_type::String))
+			throw std::runtime_error("data does not support string data");
+
+		in >> std::quoted(m_delimiter);
+		skip_ws(in);
+		check_stream(in, ')');
+	}
+
+	data_value split_data::get(selector_type stype, data_type type, VkHandle handle, local_context& ctx, rule& rule)
+	{
+		if(type != data_type::List)
+			throw std::runtime_error("cannot return data type "+to_string(type));
+		std::string s = std::get<std::string>(m_data->get(stype, data_type::String, handle, ctx, rule));
+
+		data_list list;
+		std::string::size_type pos = 0;
+		while((pos = s.find(m_delimiter)) != std::string::npos)
+		{
+			std::string token = s.substr(0, pos);
+			list.values.push_back(token);
+			s.erase(0, pos + m_delimiter.length());
+		}
+		list.values.push_back(s);
+
+		return list;
+	}
+
+	bool split_data::supports(selector_type, data_type type)
+	{
+		return type == data_type::List;
+	}
+
+	std::ostream& split_data::print(std::ostream& out)
+	{
+		out << "split(";
+		m_data->print(out);
+		out << ", " << std::quoted(m_delimiter) << ")";
 		return out;
 	}
 }

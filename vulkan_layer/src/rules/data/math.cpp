@@ -4,6 +4,7 @@
 #include "utils.hpp"
 
 #include <exprtk.hpp>
+#include <iomanip>
 
 namespace CheekyLayer::rules::datas
 {
@@ -11,7 +12,7 @@ namespace CheekyLayer::rules::datas
 
 	void math_data::read(std::istream& in)
 	{
-		std::getline(in, m_expression, '\\');
+		in >> std::quoted(m_expression, '`');
 		skip_ws(in);
 
 		while(in.peek() == ',')
@@ -87,7 +88,7 @@ namespace CheekyLayer::rules::datas
 
 	std::ostream& math_data::print(std::ostream& out)
 	{
-		out << "math(" << m_expression << "\\";
+		out << "math(" << std::quoted(m_expression, '`');
 		for(auto & [name, ptr] : m_variables)
 		{
 			out << ", " << name << " => ";
