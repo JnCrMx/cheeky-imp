@@ -15,6 +15,7 @@ namespace CheekyLayer::rules::datas
 	data_register<string_clean_data> string_clean_data::reg("strclean");
 	data_register<number_data> number_data::reg("number");
 	data_register<split_data> split_data::reg("split");
+	data_register<at_data> at_data::reg("at");
 
 	void string_data::read(std::istream& in)
 	{
@@ -242,5 +243,66 @@ namespace CheekyLayer::rules::datas
 		m_data->print(out);
 		out << ", " << std::quoted(m_delimiter) << ")";
 		return out;
+	}
+
+	void at_data::read(std::istream& in)
+	{
+		std::string i;
+		std::getline(in, i, ',');
+		std::istringstream{i} >> m_index;
+		skip_ws(in);
+
+		m_src = read_data(in, data::m_type);
+		if(!m_src->supports(data::m_type, data_type::List))
+		{
+			std::ostringstream of;
+			of << "Source \"";
+			m_src->print(of);
+			of << "\" does not support type List.";
+			throw RULE_ERROR(of.str());
+		}
+		check_stream(in, ')');
+	}
+
+	data_value at_data::get(selector_type stype, data_type dtype, VkHandle handle, local_context& ctx, rule& rule)
+	{
+		auto list = std::get<data_list>(m_src->get(stype, data_type::List, handle, ctx, rule));
+		auto& thing = list.values.at(m_index);
+
+		bool okay = true;
+		switch(dtype)
+		{
+			case String:
+				okay = std::holds_alternative<std::string>(thing);
+				break;
+			case Raw:
+				okay = std::holds_alternative<std::vector<uint8_t>>(thing);
+				break;
+			case Handle:
+				okay = std::holds_alternative<VkHandle>(thing);
+				break;
+			case Number:
+				okay = std::holds_alternative<double>(thing);
+				break;
+			case List:
+				okay = std::holds_alternative<data_list>(thing);
+				break;
+		}
+		if(!okay)
+			throw RULE_ERROR("input data does not hold type \""+to_string(dtype)+"\" at index "+std::to_string(m_index));
+
+		return thing;
+	}
+
+	bool at_data::supports(selector_type stype, data_type dtype)
+	{
+		return true;
+	}
+
+	std::ostream& at_data::print(std::ostream& out)
+	{
+		out << "at(" << m_index << ", ";
+		m_src->print(out);
+		return out << ")";
 	}
 }
