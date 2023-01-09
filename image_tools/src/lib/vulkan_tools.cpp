@@ -28,6 +28,9 @@ namespace image_tools
 			case VK_FORMAT_BC7_UNORM_BLOCK:
 			case VK_FORMAT_BC7_SRGB_BLOCK:
 				return true;
+			case VK_FORMAT_R8G8B8A8_UNORM:
+			case VK_FORMAT_R8G8B8A8_SRGB:
+				return true;
 			default:
 				return false;
 		}
@@ -94,6 +97,23 @@ namespace image_tools
 			case VK_FORMAT_BC7_UNORM_BLOCK:
 			case VK_FORMAT_BC7_SRGB_BLOCK:
 				compressBC7(in, out, w, h);
+				break;
+			case VK_FORMAT_R8G8B8A8_UNORM:
+			case VK_FORMAT_R8G8B8A8_SRGB:
+				{
+					out.resize(w * h * 4);
+					for(int x=0; x<w; x++)
+					{
+						for(int y=0; y<h; y++)
+						{
+							auto color = in.scaled(x, y, w, h);
+							out[(y*w + x)*4 + 0] = color.r * 255.0f;
+							out[(y*w + x)*4 + 1] = color.g * 255.0f;
+							out[(y*w + x)*4 + 2] = color.b * 255.0f;
+							out[(y*w + x)*4 + 3] = color.a * 255.0f;
+						}
+					}
+				}
 				break;
 			default:
 				throw std::runtime_error("format not supported: "+vk::to_string(vk::Format(format)));
