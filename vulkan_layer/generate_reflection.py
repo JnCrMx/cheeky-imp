@@ -71,7 +71,7 @@ for enum in vkreg.tree.findall("enums"):
             continue
         if vName.endswith("_EXT"):
             continue
-        if vName.endswith("_QCOM"):
+        if vName.endswith("_QCOM") or vName.endswith("_HUAWEI"):
             continue
         print(f"\t\t\t{{\"{vName}\", VkEnumEntry{{ .name = \"{vName}\", .value = (uint32_t) {vName}}}}},")
     print("\t\t}\n\t},")
