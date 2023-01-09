@@ -117,6 +117,9 @@ if(CHEEKY_LAYER_DOCS)
     endif(DOXYGEN_FOUND)
 endif(CHEEKY_LAYER_DOCS)
 
+add_subdirectory(external/backward-cpp)
+add_backward(cheeky_layer)
+
 enable_testing()
 add_subdirectory(test)
 

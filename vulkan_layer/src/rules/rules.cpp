@@ -8,8 +8,6 @@
 #include <stdexcept>
 #include <string>
 
-#include <iostream>
-
 namespace CheekyLayer::rules
 {
 	condition_factory::map_type* condition_factory::map = nullptr;
@@ -244,9 +242,19 @@ namespace CheekyLayer::rules
 			{
 				r->execute(type, handle, ctx);
 			}
+			catch(const rule_error& ex)
+			{
+				ctx.logger << logger::error << "Failed to execute a rule: " << ex.what() << "\n";
+				backward::Printer p;
+				p.color_mode = backward::ColorMode::never;
+				p.object = true;
+				p.address = true;
+				p.snippet = true;
+				p.print(ex.stack_trace, ctx.logger.raw());
+			}
 			catch(const std::exception& ex)
 			{
-				ctx.logger << logger::error << "Failed to execute a rule: " << ex.what();
+				ctx.logger << logger::error << "Failed to execute a rule: " << ex.what() << "(" << typeid(ex).name() << ")";
 			}
 		}
 	}

@@ -11,9 +11,25 @@
 #include <functional>
 #include <variant>
 
+#define BACKWARD_HAS_DW 1
+#include <backward.hpp>
+
 namespace CheekyLayer::rules
 {
-	#define RULE_ERROR(message) (std::runtime_error(std::string(__PRETTY_FUNCTION__)+": "+(message)))
+	class rule_error : public std::runtime_error
+	{
+		public:
+			rule_error(std::string message) : std::runtime_error(message.c_str())
+			{
+				stack_trace.load_here();
+				stack_trace.skip_n_firsts(1);
+			}
+
+			backward::StackTrace stack_trace{};
+	};
+
+	#define RULE_ERROR(message) (rule_error(std::string(__PRETTY_FUNCTION__)+": "+(message)))
+
 	void skip_ws(std::istream& in);
 	void check_stream(std::istream& in, char expected);
 

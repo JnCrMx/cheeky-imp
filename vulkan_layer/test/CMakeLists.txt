@@ -23,6 +23,7 @@ add_test(enum_reflection test_enum_reflection)
 
 add_executable(test_rule_parser rule_parser.cpp)
 target_link_libraries(test_rule_parser PUBLIC cheeky_layer)
+add_backward(test_rule_parser)
 
 file(STRINGS rules.txt RULES)
 set(COUNTER 1)
@@ -59,6 +60,8 @@ add_executable(test_rule_parser_multiline rule_parser_multiline.cpp)
 target_link_libraries(test_rule_parser_multiline PUBLIC cheeky_layer)
 add_test(rule_parser_multiline1 test_rule_parser_multiline ${CMAKE_CURRENT_SOURCE_DIR}/rules.txt)
 add_test(rule_parser_multiline2 test_rule_parser_multiline ${CMAKE_CURRENT_SOURCE_DIR}/rules_multiline.txt)
+add_backward(test_rule_parser_multiline)
 
 add_executable(test_server_socket server_socket.cpp)
 target_link_libraries(test_server_socket PUBLIC cheeky_layer)
+add_backward(test_server_socket)

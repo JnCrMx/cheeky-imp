@@ -26,3 +26,6 @@
 [submodule "external/SPIRV-Reflect"]
 	path = external/SPIRV-Reflect
 	url = https://github.com/KhronosGroup/SPIRV-Reflect
+[submodule "external/backward-cpp"]
+	path = external/backward-cpp
+	url = https://github.com/bombela/backward-cpp.git

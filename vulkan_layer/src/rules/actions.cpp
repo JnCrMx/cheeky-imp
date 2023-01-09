@@ -197,7 +197,7 @@ namespace CheekyLayer::rules::actions
 					handles.push_back(ctx.info->draw.indexBuffer);
 					break;
 				default:
-					throw std::runtime_error("unsupported selector type: "+std::to_string(m_selector->get_type()));
+					throw RULE_ERROR("unsupported selector type: "+std::to_string(m_selector->get_type()));
 			}
 		}
 		for(auto h : handles)
@@ -214,7 +214,7 @@ namespace CheekyLayer::rules::actions
 
 		selector_type type = m_selector->get_type();
 		if(type != selector_type::Image && type != selector_type::Buffer && type != selector_type::Shader)
-			throw std::runtime_error("unsupported selector type "+to_string(type)+" only image, buffer and shader selectors are supported");
+			throw RULE_ERROR("unsupported selector type "+to_string(type)+" only image, buffer and shader selectors are supported");
 
 		skip_ws(in);
 		check_stream(in, ',');
@@ -385,7 +385,7 @@ namespace CheekyLayer::rules::actions
 		check_stream(in, ')');
 
 		if(!m_data->supports(m_type, data_type::String))
-			throw std::runtime_error("data does not support strings");
+			throw RULE_ERROR("data does not support strings");
 	}
 
 	std::ostream& log_extended_action::print(std::ostream& out)
@@ -414,8 +414,18 @@ namespace CheekyLayer::rules::actions
 
 	void socket_action::execute(selector_type, VkHandle, local_context &, rule &)
 	{
-		if(rule_env.fds.count(m_name))
-			throw std::runtime_error("file descriptor with name "+m_name+" already exists");
+		if(rule_env.fds.contains(m_name))
+		{
+			auto* socket = dynamic_cast<ipc::socket*>(rule_env.fds[m_name].get());
+			if(socket)
+			{
+				socket->close(); // it is now allowed to reopen sockets, but this doesn't work yet and causes a crash
+			}
+			else
+			{
+				throw RULE_ERROR("file descriptor with name "+m_name+" already exists and is not a socket");
+			}
+		}
 
 		rule_env.fds[m_name] = std::make_unique<ipc::socket>(m_socketType, m_host, m_port, m_protocol);
 		rule_env.fds[m_name]->m_name = m_name;
@@ -454,7 +464,7 @@ namespace CheekyLayer::rules::actions
 	void server_socket_action::execute(selector_type, VkHandle, local_context &, rule &)
 	{
 		if(rule_env.fds.count(m_name))
-			throw std::runtime_error("file descriptor with name "+m_name+" already exists");
+			throw RULE_ERROR("file descriptor with name "+m_name+" already exists");
 
 		rule_env.fds[m_name] = std::make_unique<ipc::server_socket>(m_socketType, m_host, m_port, m_protocol);
 		rule_env.fds[m_name]->m_name = m_name;
@@ -493,7 +503,7 @@ namespace CheekyLayer::rules::actions
 	void write_action::execute(selector_type stype, VkHandle handle, local_context& ctx, rule& rule)
 	{
 		if(!rule_env.fds.count(m_fd))
-			throw std::runtime_error("file descriptor with name "+m_fd+" does not exists");
+			throw RULE_ERROR("file descriptor with name "+m_fd+" does not exists");
 
 		auto& fd = rule_env.fds[m_fd];
 
@@ -508,7 +518,7 @@ namespace CheekyLayer::rules::actions
 			data_value val = m_data->get(stype, data_type::Raw, handle, ctx, rule);
 			auto& v = std::get<std::vector<uint8_t>>(val);
 			if(fd->write(v, extra) < 0)
-				throw std::runtime_error("failed to send data to file descriptor \""+m_fd+"\": " + strerror(errno));
+				throw RULE_ERROR("failed to send data to file descriptor \""+m_fd+"\": " + strerror(errno));
 		}
 		else if(m_data->supports(stype, data_type::String))
 		{
@@ -516,10 +526,10 @@ namespace CheekyLayer::rules::actions
 			auto& s = std::get<std::string>(val);
 			std::vector<uint8_t> v(s.begin(), s.end());
 			if(fd->write(v, extra) < 0)
-				throw std::runtime_error("failed to write data to file descriptor \""+m_fd+"\": " + strerror(errno));
+				throw RULE_ERROR("failed to write data to file descriptor \""+m_fd+"\": " + strerror(errno));
 		}
 		else
-			throw std::runtime_error("no suitable data type available");
+			throw RULE_ERROR("no suitable data type available");
 	}
 
 	void write_action::read(std::istream& in)
@@ -531,7 +541,7 @@ namespace CheekyLayer::rules::actions
 		check_stream(in, ')');
 
 		if(!m_data->supports(m_type, data_type::String) && !m_data->supports(m_type, data_type::Raw))
-			throw std::runtime_error("data does not support strings or raw data");
+			throw RULE_ERROR("data does not support strings or raw data");
 	}
 
 	std::ostream& write_action::print(std::ostream& out)
@@ -837,7 +847,7 @@ namespace CheekyLayer::rules::actions
 			check_stream(in, ')');
 
 			if(!m_data->supports(m_type, data_type::String))
-				throw std::runtime_error("data does not support string data");
+				throw RULE_ERROR("data does not support string data");
 		}
 		else if(mode == "Data")
 		{
@@ -847,10 +857,10 @@ namespace CheekyLayer::rules::actions
 			check_stream(in, ')');
 
 			if(!m_data->supports(m_type, data_type::Raw))
-				throw std::runtime_error("data does not support raw data");
+				throw RULE_ERROR("data does not support raw data");
 		}
 		else
-			throw std::runtime_error("mode "+mode+" is not supported, must be either File, FileFromData or Data");
+			throw RULE_ERROR("mode "+mode+" is not supported, must be either File, FileFromData or Data");
 	}
 
 	std::ostream& load_image_action::print(std::ostream& out)
@@ -1109,7 +1119,7 @@ namespace CheekyLayer::rules::actions
 				{
 					std::ofstream of(filename, std::ios::binary);
 					if(!of.good())
-						throw std::runtime_error("ofstream is not good");
+						throw RULE_ERROR("ofstream is not good");
 					of.write(data.data(), data.size());
 					*::logger << logger::begin << std::dec << "Framebuffer #" << m_attachment <<" of size " 
 						<< imageInfo.extent.width << "x" << imageInfo.extent.height << " (" << size 
