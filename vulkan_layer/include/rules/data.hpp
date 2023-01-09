@@ -317,4 +317,31 @@ namespace CheekyLayer::rules::datas
 
 			static data_register<call_function_data> reg;
 	};
+
+	class at_data : public data
+	{
+		public:
+			at_data(selector_type type) : data(type) {}
+			virtual void read(std::istream&);
+			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual bool supports(selector_type, data_type);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			unsigned int m_index;
+			std::unique_ptr<data> m_src;
+
+			static data_register<at_data> reg;
+	};
+
+	class vkhandle_data : public data
+	{
+		public:
+			vkhandle_data(selector_type type) : data(type) {}
+			virtual void read(std::istream&);
+			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual bool supports(selector_type, data_type);
+			virtual std::ostream& print(std::ostream&);
+		private:
+			static data_register<vkhandle_data> reg;
+	};
 }

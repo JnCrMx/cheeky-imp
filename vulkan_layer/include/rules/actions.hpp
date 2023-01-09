@@ -275,20 +275,7 @@ namespace CheekyLayer::rules::actions
 			static action_register<write_action> reg;
 	};
 
-	class store_action : public action
-	{
-		public:
-			store_action(selector_type type) : action(type) {}
-			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
-			virtual std::ostream& print(std::ostream&);
-		private:
-			std::string m_name;
-
-			static action_register<store_action> reg;
-	};
-
-	class overload_action : public action
+	class load_image_action : public action
 	{
 		enum mode {
 			File,
@@ -297,36 +284,36 @@ namespace CheekyLayer::rules::actions
 		};
 
 		public:
-			overload_action(selector_type type) : action(type) {}
+			load_image_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
 			virtual void execute(selector_type, VkHandle, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 
-			void workTry(std::string optFilename, std::vector<uint8_t> optData);
-			void work(std::string optFilename, std::vector<uint8_t> optData);
+			void workTry(VkHandle handle, std::string optFilename, std::vector<uint8_t> optData);
+			void work(VkHandle handle, std::string optFilename, std::vector<uint8_t> optData);
 		private:
-			std::string m_target;
+			std::unique_ptr<data> m_target;
 			mode m_mode;
 			std::string m_filename;
 			std::unique_ptr<data> m_data;
 
-			static action_register<overload_action> reg;
+			static action_register<load_image_action> reg;
 	};
 
-	class preload_action : public action
+	class preload_image_action : public action
 	{
 		public:
-			preload_action(selector_type type) : action(type) {}
+			preload_image_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
 			virtual void execute(selector_type, VkHandle, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 
-			void work(std::string optFilename);
+			void work(VkHandle handle, std::string optFilename);
 		private:
-			std::string m_target;
+			std::unique_ptr<data> m_target;
 			std::unique_ptr<data> m_filename;
 
-			static action_register<preload_action> reg;
+			static action_register<preload_image_action> reg;
 	};
 
 	class dump_framebuffer_action : public action

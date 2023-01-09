@@ -141,4 +141,24 @@ namespace CheekyLayer::rules::datas
 		out << "vkdescriptor(" << m_set << ", " << m_binding << ", " << m_arrayIndex << ")";
 		return out;
 	}
+
+	void vkhandle_data::read(std::istream& in)
+	{
+		check_stream(in, ')');
+	}
+
+	data_value vkhandle_data::get(selector_type, data_type, VkHandle handle, local_context &, rule &)
+	{
+		return handle;
+	}
+
+	bool vkhandle_data::supports(selector_type stype, data_type dtype)
+	{
+		return dtype == Handle;
+	}
+
+	std::ostream& vkhandle_data::print(std::ostream& out)
+	{
+		return out << "vkhandle()";
+	}
 }

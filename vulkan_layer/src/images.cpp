@@ -32,6 +32,7 @@ using CheekyLayer::logger;
 using CheekyLayer::rules::VkHandle;
 
 std::map<VkImage, VkImageCreateInfo> images;
+std::map<VkImage, VkDevice> imageDevices;
 std::map<VkImageView, VkImage> imageViews;
 
 #ifdef USE_IMAGE_TOOLS
@@ -52,6 +53,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateImage(
 		return ret;
 	}
 	images[*pImage] = *pCreateInfo;
+	imageDevices[*pImage] = device;
 
 	VkMemoryRequirements memRequirements;
 	device_dispatch[GetKey(device)].GetImageMemoryRequirements(device, *pImage, &memRequirements);

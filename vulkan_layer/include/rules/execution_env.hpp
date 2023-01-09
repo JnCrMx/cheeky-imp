@@ -31,13 +31,6 @@ namespace CheekyLayer::rules
 	struct data_list;
 	using data_value = std::variant<std::string, std::vector<uint8_t>, VkHandle, double, data_list>;
 
-	struct stored_handle
-	{
-		VkHandle handle;
-		selector_type type;
-		VkDevice device;
-	};
-
 	enum data_type : int;
 	struct user_function
 	{
@@ -70,7 +63,6 @@ namespace CheekyLayer::rules
 			}
 
 			std::map<std::string, std::unique_ptr<ipc::file_descriptor>> fds;
-			std::map<std::string, stored_handle> handles;
 
 			std::vector<std::thread> threads;
 
