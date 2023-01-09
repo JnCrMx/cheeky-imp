@@ -242,7 +242,7 @@ namespace CheekyLayer::rules::ipc
 
 			receive_info info = { .socket = this, .buffer = data, .size = size };
 			additional_info info2 = { .receive = info };
-			local_context ctx = { .logger = log, .info = &info2 };
+			local_context ctx = { .logger = log, .info = &info2, .local_variables = {{"socket:name", m_name}} };
 
 			execute_rules(::rules, selector_type::Receive, 0, ctx);
 
@@ -325,7 +325,7 @@ namespace CheekyLayer::rules::ipc
 
 			receive_info info = { .socket = this, .buffer = nullptr, .size = 0, .extra = fd };
 			additional_info info2 = { .receive = info };
-			local_context ctx = { .logger = log, .info = &info2, .customTag = "connect" };
+			local_context ctx = { .logger = log, .info = &info2, .customTag = "connect", .local_variables = {{"socket:name", m_name}} };
 
 			execute_rules(::rules, selector_type::Custom, 0, ctx);
 
@@ -337,7 +337,7 @@ namespace CheekyLayer::rules::ipc
 
 			receive_info info = { .socket = this, .buffer = data, .size = size, .extra = fd };
 			additional_info info2 = { .receive = info };
-			local_context ctx = { .logger = log, .info = &info2 };
+			local_context ctx = { .logger = log, .info = &info2, .local_variables = {{"socket:name", m_name}} };
 
 			execute_rules(::rules, selector_type::Receive, 0, ctx);
 
