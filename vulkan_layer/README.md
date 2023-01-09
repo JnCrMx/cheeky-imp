@@ -18,6 +18,26 @@ A configurable and programmable Vulkan layer made for hooking into games, and ex
 	- Data procession (kinda experiment) supported for a few conditions and actions (e.g. handling data received via IPC)
 - Plugin interface for custom conditions and actions
 
+## Usage
+
+### Build the layer
+This project uses the *CMake* build system.
+
+**Make sure to *ALWAYS* build it in *Release* (or *RelWithDebInfo*) mode! Building in *Debug* mode will result in incredibly poor performance!**
+
+You can use the following commands to download and build the Vulkan layer:
+```bash
+git clone --recurse-submodules https://git.jcm.re/cheeky-imp/cheeky-imp
+cd vulkan_layer
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
+cmake --build . --config RelWithDebInfo --target all --
+```
+
+### Tell Vulkan where to find the layer
+*(coming soon)*
+
 ## Required libraries
 | Library | Reason | Inclusion |
 | ------- | ------ | --------- |
