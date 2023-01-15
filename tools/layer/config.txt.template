@@ -1,0 +1,8 @@
+dump=true
+dumpDirectory=${VH_LAYER_DUMP}
+override=true
+overrideDirectory=${VH_LAYER_OVERRIDE}
+logFile=${VH_LAYER_ROOT}/log.txt
+ruleFile=${VH_LAYER_ROOT}/rules.txt
+hookDraw=true
+pluginDirectory=${VH_LAYER_ROOT}/plugins

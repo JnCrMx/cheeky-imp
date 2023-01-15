@@ -30,4 +30,4 @@ mkdir -p "$VH_LAYER_OVERRIDE/shaders"
 mkdir -p "$VH_LAYER_OVERRIDE/buffers"
 mkdir -p "$VH_LAYER_OVERRIDE/images"
 
-envsubst < "$VH_LAYER_ROOT/config_base.txt" > "$VH_LAYER_ROOT/config.txt"
+envsubst < "$VH_LAYER_ROOT/config.txt.template" > "$VH_LAYER_ROOT/config.txt"
