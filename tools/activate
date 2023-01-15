@@ -6,6 +6,7 @@ while [ ! -d "$VH_ROOT/.stuff" ]; do
 done
 echo "Root directory is $VH_ROOT"
 
+export VH_ROOT=$VH_ROOT
 export VH_BIN=$VH_ROOT/.stuff/bin
 export VH_LIB=$VH_ROOT/.stuff/lib
 export PATH=$PATH:$VH_BIN
