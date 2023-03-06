@@ -1,4 +1,8 @@
 # cheeky-imp
+
+![cheeky-imp logo](logo.png)
+*Logo made by [choco](https://twitter.com/chocographix)*
+
 A set of tools for hooking into Vulkan games and replacing shaders, textures, and meshes.
 
 *This README.md is very work-in-progress, so please excuse the shortness and directness.*
