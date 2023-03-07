@@ -72,6 +72,52 @@ namespace CheekyLayer::rules::actions
 			static action_register<unmark_action> reg;
 	};
 
+	/** Causes the event to be printed out in a verbose way.
+	 *
+	 * \par Usage
+	 * \code{.unparsed}
+	 * verbose()
+	 * \endcode
+	 * For \c draw selectors, the verbose information looks like this:
+	 * \code{.unparsed}
+CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
+  draw parameters:
+    vertexCount = ...
+    instanceCount = ...
+    firstVertex = ...
+    firstInstance = ...
+  command buffer state:
+    transformFeedback = true|false
+    transformFeedbackBuffers:
+      unknown buffer 0xabcdef + ... (... bytes)
+      unknown buffer 0xabcdef + ... (... bytes)
+      unknown buffer 0xabcdef + ... (... bytes)
+      unknown buffer 0xabcdef + ... (... bytes)
+  pipeline stages:
+    |    stage |       name | shader
+    |   Vertex |       main | 00001111222233334444555566667777888899990000aaaabbbbcccceeeeffff
+    | Geometry |       main | 00001111222233334444555566667777888899990000aaaabbbbcccceeeeffff
+  vertex bindings:
+    | binding | stride |     rate | buffer
+    |       0 |    ... |   Vertex | 00001111222233334444555566667777888899990000aaaabbbbcccceeeeffff + ...
+    |       1 |    ... |   Vertex | 00001111222233334444555566667777888899990000aaaabbbbcccceeeeffff + ...
+  vertex attributes:
+    | binding | location | offset | format
+    |       0 |        0 |    ... | ...
+    |       0 |        1 |    ... | ...
+    |       1 |        2 |    ... | ...
+  descriptors:
+    | set | binding |   type |                exact type |         offset | elements
+    |   0 |       0 | buffer |      UniformBufferDynamic |            ... | 0xabcdef
+    |   1 |       0 |  image |                   Sampler |              0 | 00001111222233334444555566667777888899990000aaaabbbbcccceeeeffff
+	 * \endcode
+	 *
+	 * \par Example
+	 * This rule causes all <tt>draw</tt>s \ref conditions::with_condition "using" an image with the \ref conditions::mark_condition "marked" "interesting" to be printed out in a verbose way.
+	 * \code{.unparsed}
+	 * draw{with(image{mark(interesting)})} -> verbose()
+	 * \endcode
+	 */
 	class verbose_action : public action
 	{
 		public:
@@ -84,6 +130,33 @@ namespace CheekyLayer::rules::actions
 			static action_register<verbose_action> reg;
 	};
 
+	/** Executes multiple other actions in sequence.
+	 *
+	 * \par Usage
+	 * \code{.unparsed}
+	 * seq()
+	 * seq(action1(), action2(), ...)
+	 * \endcode
+	 * \param <actionN> Action(s) to execute in sequence
+	 *
+	 * If one of the actions throws an exception the entire rule will be terminated and the next actions
+	 * will not be executed.
+	 *
+	 * If no actions are specified (\"<tt>seq()</tt>\") the action will do nothing and acts as a no-op, which is why
+	 * it is used a lot in the unit tests of this project.
+	 *
+	 * \par Example
+	 * This rule triggers for <tt>draw</tt>s \ref conditions::with_condition "using" an image with the \ref conditions::mark_condition "marked" "interesting".
+	 * It first \ref actions::log_action "prints" "Hello World!" and <b>after that</b> \ref actions::verbose_action "prints out the event verbosely" and
+	 * <b>after that</b> it \ref actions::unmark_action "removes the mark" "interesting".
+	 * \code{.unparsed}
+	 * draw{with(image{mark(interesting)})} -> seq(
+	 *     log(Hello World!),
+	 *     verbose(),
+	 *     unmark(interesting)
+	 * )
+	 * \endcode
+	 */
 	class sequence_action : public action
 	{
 		public:

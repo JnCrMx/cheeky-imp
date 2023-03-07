@@ -36,7 +36,38 @@ cmake --build . --config RelWithDebInfo --target all --
 ```
 
 ### Tell Vulkan where to find the layer
-*(coming soon)*
+The easiest way to tell Vulkan where to find the layer is to make use of environment variables (see [here](https://vulkan.lunarg.com/doc/view/1.3.204.1/windows/layer_configuration.html) for more information on Vulkan Layer configuration):
+
+- ``VK_LAYER_PATH`` needs to be pointed to ``/path/to/repository/vulkan_layer``. If you already set this variable, use colons (``:``) to separate multiple paths.
+- ``VK_INSTANCE_LAYERS`` needs to contain ``VK_LAYER_CHEEKYIMP_CheekyLayer``, so Vulkan knows to automatically load the layer on instance creation. If you want to use multiple layers, use colons (``:``) to separate them. You might need to play around with the order a bit.
+
+**Warning: Combining the layer with other layers (in particular RenderDoc) can result in instability and lots of crashes.**
+
+### Configuring the layer
+Sadly, the layer does not support Vulkan Layer Settings Files yet and uses its own kind of configuration files.
+A path to the config needs to be provided with the ``CHEEKY_LAYER_CONFIG`` environment variable.
+So, create a file (for example called ``config.txt``) and set ``CHEEKY_LAYER_CONFIG`` to the location of the file.
+
+This file simply contains options in a ``key=value`` format on each line:
+```
+dump=false|false
+dumpDirectory=/absolute/path/to/directory/for/dumping
+override=true|false
+overrideDirectory=/absolute/path/to/directory/for/overrides
+logFile=/absolute/path/to/log/file.txt
+ruleFile=/absolute/path/to/rule/file.txt
+hookDraw=true|false
+pluginDirectory=/absolute/path/to/plugin/directory
+application=ApplicationName.exe
+```
+
+The following options are available:
+| Option | Values | Required | Description |
+|---|---|---|---|
+|``dump``|``true`` or ``false``| yes | ``true`` if textures, buffers and shaders should be dumped when loaded. |
+|``dumpDirectory``|absolute path| yes | Path to the directory to use for dumping, should contain ``images/``, ``buffers/``, ``shaders/`` subdirectories. |
+|``override``|``true`` or ``false``| yes | ``true`` if textures, buffers and shaders should be potentially overridden when loaded. |
+|``overrideDirectory``|absolute path| yes | Path to the directory to search for the images/buffers/shaders that are to be overridden, should contain ``images/``, ``buffers/``, ``shaders/`` subdirectories. |
 
 ## Required libraries
 | Library | Reason | Inclusion |
