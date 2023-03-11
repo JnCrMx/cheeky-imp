@@ -25,8 +25,8 @@ while read line; do
 	done
 	
 	echo "Unpacking mesh for part $part to base_$part.obj ..."
-	"$VH_BIN/mesh_buffer_tools/extract" "$VH_ROOT/descriptors/$descriptor.txt" base_$part.obj $indexCount $firstIndex $vertexOffset "$VH_LAYER_DUMP/buffers/$index.buf" ${additional[*]}
+	"$VH_BIN/mesh_buffer_tools/extract" $part "$VH_ROOT/descriptors/$descriptor.txt" base_$part.obj $indexCount $firstIndex $vertexOffset "$VH_LAYER_DUMP/buffers/$index.buf" ${additional[*]}
 done <vhmesh.txt
 
 echo "Importing parts into Blender file base.blend ..."
-blender -b --python "$VH_LIB/blender_import_mesh2.py" >/dev/null 2>/dev/null
+blender -b --python "$VH_LIB/blender_import_mesh.py" >/dev/null 2>/dev/null

@@ -17,7 +17,7 @@ if [ ! -f "$file" ]; then
 fi
 
 echo "Exporting parts from Blender file $file ..."
-blender -b $file --python $VH_LIB/blender_export_mesh2.py #>/dev/null 2>/dev/null
+blender -b $file --python $VH_LIB/blender_export_mesh.py #>/dev/null 2>/dev/null
 
 name=${file%.*}
 
@@ -99,7 +99,7 @@ if [ ! -f "$test_dir/texture" ]; then
 fi
 
 cd $test_dir
-blender -b --python $VH_LIB/blender_import_mesh2.py #>/dev/null 2>/dev/null
+blender -b --python $VH_LIB/blender_import_mesh.py #>/dev/null 2>/dev/null
 cd ..
 
 rm $test_dir/vhmesh.txt

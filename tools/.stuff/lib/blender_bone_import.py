@@ -2,9 +2,9 @@ import bpy
 import mathutils
 import json
 
-def do_bone(bone, edit_bones, parent):
+def do_bone(part, bone, edit_bones, parent):
     if "head" in bone and "tail" in bone and not bone["head"][0] == None and not bone["tail"][0] == None:
-        b = edit_bones.new(str(bone["group"]))
+        b = edit_bones.new(part+"_"+str(bone["group"]))
         head = mathutils.Vector(bone["head"]).xzy
         head.y *= -1
         tail = mathutils.Vector(bone["tail"]).xzy
@@ -14,10 +14,10 @@ def do_bone(bone, edit_bones, parent):
         b.parent = parent
     
         for child in bone["children"]:
-            do_bone(child, edit_bones, b)
+            do_bone(part, child, edit_bones, b)
     elif "children" in bone:
         for child in bone["children"]:
-            do_bone(child, edit_bones, parent)
+            do_bone(part, child, edit_bones, parent)
 
 def load_bones(part):
     with open(f"bones/{part}.json") as f:
@@ -49,7 +49,7 @@ def load_bones(part):
         edit_bones.remove(b)
     
     for tree in bones["trees"]:
-        do_bone(tree, edit_bones, None)
+        do_bone(part, tree, edit_bones, None)
     
     bpy.ops.object.mode_set(mode='OBJECT')
     mesh.select_set(True)
@@ -74,11 +74,11 @@ def load_constraints(part):
             pp = p["mesh"]
             obj2 = bpy.data.objects[f"Armature-{pp}"]
             
-            bone = obj.pose.bones.get(str(tree["group"]))
+            bone = obj.pose.bones.get(part+"_"+str(tree["group"]))
             if bone is not None:
                 crc = bone.constraints.new('CHILD_OF')
                 crc.target = obj2
-                crc.subtarget = str(p["bone"])
+                crc.subtarget = pp+"_"+str(p["bone"])
 
 with open("vhmesh.txt", "r") as f:
     for x in f:

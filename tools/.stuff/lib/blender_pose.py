@@ -24,7 +24,7 @@ def pose_object(name, part, pose, obj):
             g = "0"
             for group2 in obj.vertex_groups:
                 if group2.index == group.group:
-                    g = group2.name
+                    g = group2.name[len(part)+1:]
                     break
             mat = mathutils.Matrix([pose[part][g][i::4] for i in range(4)])
             pos += (vertex.co @ mat) * group.weight
