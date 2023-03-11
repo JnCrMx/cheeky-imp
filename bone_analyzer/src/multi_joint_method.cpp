@@ -1,8 +1,13 @@
 #include <algorithm>
+#include <glm/common.hpp>
+#include <glm/geometric.hpp>
+#include <ios>
 #include <iterator>
+#include <numbers>
 #include <numeric>
 #include <string>
 #include <vector>
+#include <set>
 #include <map>
 #include <iostream>
 #include <fstream>
@@ -13,6 +18,27 @@
 #include <glm/glm.hpp>
 #include <glm/gtx/string_cast.hpp>
 #include <nlohmann/json.hpp>
+
+constexpr double operator""_deg(long double d)
+{
+	return (d*std::numbers::pi)/180.0;
+}
+
+std::ostream& operator<<(std::ostream& out, glm::vec3 vec)
+{
+	return out << glm::to_string(vec);
+}
+
+// namespace with configurable constants
+namespace constants
+{
+	// constants for determining bone tail for 3 or more groups
+	constexpr float brokenDistance = 100.0f;	// consider a group "broken" is its distance to the bone is greater than this value
+	constexpr float groupDropout = 0.75;		// remove groups with a vertex count under "groupDropout * average vertex count"
+
+	// constants for initial reading of bones
+	constexpr float minWeight = 0.075;
+}
 
 struct Mesh
 {
@@ -27,7 +53,7 @@ struct Mesh
 	std::map<int, std::map<int, float>> vertexGroupWeight;
 };
 
-glm::vec3 bounding_box_center(std::vector<glm::vec3>& vertices)
+glm::vec3 bounding_box_center(const std::vector<glm::vec3>& vertices)
 {
 	glm::vec3 min{std::numeric_limits<glm::vec3::value_type>::max()}, max{std::numeric_limits<glm::vec3::value_type>::lowest()};
 	for(auto v : vertices)
@@ -44,7 +70,7 @@ glm::vec3 bounding_box_center(std::vector<glm::vec3>& vertices)
 	return (min+max)/2.0f;
 }
 
-glm::vec3 average_center(std::vector<glm::vec3>& vertices)
+glm::vec3 average_center(const std::vector<glm::vec3>& vertices)
 {
 	glm::vec3 sum{0.0};
 	for(auto v : vertices)
@@ -52,7 +78,7 @@ glm::vec3 average_center(std::vector<glm::vec3>& vertices)
 	return sum / (float)vertices.size();
 }
 
-std::pair<glm::vec3, glm::vec3> boundingBox(std::vector<glm::vec3>& vertices)
+std::pair<glm::vec3, glm::vec3> boundingBox(const std::vector<glm::vec3>& vertices)
 {
 	glm::vec3 min{std::numeric_limits<glm::vec3::value_type>::max()}, max{std::numeric_limits<glm::vec3::value_type>::lowest()};
 	for(auto v : vertices)
@@ -67,7 +93,7 @@ std::pair<glm::vec3, glm::vec3> boundingBox(std::vector<glm::vec3>& vertices)
 	}
 	return {min, max};
 }
-std::pair<glm::vec3, glm::vec3> boundingBox(std::vector<int>& indices, std::vector<glm::vec3>& vertices)
+std::pair<glm::vec3, glm::vec3> boundingBox(const std::vector<int>& indices, const std::vector<glm::vec3>& vertices)
 {
 	std::vector<glm::vec3> vs(indices.size());
 	std::transform(indices.begin(), indices.end(), vs.begin(), [&vertices](int i){
@@ -77,7 +103,7 @@ std::pair<glm::vec3, glm::vec3> boundingBox(std::vector<int>& indices, std::vect
 }
 
 // custom function for computing the center of a vertex group
-glm::vec3 center(std::vector<glm::vec3>& vertices)
+glm::vec3 center(const std::vector<glm::vec3>& vertices)
 {
 	if(vertices.size() == 0)
 		return glm::vec3{0};
@@ -88,7 +114,7 @@ glm::vec3 center(std::vector<glm::vec3>& vertices)
 }
 
 // wrapper for center(std::vector<glm::vec3>& vertices) that transforms indices and all vertices into selected vertices
-glm::vec3 center(std::vector<int>& indices, std::vector<glm::vec3>& vertices)
+glm::vec3 center(const std::vector<int>& indices, const std::vector<glm::vec3>& vertices)
 {
 	std::vector<glm::vec3> vs(indices.size());
 	std::transform(indices.begin(), indices.end(), vs.begin(), [&vertices](int i){
@@ -105,21 +131,31 @@ struct BoneInfo
 	std::vector<int> childs;
 };
 
+std::vector<int> only_indices(const std::map<int, float>& vs)
+{
+	std::vector<int> v(vs.size());
+	std::transform(vs.begin(), vs.end(), v.begin(), [](auto a){
+		return a.first;
+	});
+	return v;
+}
+
 bool analyzeGroup(
 	int										group, 				// "our" group / the bone group we are currently analyzing
 	std::map<int, std::map<int, float>>&	map,				// a map (vertex -> (group -> weight)) of all vertices (by index)
 	std::vector<glm::vec3>&					vertices,			// positions (vertex -> position) of all vertices (index -> position)
-	std::vector<int>&						visited,			// a list of all groups that have already been visited
+	std::set<int>&						    visited,			// a list of all groups that have already been visited
 	std::map<int, BoneInfo>&				out, 				// output
 	int 									parent		= -1,	// our parent group
 	glm::vec3								start		= {},	// joint of our parent and us
 	glm::vec3								parentStart	= {}, 	// joint of our parent and its parent
-	std::vector<int> 						willVisit	= {})	// list of groups that will potentially be visisted by one of our anchestors, unless we visit them first
+	std::set<int> 							willVisit	= {})	// list of groups that will potentially be visisted by one of our anchestors, unless we visit them first
 {
-	visited.push_back(group);
 	std::cout << "Group " << group << " (parent " << parent << ")" << std::endl;
 	BoneInfo& info = out[group];
 	info.parent = parent;
+
+	visited.insert(group);
 
 	int sharedCount = 0;
 
@@ -157,7 +193,11 @@ bool analyzeGroup(
 	std::cout << std::endl;
 
 	if(sharedCount == 0) // this analyzer cannot handle unconnected bones yet
+	{
+		info.head = center(allVertices, vertices)*1.01f;
+		info.tail = center(allVertices, vertices)*0.99f;
 		return false;
+	}
 
 	glm::vec3 tail{0.0};
 	glm::vec3 mycenter = center(allVertices, vertices);
@@ -214,11 +254,11 @@ bool analyzeGroup(
 			if(g == parent)
 				continue;
 
-			if(vs.size() < avgVertices*0.75) // ignore groups under 75% average size (e.g. with only a few vertices)
+			if(vs.size() < avgVertices*constants::groupDropout) // ignore groups under x% average size (e.g. with only a few vertices)
 				continue;
 			
 			glm::vec3 c = center(vs, vertices);
-			if(glm::length(c) > 1000.0f) // avoid groups with broken distance
+			if(glm::length(c) > constants::brokenDistance) // avoid groups with broken distance
 				continue;
 
 			float dist = glm::distance(c, head);
@@ -244,30 +284,36 @@ bool analyzeGroup(
 	std::copy(otherGroups.begin(), otherGroups.end(), others.begin());
 
 	// decend into closer groups first (to avoid skipping B in A-B-C if we also share vertices with C)
-	std::sort(others.begin(), others.end(), [mycenter, &vertices](auto& a, auto& b){
+	std::sort(others.begin(), others.end(), [mycenter, start, &vertices](auto& a, auto& b){
 		auto c1 = center(a.second, vertices);
 		auto c2 = center(b.second, vertices);
 		return glm::distance(c1, mycenter) < glm::distance(c2, mycenter); // not sure why we don't use "start" instead of "mycenter", but I'm not gonna mess with this
 	});
 
-	std::vector<int> willVisitAfter = willVisit; // we need to make a copy here, or (3) will always be true
-	std::transform(others.begin(), others.end(), std::back_inserter(willVisitAfter), [](auto a){
+	std::set<int> willVisitAfter = willVisit; // we need to make a copy here, or (3) will always be true
+	std::transform(others.begin(), others.end(), std::inserter(willVisitAfter, willVisitAfter.begin()), [](auto a){
 		return a.first;
 	});
 	for(auto& [g, vs] : others)
 	{
+		if(g == group)
+			continue;
+
 		if(std::find(visited.begin(), visited.end(), g) == visited.end()) // don't visit groups again
 		{
 			glm::vec3 avg = center(vs, vertices);
 
 			// skip decending if the group is a probable siblings
-			if(glm::distance(tail, avg) > glm::distance(start, avg) && // (1) detect siblings by checking if they are closer to our head than our tail
+			bool probableSibiling = // (1) this is a probable sibling
+				glm::distance(tail, avg) > glm::distance(start, avg) || // (a) detect siblings by checking if they are closer to our head than our tail
+				glm::dot(tail-start, avg-tail) <= 0; // (b) detect going backwards with the dot product
+			if(probableSibiling && // (1) this is a probable sibling
 					parent != -1 && // (2) the root of the tree cannot have siblings
 					std::find(willVisit.begin(), willVisit.end(), g) != willVisit.end()) // (3) a higher level group needs to "plan" to decend into the group or it is no sibling
 				continue;
 			
-			info.childs.push_back(g);
-			analyzeGroup(g, map, vertices, visited, out, group, avg, start, willVisitAfter);
+			if(analyzeGroup(g, map, vertices, visited, out, group, avg, start, willVisitAfter))
+				info.childs.push_back(g);
 		}
 	}
 
@@ -388,6 +434,47 @@ void buildJsons(
 	}
 }
 
+int pick_next(const std::map<int, std::map<int, float>>& groupVertexWeight, const std::vector<glm::vec3>& allVertices, const std::set<int>& visited)
+{
+	int start;
+	float minDistance = std::numeric_limits<float>::max();
+
+	glm::vec3 supercenter = center(allVertices);
+	// not the cleanest but it works I guess
+	supercenter.x = 0;
+	supercenter.z = 0;
+	std::cout << "Super center: " << supercenter << std::endl;
+
+	for(int i=0; i<groupVertexWeight.size(); i++)
+	{
+		if(visited.contains(i))
+			continue;
+
+		const std::map<int, float>& vs = groupVertexWeight.at(i);
+		std::vector<int> v(vs.size());
+		std::transform(vs.begin(), vs.end(), v.begin(), [](auto a){
+			return a.first;
+		});
+		auto c = center(v, allVertices);
+
+		float dist = glm::distance(c, supercenter);
+		if(dist < minDistance)
+		{
+			start = i;
+			minDistance = dist;
+		}
+
+		/*auto [min, max] = boundingBox(v, allVertices);
+		float volume = (max.x-min.x) * (max.y-min.y) * (max.z-min.z);
+		if(volume > maxVolume)
+		{
+			start = i;
+			maxVolume = volume;
+		}*/
+	}
+	return start;
+}
+
 int main(int argc, char* argv[])
 {
 	if((argc-2)%4 != 0)
@@ -432,7 +519,7 @@ int main(int argc, char* argv[])
 			int g = std::stoi(name);
 			for(auto [vertex, weight] : vs)
 			{
-				if(weight < 0.1)
+				if(weight < constants::minWeight)
 					continue;
 
 				int v = std::stoi(vertex);
@@ -511,7 +598,7 @@ int main(int argc, char* argv[])
 			{
 				mapping = boneMappings[g] = nextGroup++;
 			}
-			std::cout << i << ", " << g << " -> " << mapping << std::endl;
+			std::cout << mesh.name << ", " << g << " -> " << mapping << std::endl;
 
 			std::map<int, float>& inner = groupVertexWeight[mapping];
 			std::transform(vs.begin(), vs.end(), std::inserter(inner, inner.end()), [vertexOffset](std::pair<int, float> a){
@@ -531,37 +618,25 @@ int main(int argc, char* argv[])
 	std::cout << "Total vertices: " << vertexSum << " or " << vertexGroupWeight.size() << std::endl;
 	std::cout << "Total bone groups: " << nextGroup << " or " << groupVertexWeight.size() << std::endl;
 
-	std::vector<int> visited;
+	std::set<int> visited;
 	std::map<int, BoneInfo> out;
-	std::vector<int> starts;
+	std::set<int> starts;
 	while(visited.size() < groupVertexWeight.size())
 	{
-		int start = 0;
-		float maxVolume = -1;
-		glm::vec3 c{};
-		for(int i=0; i<groupVertexWeight.size(); i++)
-		{
-			if(std::find(visited.begin(), visited.end(), i) != visited.end())
-				continue;
+		int start = pick_next(groupVertexWeight, allVertices, visited);
 
-			std::map<int, float> vs = groupVertexWeight[i];
+		std::cout << "Starting at group " << start << std::endl;
+		starts.insert(start);
+
+		glm::vec3 c;
+		{
+			const std::map<int, float>& vs = groupVertexWeight.at(start);
 			std::vector<int> v(vs.size());
 			std::transform(vs.begin(), vs.end(), v.begin(), [](auto a){
 				return a.first;
 			});
-
-			auto [min, max] = boundingBox(v, allVertices);
-			float volume = (max.x-min.x) * (max.y-min.y) * (max.z-min.z);
-			if(volume > maxVolume)
-			{
-				start = i;
-				maxVolume = volume;
-				c = center(v, allVertices);
-			}
+			c = center(v, allVertices);
 		}
-		std::cout << "Starting at group " << start << " of volume " << maxVolume << std::endl;
-		starts.push_back(start);
-
 		analyzeGroup(start, vertexGroupWeight, allVertices, visited, out, -1, c);
 	}
 
@@ -573,7 +648,9 @@ int main(int argc, char* argv[])
 	nlohmann::json j;
 	std::vector<std::pair<int, int>> visited2;
 	for(auto start : starts)
+	{
 		buildJsons(start, out, boneGroupMappings, meshes, jsons, j, visited2);
+	}
 	for(int i=0; i<meshes.size(); i++)
 	{
 		std::ofstream o(meshes[i].outputJson);
