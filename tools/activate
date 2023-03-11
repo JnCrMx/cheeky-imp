@@ -16,3 +16,7 @@ export VH_LAYER_DUMP=$VH_LAYER_ROOT/dump
 export VH_LAYER_OVERRIDE=$VH_LAYER_ROOT/override
 
 export VH_WORKSPACE=$VH_ROOT/workspace
+
+if [ -f "$VH_WORKSPACE/config.sh" ]; then
+	source $VH_WORKSPACE/config.sh
+fi
