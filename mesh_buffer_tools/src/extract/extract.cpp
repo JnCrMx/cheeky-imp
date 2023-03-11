@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -21,15 +22,38 @@ typedef std::vector<mbt::input_attribute::attribute_value> vertex;
 
 int main(int argc, char *argv[])
 {
-	assert(argc > 6);
-	std::string descriptor_path	= argv[1];
-	std::string output_path		= argv[2];
+	assert(argc > 7);
+	std::string object_name     = argv[1];
+	std::string descriptor_path	= argv[2];
+	std::string output_path		= argv[3];
 
-	int index_count				= std::atoi(argv[3]);
-	int first_index				= std::atoi(argv[4]);
-	int vertex_offset			= std::atoi(argv[5]);
+	int index_count				= std::atoi(argv[4]);
+	std::string index_offsets   = argv[5];
+	std::map<unsigned long, std::string> parts = {{0, object_name}};
+	if(index_offsets.find('(') != std::string::npos)
+	{
+		int start = index_offsets.find('(');
+		int end = index_offsets.find(')');
 
-	std::string index_path		= argv[6];
+		std::string part_offsets = index_offsets.substr(start+1, end-start-1);
+		std::istringstream iss(part_offsets);
+
+		std::string part;
+		while(std::getline(iss, part, ','))
+		{
+			int sep = part.find('=');
+			std::string name = part.substr(0, sep);
+			unsigned long offset = std::stoul(part.substr(sep+1));
+
+			parts[offset] = name;
+		}
+
+		index_offsets = index_offsets.substr(0, start);
+	}
+	int first_index		        = std::stoi(index_offsets);
+	int vertex_offset			= std::atoi(argv[6]);
+
+	std::string index_path		= argv[7];
 
 	std::vector<mbt::input_attribute> attributes;
 	std::vector<int> attributeBindings;
@@ -61,12 +85,12 @@ int main(int argc, char *argv[])
 	attributeBindings.erase(u, attributeBindings.end());
 
 	int bindingCount = attributeBindings.size();
-	assert(argc == 7 + bindingCount*2);
+	assert(argc == 8 + bindingCount*2);
 
 	std::vector<std::unique_ptr<mbt::buffer>> buffers(bindingCount);
 	for(int i=0; i<bindingCount; i++)
 	{
-		buffers[i] = std::make_unique<mbt::buffer>(argv[7 + 2*i + 0], std::atoi(argv[7 + 2*i + 1]), boost::interprocess::mode_t::read_only);
+		buffers[i] = std::make_unique<mbt::buffer>(argv[8 + 2*i + 0], std::atoi(argv[8 + 2*i + 1]), boost::interprocess::mode_t::read_only);
 	}
 
 	int vertexCount = buffers[0]->count();
@@ -102,6 +126,7 @@ int main(int argc, char *argv[])
 
 	int face[3];
 	int counter = 0;
+	out << "o " << object_name << std::endl;
 	for(int i=0; i<index_count; i++)
 	{
 		int index = indices[i+first_index] + vertex_offset;
@@ -129,6 +154,11 @@ int main(int argc, char *argv[])
 			vertexPositions[index] = counter++;
 		}
 		face[i%3] = vertexPositions[index]+1;
+		if(parts.contains(i))
+		{
+			out << "g " << parts[i] << std::endl;
+			out << "usemtl " << parts[i] << std::endl;
+		}
 		if((i+1)%3 == 0)
 		{
 			out << "f "
