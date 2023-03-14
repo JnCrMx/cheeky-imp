@@ -20,7 +20,7 @@ def do_bone(part, bone, edit_bones, parent):
             do_bone(part, child, edit_bones, parent)
 
 def load_bones(part):
-    with open(f"bones/{part}.json") as f:
+    with open(bpy.path.abspath(f"//bones/{part}.json")) as f:
         bones = json.load(f)
     try:
         bpy.ops.object.mode_set(mode='OBJECT')
@@ -59,7 +59,7 @@ def load_bones(part):
     bpy.ops.object.select_all(action='DESELECT')
 
 def load_constraints(part):
-    with open(f"bones/{part}.json") as f:
+    with open(bpy.path.abspath(f"//bones/{part}.json")) as f:
         bones = json.load(f)
     name = f"Armature-{part}"
     obj = bpy.data.objects[name]
@@ -80,11 +80,11 @@ def load_constraints(part):
                 crc.target = obj2
                 crc.subtarget = pp+"_"+str(p["bone"])
 
-with open("vhmesh.txt", "r") as f:
+with open(bpy.path.abspath("//vhmesh.txt"), "r") as f:
     for x in f:
         part=x.split()[0]
         load_bones(part)
-with open("vhmesh.txt", "r") as f:
+with open(bpy.path.abspath("//vhmesh.txt"), "r") as f:
     for x in f:
         part=x.split()[0]
         load_constraints(part)
