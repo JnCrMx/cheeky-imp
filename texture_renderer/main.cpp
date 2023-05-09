@@ -3,6 +3,11 @@
 #include <iomanip>
 #include <span>
 #include <ranges>
+#include <fstream>
+#include <glslang/Public/ShaderLang.h>
+#include <glslang/Include/Types.h>
+#include <glslang/Public/ResourceLimits.h>
+#include <glslang/SPIRV/GlslangToSpv.h>
 
 uint32_t findMemoryType(vk::PhysicalDeviceMemoryProperties const& memoryProperties, int32_t typeBits, vk::MemoryPropertyFlags requirementsMask)
 {
@@ -20,11 +25,98 @@ uint32_t findMemoryType(vk::PhysicalDeviceMemoryProperties const& memoryProperti
     return typeIndex;
 }
 
+std::string read_file(std::string path)
+{
+    std::ifstream in{path};
+    if(!in) throw std::runtime_error("file not found");
+    std::stringstream buffer;
+    buffer << in.rdbuf();
+    return buffer.str();
+}
+
+void compile_shader(glslang::TProgram& program, std::string shaderCode, EShLanguage stage)
+{
+    const char* shaderStrings[1];
+    shaderStrings[0] = shaderCode.data();
+    glslang::TShader shader{stage};
+    shader.setStrings(shaderStrings, 1);
+    shader.setEnvInput(glslang::EShSourceGlsl, stage, glslang::EShClientVulkan, 100);
+    shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetClientVersion::EShTargetVulkan_1_1);
+    shader.setEnvTarget(glslang::EShTargetLanguage::EShTargetSpv, glslang::EShTargetLanguageVersion::EShTargetSpv_1_3);
+    shader.setEntryPoint("main");
+    shader.setSourceEntryPoint("main");
+
+    EShMessages messages = (EShMessages)(EShMsgSpvRules | EShMsgVulkanRules);
+    if(!shader.parse(GetDefaultResources(), 100, false, messages))
+    {
+        throw std::runtime_error(shader.getInfoLog());
+    }
+    
+	program.addShader(&shader);
+	if(!program.link(messages))
+	{
+        throw std::runtime_error(program.getInfoLog());
+	}
+}
+
 
 int main(int argc, char** argv)
 {
     constexpr uint32_t width = 4096;
     constexpr uint32_t height = 4096;
+
+    std::string vertexDataFile = argv[1];
+    std::string shaderFile = argv[2];
+    std::string shaderCode = read_file(shaderFile);
+
+    glslang::InitializeProcess();
+
+    glslang::TProgram fragmentProgram;
+    compile_shader(fragmentProgram, shaderCode, EShLanguage::EShLangFragment);
+    std::vector<unsigned int> fragmentSpv{};
+    glslang::GlslangToSpv(*fragmentProgram.getIntermediate(EShLanguage::EShLangFragment), fragmentSpv);
+
+	fragmentProgram.buildReflection(EShReflectionIntermediateIO | EShReflectionSeparateBuffers | 
+		EShReflectionAllBlockVariables | EShReflectionUnwrapIOBlocks | EShReflectionAllIOVariables);
+    std::size_t framebufferCount = fragmentProgram.getNumPipeOutputs();
+    std::size_t inputCount = fragmentProgram.getNumPipeInputs();
+
+    std::vector<vk::VertexInputAttributeDescription> vertexInputAttributes;
+    std::ostringstream vertexCode{};
+    vertexCode << "#version 450\n";
+    vertexCode << "layout(location = 0) in vec4 position;\n";
+    vertexInputAttributes.push_back(vk::VertexInputAttributeDescription{0, 0, vk::Format::eR32G32B32A32Sfloat});
+    for(int i=0; i<inputCount; i++)
+    {
+        const auto& input = fragmentProgram.getPipeInput(i);
+        const auto* type = input.getType();
+        uint32_t location = type->getQualifier().layoutLocation;
+        int components = type->computeNumComponents();
+        std::string typeString = components == 1 ? "float" : "vec"+std::to_string(components);
+        vertexCode << "layout(location = " << location+1 << ") in " << typeString << " input" << i << ";\n";
+        vertexCode << "layout(location = " << location << ") out " << typeString << " output" << i << ";\n";
+
+        vk::Format format = std::array<vk::Format, 4>{
+            vk::Format::eR32Sfloat,
+            vk::Format::eR32G32Sfloat,
+            vk::Format::eR32G32B32Sfloat,
+            vk::Format::eR32G32B32A32Sfloat
+        }[components];
+
+        vertexInputAttributes.push_back(vk::VertexInputAttributeDescription{location+1, 0, format});
+    }
+    vertexCode << "void main() {\n";
+    vertexCode << "    gl_Position = position;\n";
+    for(int i=0; i<inputCount; i++)
+    {
+        vertexCode << "    output" << i << " = input" << i << ";\n"; 
+    }
+    vertexCode << "}\n";
+
+    glslang::TProgram vertexProgram;
+    compile_shader(vertexProgram, vertexCode.str(), EShLanguage::EShLangVertex);
+    std::vector<unsigned int> vertexSpv{};
+    glslang::GlslangToSpv(*vertexProgram.getIntermediate(EShLanguage::EShLangVertex), vertexSpv);
 
     vk::raii::Context context;
     
@@ -55,27 +147,73 @@ int main(int argc, char** argv)
 
     float priority = 1.0f;
     std::array<vk::DeviceQueueCreateInfo, 1> queueCreateInfos = {
-        vk::DeviceQueueCreateInfo{{}, 0, 1, &priority}
+        vk::DeviceQueueCreateInfo{{}, queueFamilyIndex, 1, &priority}
     };
     vk::raii::Device device(physicalDevice, vk::DeviceCreateInfo{{}, queueCreateInfos});
-
-    vk::raii::Queue queue{device, 0, 0};
+    vk::raii::Queue queue{device, queueFamilyIndex, 0};
     
     vk::raii::CommandPool pool{device, vk::CommandPoolCreateInfo{{}, queueFamilyIndex}};
     vk::raii::CommandBuffers buffers{device, vk::CommandBufferAllocateInfo{*pool, vk::CommandBufferLevel::ePrimary, 1}};
 
-    vk::raii::Image texture{device, vk::ImageCreateInfo{
-        {}, vk::ImageType::e2D, vk::Format::eR8G8B8A8Srgb, vk::Extent3D{width, height, 1},
-        1, 1, vk::SampleCountFlagBits::e1, vk::ImageTiling::eOptimal,
-        vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc,
-        vk::SharingMode::eExclusive
-    }};
-    auto memoryRequirements = texture.getMemoryRequirements();
-    vk::raii::DeviceMemory memory{device, vk::MemoryAllocateInfo{
-        memoryRequirements.size,
-        findMemoryType(memoryProperties, memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
-    }};
-    texture.bindMemory(*memory, 0);
+    std::vector<vk::raii::Image> framebufferImages;
+    std::vector<vk::raii::DeviceMemory> framebufferMemories;
+    std::vector<vk::raii::ImageView> framebufferImageViews;
 
-    vk::raii::CommandBuffer buffer{std::move(buffers[0])};
+    for(int i=0; i<framebufferCount; i++)
+    {
+        vk::raii::Image image{device, vk::ImageCreateInfo{
+            {}, vk::ImageType::e2D, vk::Format::eR8G8B8A8Srgb, vk::Extent3D{width, height, 1},
+            1, 1, vk::SampleCountFlagBits::e1, vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc,
+            vk::SharingMode::eExclusive
+        }};
+        auto memoryRequirements = image.getMemoryRequirements();
+        vk::raii::DeviceMemory memory{device, vk::MemoryAllocateInfo{
+            memoryRequirements.size,
+            findMemoryType(memoryProperties, memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
+        }};
+        image.bindMemory(*memory, 0);
+
+        vk::raii::ImageView imageView{device, vk::ImageViewCreateInfo{
+            {}, *image, vk::ImageViewType::e2D, vk::Format::eR8G8B8A8Srgb,
+            vk::ComponentMapping{},
+            vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
+        }};
+
+        framebufferImages.push_back(std::move(image));
+        framebufferMemories.push_back(std::move(memory));
+        framebufferImageViews.push_back(std::move(imageView));
+    }
+    vk::raii::ShaderModule vertexShader{device, vk::ShaderModuleCreateInfo{
+        {}, vertexSpv.size()*sizeof(uint32_t), vertexSpv.data()
+    }};
+    vk::raii::ShaderModule fragmentShader{device, vk::ShaderModuleCreateInfo{
+        {}, fragmentSpv.size()*sizeof(uint32_t), fragmentSpv.data()
+    }};
+    std::array<vk::PipelineShaderStageCreateInfo, 2> pipelineStages{
+        vk::PipelineShaderStageCreateInfo{
+            {}, vk::ShaderStageFlagBits::eVertex, *vertexShader, "main"
+        },
+        vk::PipelineShaderStageCreateInfo{
+            {}, vk::ShaderStageFlagBits::eFragment, *fragmentShader, "main"
+        }
+    };
+    vk::PipelineVertexInputStateCreateInfo pipelineInputState{
+        {}, {}, vertexInputAttributes
+    };
+    vk::GraphicsPipelineCreateInfo pipelineCreateInfo{
+        {}, pipelineStages, &pipelineInputState
+    };
+    vk::raii::Pipeline graphicsPipeline{device, vk::Optional<const vk::raii::PipelineCache>{std::nullptr_t()}, pipelineCreateInfo};
+    
+
+    vk::raii::CommandBuffer commandBuffer{std::move(buffers[0])};
+    commandBuffer.begin(vk::CommandBufferBeginInfo{});
+
+    commandBuffer.end();
+
+    vk::raii::Fence fence{device, vk::FenceCreateInfo{}};
+    queue.submit(vk::SubmitInfo{{}, {}, *commandBuffer}, *fence);
+
+    device.waitForFences(*fence, true, UINT64_MAX);
 }
