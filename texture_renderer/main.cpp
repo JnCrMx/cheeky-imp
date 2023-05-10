@@ -34,29 +34,31 @@ std::string read_file(std::string path)
     return buffer.str();
 }
 
-void compile_shader(glslang::TProgram& program, std::string shaderCode, EShLanguage stage)
+std::tuple<std::unique_ptr<glslang::TShader>, std::unique_ptr<glslang::TProgram>> compile_shader(std::string shaderCode, EShLanguage stage)
 {
     const char* shaderStrings[1];
     shaderStrings[0] = shaderCode.data();
-    glslang::TShader shader{stage};
-    shader.setStrings(shaderStrings, 1);
-    shader.setEnvInput(glslang::EShSourceGlsl, stage, glslang::EShClientVulkan, 100);
-    shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetClientVersion::EShTargetVulkan_1_1);
-    shader.setEnvTarget(glslang::EShTargetLanguage::EShTargetSpv, glslang::EShTargetLanguageVersion::EShTargetSpv_1_3);
-    shader.setEntryPoint("main");
-    shader.setSourceEntryPoint("main");
+    std::unique_ptr<glslang::TShader> shader = std::make_unique<glslang::TShader>(stage);
+    shader->setStrings(shaderStrings, 1);
+    shader->setEnvInput(glslang::EShSourceGlsl, stage, glslang::EShClientVulkan, 100);
+    shader->setEnvClient(glslang::EShClientVulkan, glslang::EShTargetClientVersion::EShTargetVulkan_1_1);
+    shader->setEnvTarget(glslang::EShTargetLanguage::EShTargetSpv, glslang::EShTargetLanguageVersion::EShTargetSpv_1_3);
+    shader->setEntryPoint("main");
+    shader->setSourceEntryPoint("main");
 
     EShMessages messages = (EShMessages)(EShMsgSpvRules | EShMsgVulkanRules);
-    if(!shader.parse(GetDefaultResources(), 100, false, messages))
+    if(!shader->parse(GetDefaultResources(), 100, false, messages))
     {
-        throw std::runtime_error(shader.getInfoLog());
+        throw std::runtime_error(shader->getInfoLog());
     }
     
-	program.addShader(&shader);
-	if(!program.link(messages))
+    std::unique_ptr<glslang::TProgram> program = std::make_unique<glslang::TProgram>();
+	program->addShader(shader.get());
+	if(!program->link(messages))
 	{
-        throw std::runtime_error(program.getInfoLog());
+        throw std::runtime_error(program->getInfoLog());
 	}
+    return {std::move(shader), std::move(program)};
 }
 
 
@@ -71,15 +73,14 @@ int main(int argc, char** argv)
 
     glslang::InitializeProcess();
 
-    glslang::TProgram fragmentProgram;
-    compile_shader(fragmentProgram, shaderCode, EShLanguage::EShLangFragment);
+    auto [_fragmentShader, fragmentProgram] = compile_shader(shaderCode, EShLanguage::EShLangFragment);
     std::vector<unsigned int> fragmentSpv{};
-    glslang::GlslangToSpv(*fragmentProgram.getIntermediate(EShLanguage::EShLangFragment), fragmentSpv);
+    glslang::GlslangToSpv(*fragmentProgram->getIntermediate(EShLanguage::EShLangFragment), fragmentSpv);
 
-	fragmentProgram.buildReflection(EShReflectionIntermediateIO | EShReflectionSeparateBuffers | 
+	fragmentProgram->buildReflection(EShReflectionIntermediateIO | EShReflectionSeparateBuffers | 
 		EShReflectionAllBlockVariables | EShReflectionUnwrapIOBlocks | EShReflectionAllIOVariables);
-    std::size_t framebufferCount = fragmentProgram.getNumPipeOutputs();
-    std::size_t inputCount = fragmentProgram.getNumPipeInputs();
+    std::size_t framebufferCount = fragmentProgram->getNumPipeOutputs();
+    std::size_t inputCount = fragmentProgram->getNumPipeInputs();
 
     std::vector<vk::VertexInputAttributeDescription> vertexInputAttributes;
     std::ostringstream vertexCode{};
@@ -88,7 +89,7 @@ int main(int argc, char** argv)
     vertexInputAttributes.push_back(vk::VertexInputAttributeDescription{0, 0, vk::Format::eR32G32B32A32Sfloat});
     for(int i=0; i<inputCount; i++)
     {
-        const auto& input = fragmentProgram.getPipeInput(i);
+        const auto& input = fragmentProgram->getPipeInput(i);
         const auto* type = input.getType();
         uint32_t location = type->getQualifier().layoutLocation;
         int components = type->computeNumComponents();
@@ -113,10 +114,9 @@ int main(int argc, char** argv)
     }
     vertexCode << "}\n";
 
-    glslang::TProgram vertexProgram;
-    compile_shader(vertexProgram, vertexCode.str(), EShLanguage::EShLangVertex);
+    auto [_vertexShader, vertexProgram] = compile_shader(vertexCode.str(), EShLanguage::EShLangVertex);
     std::vector<unsigned int> vertexSpv{};
-    glslang::GlslangToSpv(*vertexProgram.getIntermediate(EShLanguage::EShLangVertex), vertexSpv);
+    glslang::GlslangToSpv(*vertexProgram->getIntermediate(EShLanguage::EShLangVertex), vertexSpv);
 
     vk::raii::Context context;
     
@@ -200,6 +200,10 @@ int main(int argc, char** argv)
     };
     vk::PipelineVertexInputStateCreateInfo pipelineInputState{
         {}, {}, vertexInputAttributes
+    };
+    vk::PipelineRasterizationStateCreateInfo pipelineRasterizationState{
+        {}, VK_FALSE, VK_FALSE, vk::PolygonMode::eFill, vk::CullModeFlagBits::eNone,
+        vk::FrontFace::eCounterClockwise, VK_FALSE
     };
     vk::GraphicsPipelineCreateInfo pipelineCreateInfo{
         {}, pipelineStages, &pipelineInputState
