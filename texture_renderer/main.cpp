@@ -86,15 +86,16 @@ int main(int argc, char** argv)
     std::ostringstream vertexCode{};
     vertexCode << "#version 450\n";
     vertexCode << "layout(location = 0) in vec4 position;\n";
-    vertexInputAttributes.push_back(vk::VertexInputAttributeDescription{0, 0, vk::Format::eR32G32B32A32Sfloat});
+    vertexInputAttributes.push_back(vk::VertexInputAttributeDescription{0, 0, vk::Format::eR32G32B32A32Sfloat, 0});
     for(int i=0; i<inputCount; i++)
     {
         const auto& input = fragmentProgram->getPipeInput(i);
         const auto* type = input.getType();
         uint32_t location = type->getQualifier().layoutLocation;
+        uint32_t inputLocation = location + 1;
         int components = type->computeNumComponents();
         std::string typeString = components == 1 ? "float" : "vec"+std::to_string(components);
-        vertexCode << "layout(location = " << location+1 << ") in " << typeString << " input" << i << ";\n";
+        vertexCode << "layout(location = " << inputLocation << ") in " << typeString << " input" << i << ";\n";
         vertexCode << "layout(location = " << location << ") out " << typeString << " output" << i << ";\n";
 
         vk::Format format = std::array<vk::Format, 4>{
@@ -104,7 +105,7 @@ int main(int argc, char** argv)
             vk::Format::eR32G32B32A32Sfloat
         }[components];
 
-        vertexInputAttributes.push_back(vk::VertexInputAttributeDescription{location+1, 0, format});
+        vertexInputAttributes.push_back(vk::VertexInputAttributeDescription{inputLocation, 0, format, static_cast<uint32_t>(inputLocation*4*sizeof(float))});
     }
     vertexCode << "void main() {\n";
     vertexCode << "    gl_Position = position;\n";
@@ -113,6 +114,7 @@ int main(int argc, char** argv)
         vertexCode << "    output" << i << " = input" << i << ";\n"; 
     }
     vertexCode << "}\n";
+    uint32_t totalInputStride = static_cast<uint32_t>(vertexInputAttributes.size()*4*sizeof(float));
 
     auto [_vertexShader, vertexProgram] = compile_shader(vertexCode.str(), EShLanguage::EShLangVertex);
     std::vector<unsigned int> vertexSpv{};
@@ -198,22 +200,29 @@ int main(int argc, char** argv)
             {}, vk::ShaderStageFlagBits::eFragment, *fragmentShader, "main"
         }
     };
-    vk::PipelineVertexInputStateCreateInfo pipelineInputState{
-        {}, {}, vertexInputAttributes
-    };
+    vk::VertexInputBindingDescription pipelineInputBinding{0, totalInputStride, vk::VertexInputRate::eVertex};
+    vk::PipelineVertexInputStateCreateInfo pipelineInputState{{}, pipelineInputBinding, vertexInputAttributes};
+    vk::PipelineInputAssemblyStateCreateInfo pipelineInputAssemblyState{{}, vk::PrimitiveTopology::eTriangleList, false};
+    vk::PipelineTessellationStateCreateInfo pipelineTessellationState{};
+    vk::PipelineViewportStateCreateInfo pipelineViewportState{}; // TODO
     vk::PipelineRasterizationStateCreateInfo pipelineRasterizationState{
         {}, VK_FALSE, VK_FALSE, vk::PolygonMode::eFill, vk::CullModeFlagBits::eNone,
-        vk::FrontFace::eCounterClockwise, VK_FALSE
+        vk::FrontFace::eCounterClockwise, VK_FALSE, {}, {}, {}, 1.0
     };
+    vk::PipelineMultisampleStateCreateInfo pipelineMultisampleState{{}, vk::SampleCountFlagBits::e1, false};
+    vk::PipelineDepthStencilStateCreateInfo pipelineDepthStencilState{{}, false};
+    vk::PipelineColorBlendStateCreateInfo pipelineColorBlendState{}; // TODO
+    vk::PipelineDynamicStateCreateInfo pipelineDynamicState{};
     vk::GraphicsPipelineCreateInfo pipelineCreateInfo{
-        {}, pipelineStages, &pipelineInputState
+        {}, pipelineStages, 
+        &pipelineInputState, &pipelineInputAssemblyState, &pipelineTessellationState,
+        &pipelineViewportState, &pipelineRasterizationState, &pipelineMultisampleState,
+        &pipelineDepthStencilState, &pipelineColorBlendState, &pipelineDynamicState
     };
-    vk::raii::Pipeline graphicsPipeline{device, vk::Optional<const vk::raii::PipelineCache>{std::nullptr_t()}, pipelineCreateInfo};
+    vk::raii::Pipeline graphicsPipeline{device, std::nullptr_t(), pipelineCreateInfo};
     
-
     vk::raii::CommandBuffer commandBuffer{std::move(buffers[0])};
     commandBuffer.begin(vk::CommandBufferBeginInfo{});
-
     commandBuffer.end();
 
     vk::raii::Fence fence{device, vk::FenceCreateInfo{}};
