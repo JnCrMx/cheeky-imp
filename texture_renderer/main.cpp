@@ -4,10 +4,12 @@
 #include <span>
 #include <ranges>
 #include <fstream>
+#include <filesystem>
 #include <glslang/Public/ShaderLang.h>
 #include <glslang/Include/Types.h>
 #include <glslang/Public/ResourceLimits.h>
 #include <glslang/SPIRV/GlslangToSpv.h>
+#include <cxxopts.hpp>
 
 uint32_t findMemoryType(vk::PhysicalDeviceMemoryProperties const& memoryProperties, int32_t typeBits, vk::MemoryPropertyFlags requirementsMask)
 {
@@ -64,11 +66,38 @@ std::tuple<std::unique_ptr<glslang::TShader>, std::unique_ptr<glslang::TProgram>
 
 int main(int argc, char** argv)
 {
-    constexpr uint32_t width = 4096;
-    constexpr uint32_t height = 4096;
+    cxxopts::Options options("texture_renderer", "Create trivial UVs and create a texture based on a fragment shader");
+    options.add_options()
+        ("w,width", "Width of the texture to generate", cxxopts::value<uint32_t>()->default_value("4096"), "number")
+        ("h,height", "Height of the texture to generate", cxxopts::value<uint32_t>()->default_value("4096"), "number")
+        ("o,output", "File to write the generated texture to", cxxopts::value<std::filesystem::path>()->default_value("output-%02d.png"), "path")
+        ("attachment", "Index of color attachment to output, -1 for all", cxxopts::value<int>()->default_value("-1"), "number")
+        ("shader", "File containing fragment shader to use for generating texture", cxxopts::value<std::filesystem::path>(), "path")
+        ("vertices", "CSV file containing the output of a vertex shader (e.g. export from RenderDoc)", cxxopts::value<std::filesystem::path>(), "path")
+        ("pipeline", "JSON file describing the pipeline layout and used uniforms", cxxopts::value<std::filesystem::path>(), "path")
+        ("help", "Print this help message")
+        ("v,verbose", "Verbose output")
+        ;
+    auto optionResult = options.parse(argc, argv);
 
-    std::string vertexDataFile = argv[1];
-    std::string shaderFile = argv[2];
+    if(optionResult.count("help"))
+    {
+        std::cout << options.help() << std::endl;
+        return 0;
+    }
+    if(!optionResult.count("shader") || !optionResult.count("vertices") || !optionResult.count("pipeline"))
+    {
+        std::cout << options.help() << std::endl;
+        return 2;
+    }
+    bool verbose = optionResult.count("verbose");
+
+    uint32_t width = optionResult["width"].as<uint32_t>();
+    uint32_t height = optionResult["height"].as<uint32_t>();
+
+    auto vertexDataFile = optionResult["vertices"].as<std::filesystem::path>();
+    auto shaderFile = optionResult["shader"].as<std::filesystem::path>();
+    auto pipelineDescriptionFile = optionResult["pipeline"].as<std::filesystem::path>();
     std::string shaderCode = read_file(shaderFile);
 
     glslang::InitializeProcess();
@@ -116,6 +145,8 @@ int main(int argc, char** argv)
     vertexCode << "}\n";
     uint32_t totalInputStride = static_cast<uint32_t>(vertexInputAttributes.size()*4*sizeof(float));
 
+    if(verbose) std::cout << "Using generated vertex shader:\n" << vertexCode.str();
+
     auto [_vertexShader, vertexProgram] = compile_shader(vertexCode.str(), EShLanguage::EShLangVertex);
     std::vector<unsigned int> vertexSpv{};
     glslang::GlslangToSpv(*vertexProgram->getIntermediate(EShLanguage::EShLangVertex), vertexSpv);
@@ -131,11 +162,11 @@ int main(int argc, char** argv)
     for(const auto& device : physicalDevices)
     {
         const auto& props = device.getProperties();
-        std::cout << "Device #" << props.deviceID << ": " << std::quoted(std::string(props.deviceName)) << " of type " << vk::to_string(props.deviceType) << '\n';
+        if(verbose) std::cout << "Device #" << props.deviceID << ": " << std::quoted(std::string(props.deviceName)) << " of type " << vk::to_string(props.deviceType) << '\n';
         if(props.deviceType == vk::PhysicalDeviceType::eDiscreteGpu || props.deviceType == vk::PhysicalDeviceType::eIntegratedGpu)
             physicalDevice = device;
     }
-    std::cout << '\n';
+    if(verbose) std::cout << '\n';
     
     const auto& props = physicalDevice.getProperties();
     std::cout << "Picked device #" << props.deviceID << ": " << std::quoted(std::string(props.deviceName)) << " of type " << vk::to_string(props.deviceType) << ".\n";
@@ -145,7 +176,7 @@ int main(int argc, char** argv)
     uint32_t queueFamilyIndex = std::distance(queues.begin(), std::find_if(queues.begin(), queues.end(), [](const vk::QueueFamilyProperties q){
         return (q.queueFlags & vk::QueueFlagBits::eGraphics) && (q.queueFlags & vk::QueueFlagBits::eTransfer);
     }));
-    std::cout << "Using queue family " << queueFamilyIndex << ".\n";
+    if(verbose) std::cout << "Using queue family " << queueFamilyIndex << ".\n";
 
     float priority = 1.0f;
     std::array<vk::DeviceQueueCreateInfo, 1> queueCreateInfos = {
@@ -186,6 +217,13 @@ int main(int argc, char** argv)
         framebufferMemories.push_back(std::move(memory));
         framebufferImageViews.push_back(std::move(imageView));
     }
+
+    std::vector<vk::ImageView> framebufferAttachments{framebufferImageViews.size()};
+    std::transform(framebufferImageViews.begin(), framebufferImageViews.end(), framebufferAttachments.begin(), [](vk::raii::ImageView& iv){return *iv;});
+    vk::raii::Framebuffer framebuffer{device, vk::FramebufferCreateInfo{
+        {}, {} /*TODO*/, framebufferAttachments, width, height, 1
+    }};
+
     vk::raii::ShaderModule vertexShader{device, vk::ShaderModuleCreateInfo{
         {}, vertexSpv.size()*sizeof(uint32_t), vertexSpv.data()
     }};
