@@ -10,6 +10,13 @@
 #include <glslang/Public/ResourceLimits.h>
 #include <glslang/SPIRV/GlslangToSpv.h>
 #include <cxxopts.hpp>
+#include <nlohmann/json.hpp>
+#include <glm/glm.hpp>
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb_image_write.h>
+
+#include "renderdoc_app.h"
 
 uint32_t findMemoryType(vk::PhysicalDeviceMemoryProperties const& memoryProperties, int32_t typeBits, vk::MemoryPropertyFlags requirementsMask)
 {
@@ -70,15 +77,25 @@ int main(int argc, char** argv)
     options.add_options()
         ("w,width", "Width of the texture to generate", cxxopts::value<uint32_t>()->default_value("4096"), "number")
         ("h,height", "Height of the texture to generate", cxxopts::value<uint32_t>()->default_value("4096"), "number")
-        ("o,output", "File to write the generated texture to", cxxopts::value<std::filesystem::path>()->default_value("output-%02d.png"), "path")
-        ("attachment", "Index of color attachment to output, -1 for all", cxxopts::value<int>()->default_value("-1"), "number")
+        ("o,output", "File to write the generated texture to", cxxopts::value<std::filesystem::path>()->default_value("texture.png"), "path")
+        ("attachment", "Index of color attachment to output", cxxopts::value<uint32_t>()->default_value("0"), "number")
         ("shader", "File containing fragment shader to use for generating texture", cxxopts::value<std::filesystem::path>(), "path")
         ("vertices", "CSV file containing the output of a vertex shader (e.g. export from RenderDoc)", cxxopts::value<std::filesystem::path>(), "path")
         ("pipeline", "JSON file describing the pipeline layout and used uniforms", cxxopts::value<std::filesystem::path>(), "path")
         ("help", "Print this help message")
         ("v,verbose", "Verbose output")
+        ("debug-renderdoc", "Create RenderDoc capture", cxxopts::value<std::filesystem::path>()->implicit_value("/usr/lib/librenderdoc.so"), "path to librenderdoc.so")
         ;
-    auto optionResult = options.parse(argc, argv);
+    cxxopts::ParseResult optionResult;
+    try
+    {
+        optionResult = options.parse(argc, argv);
+    }
+    catch(const cxxopts::exceptions::parsing& ex)
+    {
+        std::cerr << ex.what() << "\n\n" << options.help() << std::endl;
+        return 2;
+    }
 
     if(optionResult.count("help"))
     {
@@ -87,18 +104,40 @@ int main(int argc, char** argv)
     }
     if(!optionResult.count("shader") || !optionResult.count("vertices") || !optionResult.count("pipeline"))
     {
-        std::cout << options.help() << std::endl;
+        std::cerr << options.help() << std::endl;
         return 2;
     }
     bool verbose = optionResult.count("verbose");
 
+    RENDERDOC_API_1_1_2 *rdoc_api = NULL;
+    if(optionResult.count("debug-renderdoc"))
+    {
+        auto path = optionResult["debug-renderdoc"].as<std::filesystem::path>();
+        if(void *mod = dlopen(path.c_str(), RTLD_NOW))
+        {
+            pRENDERDOC_GetAPI RENDERDOC_GetAPI = (pRENDERDOC_GetAPI)dlsym(mod, "RENDERDOC_GetAPI");
+            int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_1_2, (void **)&rdoc_api);
+            assert(ret == 1);
+        }
+        else
+        {
+            std::cerr << "Failed to load RenderDoc: " << dlerror() << '\n';
+        }
+    }
+
     uint32_t width = optionResult["width"].as<uint32_t>();
     uint32_t height = optionResult["height"].as<uint32_t>();
+    uint32_t framebufferIndex = optionResult["attachment"].as<uint32_t>();
 
     auto vertexDataFile = optionResult["vertices"].as<std::filesystem::path>();
     auto shaderFile = optionResult["shader"].as<std::filesystem::path>();
     auto pipelineDescriptionFile = optionResult["pipeline"].as<std::filesystem::path>();
     std::string shaderCode = read_file(shaderFile);
+    nlohmann::json pipelineDescription;
+    {
+        std::ifstream in{pipelineDescriptionFile};
+        in >> pipelineDescription;
+    }
 
     glslang::InitializeProcess();
 
@@ -132,7 +171,7 @@ int main(int argc, char** argv)
             vk::Format::eR32G32Sfloat,
             vk::Format::eR32G32B32Sfloat,
             vk::Format::eR32G32B32A32Sfloat
-        }[components];
+        }[components-1];
 
         vertexInputAttributes.push_back(vk::VertexInputAttributeDescription{inputLocation, 0, format, static_cast<uint32_t>(inputLocation*4*sizeof(float))});
     }
@@ -143,7 +182,7 @@ int main(int argc, char** argv)
         vertexCode << "    output" << i << " = input" << i << ";\n"; 
     }
     vertexCode << "}\n";
-    uint32_t totalInputStride = static_cast<uint32_t>(vertexInputAttributes.size()*4*sizeof(float));
+    uint32_t totalInputStride = static_cast<uint32_t>(vertexInputAttributes.size()*sizeof(glm::vec4));
 
     if(verbose) std::cout << "Using generated vertex shader:\n" << vertexCode.str();
 
@@ -152,21 +191,22 @@ int main(int argc, char** argv)
     glslang::GlslangToSpv(*vertexProgram->getIntermediate(EShLanguage::EShLangVertex), vertexSpv);
 
     vk::raii::Context context;
-    
     vk::ApplicationInfo appInfo{"texture_renderer", 1, "texture_renderer", 1, VK_API_VERSION_1_1};
-
     vk::raii::Instance instance{context, vk::InstanceCreateInfo{{}, &appInfo}};
 
-    vk::raii::PhysicalDevices physicalDevices{instance};
-    vk::raii::PhysicalDevice physicalDevice = physicalDevices.at(0);
-    for(const auto& device : physicalDevices)
+    vk::raii::PhysicalDevice physicalDevice{std::nullptr_t()};
     {
-        const auto& props = device.getProperties();
-        if(verbose) std::cout << "Device #" << props.deviceID << ": " << std::quoted(std::string(props.deviceName)) << " of type " << vk::to_string(props.deviceType) << '\n';
-        if(props.deviceType == vk::PhysicalDeviceType::eDiscreteGpu || props.deviceType == vk::PhysicalDeviceType::eIntegratedGpu)
-            physicalDevice = device;
+        vk::raii::PhysicalDevices physicalDevices{instance};
+        physicalDevice = physicalDevices.at(0);
+        for(const auto& device : physicalDevices)
+        {
+            const auto& props = device.getProperties();
+            if(verbose) std::cout << "Device #" << props.deviceID << ": " << std::quoted(std::string(props.deviceName)) << " of type " << vk::to_string(props.deviceType) << '\n';
+            if(props.deviceType == vk::PhysicalDeviceType::eDiscreteGpu || props.deviceType == vk::PhysicalDeviceType::eIntegratedGpu)
+                physicalDevice = device;
+        }
+        if(verbose) std::cout << '\n';
     }
-    if(verbose) std::cout << '\n';
     
     const auto& props = physicalDevice.getProperties();
     std::cout << "Picked device #" << props.deviceID << ": " << std::quoted(std::string(props.deviceName)) << " of type " << vk::to_string(props.deviceType) << ".\n";
@@ -203,7 +243,7 @@ int main(int argc, char** argv)
         auto memoryRequirements = image.getMemoryRequirements();
         vk::raii::DeviceMemory memory{device, vk::MemoryAllocateInfo{
             memoryRequirements.size,
-            findMemoryType(memoryProperties, memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
+            findMemoryType(memoryProperties, memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
         }};
         image.bindMemory(*memory, 0);
 
@@ -217,12 +257,67 @@ int main(int argc, char** argv)
         framebufferMemories.push_back(std::move(memory));
         framebufferImageViews.push_back(std::move(imageView));
     }
+    vk::raii::Buffer transferBuffer{device, vk::BufferCreateInfo{
+        {}, width*height*4, vk::BufferUsageFlagBits::eTransferDst, vk::SharingMode::eExclusive
+    }};
+    auto memoryRequirements = transferBuffer.getMemoryRequirements();
+    vk::raii::DeviceMemory transferMemory{device, vk::MemoryAllocateInfo{
+        memoryRequirements.size,
+        findMemoryType(memoryProperties, memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
+    }};
+    transferBuffer.bindMemory(*transferMemory, 0);
 
-    std::vector<vk::ImageView> framebufferAttachments{framebufferImageViews.size()};
+    vk::raii::Buffer vertexBuffer{device, vk::BufferCreateInfo{
+        {}, totalInputStride*100, vk::BufferUsageFlagBits::eVertexBuffer, vk::SharingMode::eExclusive
+    }};
+    memoryRequirements = transferBuffer.getMemoryRequirements();
+    vk::raii::DeviceMemory vertexMemory{device, vk::MemoryAllocateInfo{
+        memoryRequirements.size,
+        findMemoryType(memoryProperties, memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
+    }};
+    vertexBuffer.bindMemory(*vertexMemory, 0);
+    {
+        auto* ptr = vertexMemory.mapMemory(0, VK_WHOLE_SIZE);
+        vertexMemory.unmapMemory();
+    }
+
+    std::vector<vk::AttachmentDescription> attachmentDescriptions{framebufferCount};
+    std::fill(attachmentDescriptions.begin(), attachmentDescriptions.end(), vk::AttachmentDescription{
+        {}, vk::Format::eR8G8B8A8Srgb, vk::SampleCountFlagBits::e1,
+        vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
+        vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+        vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferSrcOptimal
+    });
+
+    std::vector<vk::AttachmentReference> attachmentReferences{framebufferCount};
+    std::generate(attachmentReferences.begin(), attachmentReferences.end(), [x = uint32_t{0}]() mutable{
+        return vk::AttachmentReference{
+            x++, vk::ImageLayout::eColorAttachmentOptimal
+        };
+    });
+    vk::SubpassDescription subpass{{}, vk::PipelineBindPoint::eGraphics, {}, attachmentReferences, {}, {}, {}};
+    vk::SubpassDependency externalDependency1{
+        VK_SUBPASS_EXTERNAL, 0,
+        vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
+        vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
+        vk::AccessFlagBits::eColorAttachmentWrite,
+        vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eColorAttachmentRead};
+    vk::SubpassDependency externalDependency2{
+        0, VK_SUBPASS_EXTERNAL,
+        vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eHost,
+        vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eHostRead};
+    std::array deps = {externalDependency1, externalDependency2};
+    vk::raii::RenderPass renderPass{device, vk::RenderPassCreateInfo{
+        {}, attachmentDescriptions, subpass, deps
+    }};
+
+    std::vector<vk::ImageView> framebufferAttachments{framebufferCount};
     std::transform(framebufferImageViews.begin(), framebufferImageViews.end(), framebufferAttachments.begin(), [](vk::raii::ImageView& iv){return *iv;});
     vk::raii::Framebuffer framebuffer{device, vk::FramebufferCreateInfo{
-        {}, {} /*TODO*/, framebufferAttachments, width, height, 1
+        {}, *renderPass, framebufferAttachments, width, height, 1
     }};
+
+    vk::raii::PipelineLayout pipelineLayout{device, vk::PipelineLayoutCreateInfo{/*TODO*/}};
 
     vk::raii::ShaderModule vertexShader{device, vk::ShaderModuleCreateInfo{
         {}, vertexSpv.size()*sizeof(uint32_t), vertexSpv.data()
@@ -242,7 +337,9 @@ int main(int argc, char** argv)
     vk::PipelineVertexInputStateCreateInfo pipelineInputState{{}, pipelineInputBinding, vertexInputAttributes};
     vk::PipelineInputAssemblyStateCreateInfo pipelineInputAssemblyState{{}, vk::PrimitiveTopology::eTriangleList, false};
     vk::PipelineTessellationStateCreateInfo pipelineTessellationState{};
-    vk::PipelineViewportStateCreateInfo pipelineViewportState{}; // TODO
+    vk::Viewport viewport{0, 0, static_cast<float>(width), static_cast<float>(height), 0.0f, 1.0f};
+    vk::Rect2D scissors{vk::Offset2D{}, vk::Extent2D{width, height}};
+    vk::PipelineViewportStateCreateInfo pipelineViewportState{{}, viewport, scissors};
     vk::PipelineRasterizationStateCreateInfo pipelineRasterizationState{
         {}, VK_FALSE, VK_FALSE, vk::PolygonMode::eFill, vk::CullModeFlagBits::eNone,
         vk::FrontFace::eCounterClockwise, VK_FALSE, {}, {}, {}, 1.0
@@ -255,16 +352,42 @@ int main(int argc, char** argv)
         {}, pipelineStages, 
         &pipelineInputState, &pipelineInputAssemblyState, &pipelineTessellationState,
         &pipelineViewportState, &pipelineRasterizationState, &pipelineMultisampleState,
-        &pipelineDepthStencilState, &pipelineColorBlendState, &pipelineDynamicState
+        &pipelineDepthStencilState, &pipelineColorBlendState, &pipelineDynamicState,
+        *pipelineLayout, *renderPass, 0
     };
     vk::raii::Pipeline graphicsPipeline{device, std::nullptr_t(), pipelineCreateInfo};
     
+    if(rdoc_api) rdoc_api->StartFrameCapture(NULL, NULL);
+
     vk::raii::CommandBuffer commandBuffer{std::move(buffers[0])};
     commandBuffer.begin(vk::CommandBufferBeginInfo{});
+    std::vector<vk::ClearValue> clearValues{framebufferCount};
+    std::fill(clearValues.begin(), clearValues.end(), vk::ClearValue{vk::ClearColorValue{0.0f, 0.0f, 0.0f, 0.0f}});
+    commandBuffer.beginRenderPass(vk::RenderPassBeginInfo{*renderPass, *framebuffer, scissors, clearValues}, vk::SubpassContents::eInline);
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
+    commandBuffer.bindVertexBuffers(0, *vertexBuffer, {0});
+    commandBuffer.draw(1000, 1, 0, 0);
+    commandBuffer.endRenderPass();
+    commandBuffer.copyImageToBuffer(*framebufferImages[framebufferIndex], vk::ImageLayout::eTransferSrcOptimal, *transferBuffer, vk::BufferImageCopy{
+        0, 0, 0, vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1), {0, 0, 0}, {width, height, 1}
+    });
     commandBuffer.end();
 
     vk::raii::Fence fence{device, vk::FenceCreateInfo{}};
     queue.submit(vk::SubmitInfo{{}, {}, *commandBuffer}, *fence);
 
-    device.waitForFences(*fence, true, UINT64_MAX);
+    auto result = device.waitForFences(*fence, true, UINT64_MAX);
+
+    if(rdoc_api) rdoc_api->EndFrameCapture(NULL, NULL);
+    
+    {
+        auto size = width*height*4;
+        std::vector<char> copy(size);
+
+        char* ptr = reinterpret_cast<char*>(transferMemory.mapMemory(0, VK_WHOLE_SIZE));
+        std::copy(ptr, ptr+size, copy.begin());
+        transferMemory.unmapMemory();
+
+	    stbi_write_png(optionResult["output"].as<std::filesystem::path>().c_str(), width, height, 4, copy.data(), width*4);
+    }
 }
