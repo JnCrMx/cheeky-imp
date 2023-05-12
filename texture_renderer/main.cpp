@@ -12,9 +12,12 @@
 #include <cxxopts.hpp>
 #include <nlohmann/json.hpp>
 #include <glm/glm.hpp>
+#include <glm/gtx/string_cast.hpp>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 #include "renderdoc_app.h"
 
@@ -70,6 +73,75 @@ std::tuple<std::unique_ptr<glslang::TShader>, std::unique_ptr<glslang::TProgram>
     return {std::move(shader), std::move(program)};
 }
 
+std::istream& read_matrix_row(std::istream& in, glm::vec4& vec)
+{
+    char s = in.get();
+    if(s != '{')
+    {
+        in.setstate(std::ios_base::badbit);
+        return in;
+    }
+    for(int i = 0; i<vec.length(); i++)
+    {
+        if(!(in >> vec[i])) return in;
+        char c = in.get();
+        if(c != ((i == vec.length()-1)?'}':','))
+        {
+            in.setstate(std::ios_base::badbit);
+            return in;
+        }
+    }
+
+    return in;
+}
+
+namespace glm {
+    std::istream& operator>>(std::istream& in, glm::mat4& matrix)
+    {
+        for(int i=0; i<matrix.length(); i++)
+        {
+            if(!read_matrix_row(in, matrix[i]))
+                return in;
+        }
+        return in;
+    }
+}
+
+std::tuple<vk::raii::Image, vk::raii::DeviceMemory, vk::raii::ImageView> uploadImage(vk::raii::Device& device, vk::PhysicalDeviceMemoryProperties memoryProperties, std::filesystem::path path)
+{
+    int w, h, comp;
+    uint8_t* buf = stbi_load(path.c_str(), &w, &h, &comp, STBI_rgb_alpha);
+
+    vk::raii::Image image{device, vk::ImageCreateInfo{
+        {}, vk::ImageType::e2D, vk::Format::eR8G8B8A8Srgb,
+        vk::Extent3D{static_cast<uint32_t>(w), static_cast<uint32_t>(h), 1},
+        1, 1, vk::SampleCountFlagBits::e1, vk::ImageTiling::eLinear,
+        vk::ImageUsageFlagBits::eSampled, vk::SharingMode::eExclusive
+    }};
+
+    auto memoryRequirements = image.getMemoryRequirements();
+    vk::raii::DeviceMemory memory{device, vk::MemoryAllocateInfo{
+        memoryRequirements.size,
+        findMemoryType(memoryProperties, memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
+    }};
+    image.bindMemory(*memory, 0);
+
+    vk::raii::ImageView imageView{device, vk::ImageViewCreateInfo{
+        {}, *image, vk::ImageViewType::e2D, vk::Format::eR8G8B8A8Srgb,
+        vk::ComponentMapping{},
+        vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
+    }};
+
+    {
+        char* ptr = reinterpret_cast<char*>(memory.mapMemory(0, VK_WHOLE_SIZE));
+        std::copy(buf, buf + w*h*comp, ptr);
+        memory.unmapMemory();
+    }
+
+    STBI_FREE(buf);
+
+    return {std::move(image), std::move(memory), std::move(imageView)};
+}
 
 int main(int argc, char** argv)
 {
@@ -82,6 +154,9 @@ int main(int argc, char** argv)
         ("shader", "File containing fragment shader to use for generating texture", cxxopts::value<std::filesystem::path>(), "path")
         ("vertices", "CSV file containing the output of a vertex shader (e.g. export from RenderDoc)", cxxopts::value<std::filesystem::path>(), "path")
         ("pipeline", "JSON file describing the pipeline layout and used uniforms", cxxopts::value<std::filesystem::path>(), "path")
+        //("matrix", "Perspective matrix to use for undoing transformations", cxxopts::value<glm::mat4>()->default_value("{1, 0, 0, 0}{0, 1, 0, 0}{0, 0, 1, 0}{0, 0, 0, 1}"), "matrix")
+        //("no-invert", "Do not invert the matrix")
+        ("obj", "Wavefront OBJ file to read the UVs from", cxxopts::value<std::filesystem::path>(), "path")
         ("help", "Print this help message")
         ("v,verbose", "Verbose output")
         ("debug-renderdoc", "Create RenderDoc capture", cxxopts::value<std::filesystem::path>()->implicit_value("/usr/lib/librenderdoc.so"), "path to librenderdoc.so")
@@ -102,7 +177,8 @@ int main(int argc, char** argv)
         std::cout << options.help() << std::endl;
         return 0;
     }
-    if(!optionResult.count("shader") || !optionResult.count("vertices") || !optionResult.count("pipeline"))
+    if(!optionResult.count("shader") || !optionResult.count("vertices") ||
+        !optionResult.count("pipeline") || !optionResult.count("obj"))
     {
         std::cerr << options.help() << std::endl;
         return 2;
@@ -132,12 +208,22 @@ int main(int argc, char** argv)
     auto vertexDataFile = optionResult["vertices"].as<std::filesystem::path>();
     auto shaderFile = optionResult["shader"].as<std::filesystem::path>();
     auto pipelineDescriptionFile = optionResult["pipeline"].as<std::filesystem::path>();
+    auto objFile = optionResult["obj"].as<std::filesystem::path>();
     std::string shaderCode = read_file(shaderFile);
     nlohmann::json pipelineDescription;
     {
         std::ifstream in{pipelineDescriptionFile};
         in >> pipelineDescription;
     }
+    /*glm::mat4 matrix = optionResult["matrix"].as<glm::mat4>();
+    if(!optionResult.count("no-invert"))
+    {
+        matrix = glm::inverse(matrix);
+    }
+    if(verbose)
+    {
+        std::cout << "Using matrix: " << glm::to_string(matrix) << '\n';
+    }*/
 
     glslang::InitializeProcess();
 
@@ -155,6 +241,7 @@ int main(int argc, char** argv)
     vertexCode << "#version 450\n";
     vertexCode << "layout(location = 0) in vec4 position;\n";
     vertexInputAttributes.push_back(vk::VertexInputAttributeDescription{0, 0, vk::Format::eR32G32B32A32Sfloat, 0});
+    std::vector<int> componentCounts{};
     for(int i=0; i<inputCount; i++)
     {
         const auto& input = fragmentProgram->getPipeInput(i);
@@ -174,6 +261,7 @@ int main(int argc, char** argv)
         }[components-1];
 
         vertexInputAttributes.push_back(vk::VertexInputAttributeDescription{inputLocation, 0, format, static_cast<uint32_t>(inputLocation*4*sizeof(float))});
+        componentCounts.push_back(components);
     }
     vertexCode << "void main() {\n";
     vertexCode << "    gl_Position = position;\n";
@@ -267,8 +355,71 @@ int main(int argc, char** argv)
     }};
     transferBuffer.bindMemory(*transferMemory, 0);
 
+    std::vector<glm::vec4> vertexData;
+    int vertexCount = 0;
+    std::vector<glm::vec2> vertexUVs;
+    {
+        std::ifstream in{objFile};
+        std::string line;
+        while(std::getline(in, line))
+        {
+            std::istringstream iss(line);
+            std::string type;
+            iss >> type;
+
+            if(type == "vt")
+            {
+                float u, v;
+                iss >> u >> v;
+                vertexUVs.push_back({u, v});
+            }
+        }
+    }
+    {
+        std::ifstream in{vertexDataFile};
+
+        std::string line;
+        std::getline(in, line);
+        for(; std::getline(in, line); vertexCount++)
+        {
+            std::vector<std::string> cells;
+
+            {
+                std::istringstream iss(line);
+                std::string cell;
+                while(std::getline(iss, cell, ','))
+                {
+                    cells.push_back(cell);
+                }
+            }
+
+            assert(vertexData.size() == vertexCount*(inputCount+1));
+
+            /*glm::vec4 pos{std::stof(cells[2]), stof(cells[3]), std::stof(cells[4]), std::stof(cells[5])};
+            pos = pos*matrix;
+            vertexData.push_back(pos);*/
+            glm::vec2 uv = vertexUVs[vertexCount];
+            uv *= 2.0f;
+            uv -= glm::vec2{1.0, 1.0};
+            uv *= glm::vec2{1.0, -1.0};
+            vertexData.push_back(glm::vec4{uv, 0.0, 1.0});
+
+            int cpos = 6;
+            for(int i=0; i<inputCount; i++)
+            {
+                glm::vec4 v{};
+                for(int j=0; j<componentCounts[i]; j++)
+                {
+                    v[j] = std::stof(cells[cpos++]);
+                }
+                vertexData.push_back(v);
+            }
+        }
+    }
+    assert(vertexData.size() * sizeof(decltype(vertexData)::value_type) == totalInputStride*vertexCount);
+
     vk::raii::Buffer vertexBuffer{device, vk::BufferCreateInfo{
-        {}, totalInputStride*100, vk::BufferUsageFlagBits::eVertexBuffer, vk::SharingMode::eExclusive
+        {}, totalInputStride*vertexCount, vk::BufferUsageFlagBits::eVertexBuffer, vk::SharingMode::eExclusive
     }};
     memoryRequirements = transferBuffer.getMemoryRequirements();
     vk::raii::DeviceMemory vertexMemory{device, vk::MemoryAllocateInfo{
@@ -278,6 +429,7 @@ int main(int argc, char** argv)
     vertexBuffer.bindMemory(*vertexMemory, 0);
     {
         auto* ptr = vertexMemory.mapMemory(0, VK_WHOLE_SIZE);
+        std::copy(vertexData.begin(), vertexData.end(), reinterpret_cast<glm::vec4*>(ptr));
         vertexMemory.unmapMemory();
     }
 
@@ -304,8 +456,8 @@ int main(int argc, char** argv)
         vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eColorAttachmentRead};
     vk::SubpassDependency externalDependency2{
         0, VK_SUBPASS_EXTERNAL,
-        vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eHost,
-        vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eHostRead};
+        vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eTransfer,
+        vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eTransferRead};
     std::array deps = {externalDependency1, externalDependency2};
     vk::raii::RenderPass renderPass{device, vk::RenderPassCreateInfo{
         {}, attachmentDescriptions, subpass, deps
@@ -317,7 +469,91 @@ int main(int argc, char** argv)
         {}, *renderPass, framebufferAttachments, width, height, 1
     }};
 
-    vk::raii::PipelineLayout pipelineLayout{device, vk::PipelineLayoutCreateInfo{/*TODO*/}};
+    std::vector<vk::raii::DescriptorSetLayout> descriptorSetLayouts{};
+    for(const auto& layout : pipelineDescription["pipelineLayout"]["setLayouts"])
+    {
+        std::vector<vk::DescriptorSetLayoutBinding> bindings{};
+        for(const auto& binding : layout["bindings"])
+        {
+            bindings.push_back(vk::DescriptorSetLayoutBinding{
+                binding["binding"], binding["type"], binding["count"],
+                vk::ShaderStageFlagBits::eFragment
+            });
+        }
+        descriptorSetLayouts.emplace_back(device, vk::DescriptorSetLayoutCreateInfo{
+            {}, bindings
+        });
+    }
+    std::vector<vk::DescriptorSetLayout> descriptorSetLayoutRefs(descriptorSetLayouts.size());
+    std::transform(descriptorSetLayouts.begin(), descriptorSetLayouts.end(), descriptorSetLayoutRefs.begin(), [](const auto& r){return *r;});
+
+    std::array poolSizes = {
+        vk::DescriptorPoolSize{vk::DescriptorType::eSampler, 1000},
+        vk::DescriptorPoolSize{vk::DescriptorType::eSampledImage, 1000},
+        vk::DescriptorPoolSize{vk::DescriptorType::eCombinedImageSampler, 1000},
+    };
+    vk::raii::DescriptorPool descriptorPool{device, vk::DescriptorPoolCreateInfo{
+        vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, static_cast<uint32_t>(descriptorSetLayouts.size()), poolSizes
+    }};
+    vk::raii::DescriptorSets descriptorSets{device, vk::DescriptorSetAllocateInfo{
+        *descriptorPool, descriptorSetLayoutRefs
+    }};
+    std::vector<vk::DescriptorSet> descriptorSetRefs{descriptorSets.size()};
+    std::transform(descriptorSets.begin(), descriptorSets.end(), descriptorSetRefs.begin(), [](const auto& r){return *r;});
+
+    std::vector<vk::raii::Image> descriptorImages;
+    std::vector<vk::raii::ImageView> descriptorImageViews;
+    std::vector<vk::raii::Buffer> descriptorBuffers;
+    std::vector<vk::raii::DeviceMemory> descriptorMemories;
+
+    vk::raii::Sampler sampler{device, vk::SamplerCreateInfo{
+        {}, vk::Filter::eLinear, vk::Filter::eLinear,
+        vk::SamplerMipmapMode::eNearest,
+        vk::SamplerAddressMode::eRepeat, vk::SamplerAddressMode::eRepeat, vk::SamplerAddressMode::eRepeat,
+        0.0f, false, 0.0f, false, vk::CompareOp::eNever, 0.0f, 0.0f, 
+        vk::BorderColor::eFloatTransparentBlack, false
+    }};
+    {
+        std::vector<vk::WriteDescriptorSet> descriptorWrites;
+        std::vector<std::unique_ptr<std::vector<vk::DescriptorImageInfo>>> descriptorImageInfos;
+        std::vector<std::unique_ptr<std::vector<vk::DescriptorBufferInfo>>> descriptorBufferInfos;
+
+        int currentSet = 0;
+        for(const auto& layout : pipelineDescription["pipelineLayout"]["setLayouts"])
+        {
+            for(const auto& binding : layout["bindings"])
+            {
+                uint32_t count = binding["count"];
+                vk::DescriptorType type = binding["type"];
+                vk::WriteDescriptorSet write{descriptorSetRefs[currentSet], binding["binding"],
+                    0, count, type};
+                if(type == vk::DescriptorType::eCombinedImageSampler)
+                {
+                    auto& images = descriptorImageInfos.emplace_back(std::make_unique<std::vector<vk::DescriptorImageInfo>>());
+                    for(int i=0; i<count; i++)
+                    {
+                        std::filesystem::path p = binding["data"][i];
+                        auto [img, memory, imgView] = uploadImage(device, memoryProperties, pipelineDescriptionFile.parent_path() / p);
+                        images->push_back(vk::DescriptorImageInfo{
+                            *sampler, *imgView, vk::ImageLayout::eGeneral
+                        });
+                        descriptorImages.push_back(std::move(img));
+                        descriptorMemories.push_back(std::move(memory));
+                        descriptorImageViews.push_back(std::move(imgView));
+                    }
+                    write.setImageInfo(*images);
+                }
+                descriptorWrites.push_back(write);
+            }
+
+            currentSet++;
+        }
+        device.updateDescriptorSets(descriptorWrites, {});
+    }
+
+    vk::raii::PipelineLayout pipelineLayout{device, vk::PipelineLayoutCreateInfo{
+        {}, descriptorSetLayoutRefs
+    }};
 
     vk::raii::ShaderModule vertexShader{device, vk::ShaderModuleCreateInfo{
         {}, vertexSpv.size()*sizeof(uint32_t), vertexSpv.data()
@@ -346,7 +582,12 @@ int main(int argc, char** argv)
     };
     vk::PipelineMultisampleStateCreateInfo pipelineMultisampleState{{}, vk::SampleCountFlagBits::e1, false};
     vk::PipelineDepthStencilStateCreateInfo pipelineDepthStencilState{{}, false};
-    vk::PipelineColorBlendStateCreateInfo pipelineColorBlendState{}; // TODO
+    std::vector<vk::PipelineColorBlendAttachmentState> blendAttachments{framebufferCount};
+    std::fill(blendAttachments.begin(), blendAttachments.end(), vk::PipelineColorBlendAttachmentState{
+        false, {}, {}, {}, {}, {}, {},
+        vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
+    });
+    vk::PipelineColorBlendStateCreateInfo pipelineColorBlendState{{}, false, vk::LogicOp::eClear, blendAttachments, {}};
     vk::PipelineDynamicStateCreateInfo pipelineDynamicState{};
     vk::GraphicsPipelineCreateInfo pipelineCreateInfo{
         {}, pipelineStages, 
@@ -364,9 +605,10 @@ int main(int argc, char** argv)
     std::vector<vk::ClearValue> clearValues{framebufferCount};
     std::fill(clearValues.begin(), clearValues.end(), vk::ClearValue{vk::ClearColorValue{0.0f, 0.0f, 0.0f, 0.0f}});
     commandBuffer.beginRenderPass(vk::RenderPassBeginInfo{*renderPass, *framebuffer, scissors, clearValues}, vk::SubpassContents::eInline);
+    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0, descriptorSetRefs, {});
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
     commandBuffer.bindVertexBuffers(0, *vertexBuffer, {0});
-    commandBuffer.draw(1000, 1, 0, 0);
+    commandBuffer.draw(vertexCount, 1, 0, 0);
     commandBuffer.endRenderPass();
     commandBuffer.copyImageToBuffer(*framebufferImages[framebufferIndex], vk::ImageLayout::eTransferSrcOptimal, *transferBuffer, vk::BufferImageCopy{
         0, 0, 0, vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1), {0, 0, 0}, {width, height, 1}
