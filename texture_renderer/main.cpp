@@ -5,6 +5,7 @@
 #include <ranges>
 #include <fstream>
 #include <filesystem>
+#include <chrono>
 #include <glslang/Public/ShaderLang.h>
 #include <glslang/Include/Types.h>
 #include <glslang/Public/ResourceLimits.h>
@@ -142,6 +143,37 @@ std::tuple<vk::raii::Image, vk::raii::DeviceMemory, vk::raii::ImageView> uploadI
 
     return {std::move(image), std::move(memory), std::move(imageView)};
 }
+std::tuple<vk::raii::Buffer, vk::raii::DeviceMemory> uploadBuffer(vk::raii::Device& device, vk::PhysicalDeviceMemoryProperties memoryProperties, std::filesystem::path path)
+{
+    std::vector<char> data;
+    {
+        std::ifstream in{path, std::ios::ate | std::ios::binary};
+        auto size = in.tellg();
+        data.resize(size);
+        in.seekg(0, std::ios::beg);
+
+        in.read(data.data(), size);
+    }
+
+    vk::raii::Buffer buffer{device, vk::BufferCreateInfo{
+        {}, data.size(), vk::BufferUsageFlagBits::eUniformBuffer, vk::SharingMode::eExclusive
+    }};
+
+    auto memoryRequirements = buffer.getMemoryRequirements();
+    vk::raii::DeviceMemory memory{device, vk::MemoryAllocateInfo{
+        memoryRequirements.size,
+        findMemoryType(memoryProperties, memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
+    }};
+    buffer.bindMemory(*memory, 0);
+
+    {
+        char* ptr = reinterpret_cast<char*>(memory.mapMemory(0, VK_WHOLE_SIZE));
+        std::copy(data.begin(), data.end(), ptr);
+        memory.unmapMemory();
+    }
+
+    return {std::move(buffer), std::move(memory)};
+}
 
 int main(int argc, char** argv)
 {
@@ -149,6 +181,7 @@ int main(int argc, char** argv)
     options.add_options()
         ("w,width", "Width of the texture to generate", cxxopts::value<uint32_t>()->default_value("4096"), "number")
         ("h,height", "Height of the texture to generate", cxxopts::value<uint32_t>()->default_value("4096"), "number")
+        ("samples", "Samples to use for multisampling (must be power of two)", cxxopts::value<int>()->default_value("4"), "number (power of 2)")
         ("o,output", "File to write the generated texture to", cxxopts::value<std::filesystem::path>()->default_value("texture.png"), "path")
         ("attachment", "Index of color attachment to output", cxxopts::value<uint32_t>()->default_value("0"), "number")
         ("shader", "File containing fragment shader to use for generating texture", cxxopts::value<std::filesystem::path>(), "path")
@@ -157,6 +190,7 @@ int main(int argc, char** argv)
         //("matrix", "Perspective matrix to use for undoing transformations", cxxopts::value<glm::mat4>()->default_value("{1, 0, 0, 0}{0, 1, 0, 0}{0, 0, 1, 0}{0, 0, 0, 1}"), "matrix")
         //("no-invert", "Do not invert the matrix")
         ("obj", "Wavefront OBJ file to read the UVs from", cxxopts::value<std::filesystem::path>(), "path")
+        ("d,device", "Name of PhysicalDevice to use", cxxopts::value<std::string>()->default_value("auto"), "name")
         ("help", "Print this help message")
         ("v,verbose", "Verbose output")
         ("debug-renderdoc", "Create RenderDoc capture", cxxopts::value<std::filesystem::path>()->implicit_value("/usr/lib/librenderdoc.so"), "path to librenderdoc.so")
@@ -204,6 +238,7 @@ int main(int argc, char** argv)
     uint32_t width = optionResult["width"].as<uint32_t>();
     uint32_t height = optionResult["height"].as<uint32_t>();
     uint32_t framebufferIndex = optionResult["attachment"].as<uint32_t>();
+    vk::SampleCountFlagBits samples = static_cast<vk::SampleCountFlagBits>(optionResult["samples"].as<int>());
 
     auto vertexDataFile = optionResult["vertices"].as<std::filesystem::path>();
     auto shaderFile = optionResult["shader"].as<std::filesystem::path>();
@@ -245,13 +280,16 @@ int main(int argc, char** argv)
     for(int i=0; i<inputCount; i++)
     {
         const auto& input = fragmentProgram->getPipeInput(i);
+        if(input.name.starts_with("gl_"))
+            continue;
+
         const auto* type = input.getType();
         uint32_t location = type->getQualifier().layoutLocation;
         uint32_t inputLocation = location + 1;
         int components = type->computeNumComponents();
         std::string typeString = components == 1 ? "float" : "vec"+std::to_string(components);
-        vertexCode << "layout(location = " << inputLocation << ") in " << typeString << " input" << i << ";\n";
-        vertexCode << "layout(location = " << location << ") out " << typeString << " output" << i << ";\n";
+        vertexCode << "layout(location = " << inputLocation << ") in " << typeString << " input" << location << ";\n";
+        vertexCode << "layout(location = " << location << ") out " << typeString << " output" << location << ";\n";
 
         vk::Format format = std::array<vk::Format, 4>{
             vk::Format::eR32Sfloat,
@@ -260,14 +298,20 @@ int main(int argc, char** argv)
             vk::Format::eR32G32B32A32Sfloat
         }[components-1];
 
-        vertexInputAttributes.push_back(vk::VertexInputAttributeDescription{inputLocation, 0, format, static_cast<uint32_t>(inputLocation*4*sizeof(float))});
+        vertexInputAttributes.push_back(vk::VertexInputAttributeDescription{inputLocation, 0, format, static_cast<uint32_t>(inputLocation*sizeof(glm::vec4))});
         componentCounts.push_back(components);
     }
     vertexCode << "void main() {\n";
     vertexCode << "    gl_Position = position;\n";
     for(int i=0; i<inputCount; i++)
     {
-        vertexCode << "    output" << i << " = input" << i << ";\n"; 
+        const auto& input = fragmentProgram->getPipeInput(i);
+        if(input.name.starts_with("gl_"))
+            continue;
+
+        const auto* type = input.getType();
+        uint32_t location = type->getQualifier().layoutLocation;
+        vertexCode << "    output" << location << " = input" << location << ";\n"; 
     }
     vertexCode << "}\n";
     uint32_t totalInputStride = static_cast<uint32_t>(vertexInputAttributes.size()*sizeof(glm::vec4));
@@ -283,21 +327,38 @@ int main(int argc, char** argv)
     vk::raii::Instance instance{context, vk::InstanceCreateInfo{{}, &appInfo}};
 
     vk::raii::PhysicalDevice physicalDevice{std::nullptr_t()};
+    auto deviceName = optionResult["device"].as<std::string>();
+    if(deviceName == "auto")
     {
         vk::raii::PhysicalDevices physicalDevices{instance};
         physicalDevice = physicalDevices.at(0);
         for(const auto& device : physicalDevices)
         {
             const auto& props = device.getProperties();
-            if(verbose) std::cout << "Device #" << props.deviceID << ": " << std::quoted(std::string(props.deviceName)) << " of type " << vk::to_string(props.deviceType) << '\n';
+            if(verbose) std::cout << "Device " << props.vendorID << ":" << props.deviceID << ": " << std::quoted(std::string(props.deviceName)) << " of type " << vk::to_string(props.deviceType) << '\n';
             if(props.deviceType == vk::PhysicalDeviceType::eDiscreteGpu || props.deviceType == vk::PhysicalDeviceType::eIntegratedGpu)
                 physicalDevice = device;
         }
         if(verbose) std::cout << '\n';
     }
+    else
+    {
+        vk::raii::PhysicalDevices physicalDevices{instance};
+        auto it = std::find_if(physicalDevices.begin(), physicalDevices.end(), [deviceName](vk::raii::PhysicalDevice& dev){
+            const auto& props = dev.getProperties();
+            return props.deviceName == deviceName;
+        });
+
+        if(it == physicalDevices.end())
+        {
+            std::cerr << "Failed to find PhysicalDevice " << std::quoted(deviceName) << ".\n";
+            return 2;
+        }
+        physicalDevice = std::move(*it);
+    }
     
     const auto& props = physicalDevice.getProperties();
-    std::cout << "Picked device #" << props.deviceID << ": " << std::quoted(std::string(props.deviceName)) << " of type " << vk::to_string(props.deviceType) << ".\n";
+    std::cout << "Picked device #" << props.vendorID << ":" << props.deviceID << ": " << std::quoted(std::string(props.deviceName)) << " of type " << vk::to_string(props.deviceType) << ".\n";
     const auto& memoryProperties = physicalDevice.getMemoryProperties();
 
     auto queues = physicalDevice.getQueueFamilyProperties();
@@ -320,30 +381,62 @@ int main(int argc, char** argv)
     std::vector<vk::raii::DeviceMemory> framebufferMemories;
     std::vector<vk::raii::ImageView> framebufferImageViews;
 
+    std::vector<vk::raii::Image> resolveImages;
+    std::vector<vk::raii::DeviceMemory> resolveMemories;
+    std::vector<vk::raii::ImageView> resolveImageViews;
+
+    if(verbose) std::cout << "Creating " << framebufferCount << " framebuffers.\n";
     for(int i=0; i<framebufferCount; i++)
     {
-        vk::raii::Image image{device, vk::ImageCreateInfo{
-            {}, vk::ImageType::e2D, vk::Format::eR8G8B8A8Srgb, vk::Extent3D{width, height, 1},
-            1, 1, vk::SampleCountFlagBits::e1, vk::ImageTiling::eOptimal,
-            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc,
-            vk::SharingMode::eExclusive
-        }};
-        auto memoryRequirements = image.getMemoryRequirements();
-        vk::raii::DeviceMemory memory{device, vk::MemoryAllocateInfo{
-            memoryRequirements.size,
-            findMemoryType(memoryProperties, memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
-        }};
-        image.bindMemory(*memory, 0);
+        {
+            vk::raii::Image image{device, vk::ImageCreateInfo{
+                {}, vk::ImageType::e2D, vk::Format::eR8G8B8A8Srgb, vk::Extent3D{width, height, 1},
+                1, 1, samples, vk::ImageTiling::eOptimal,
+                vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc,
+                vk::SharingMode::eExclusive
+            }};
+            auto memoryRequirements = image.getMemoryRequirements();
+            vk::raii::DeviceMemory memory{device, vk::MemoryAllocateInfo{
+                memoryRequirements.size,
+                findMemoryType(memoryProperties, memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
+            }};
+            image.bindMemory(*memory, 0);
 
-        vk::raii::ImageView imageView{device, vk::ImageViewCreateInfo{
-            {}, *image, vk::ImageViewType::e2D, vk::Format::eR8G8B8A8Srgb,
-            vk::ComponentMapping{},
-            vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
-        }};
+            vk::raii::ImageView imageView{device, vk::ImageViewCreateInfo{
+                {}, *image, vk::ImageViewType::e2D, vk::Format::eR8G8B8A8Srgb,
+                vk::ComponentMapping{},
+                vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
+            }};
 
-        framebufferImages.push_back(std::move(image));
-        framebufferMemories.push_back(std::move(memory));
-        framebufferImageViews.push_back(std::move(imageView));
+            framebufferImages.push_back(std::move(image));
+            framebufferMemories.push_back(std::move(memory));
+            framebufferImageViews.push_back(std::move(imageView));
+        }
+
+        {
+            vk::raii::Image image{device, vk::ImageCreateInfo{
+                {}, vk::ImageType::e2D, vk::Format::eR8G8B8A8Srgb, vk::Extent3D{width, height, 1},
+                1, 1, vk::SampleCountFlagBits::e1, vk::ImageTiling::eOptimal,
+                vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc,
+                vk::SharingMode::eExclusive
+            }};
+            auto memoryRequirements = image.getMemoryRequirements();
+            vk::raii::DeviceMemory memory{device, vk::MemoryAllocateInfo{
+                memoryRequirements.size,
+                findMemoryType(memoryProperties, memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
+            }};
+            image.bindMemory(*memory, 0);
+
+            vk::raii::ImageView imageView{device, vk::ImageViewCreateInfo{
+                {}, *image, vk::ImageViewType::e2D, vk::Format::eR8G8B8A8Srgb,
+                vk::ComponentMapping{},
+                vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
+            }};
+
+            resolveImages.push_back(std::move(image));
+            resolveMemories.push_back(std::move(memory));
+            resolveImageViews.push_back(std::move(imageView));
+        }
     }
     vk::raii::Buffer transferBuffer{device, vk::BufferCreateInfo{
         {}, width*height*4, vk::BufferUsageFlagBits::eTransferDst, vk::SharingMode::eExclusive
@@ -378,8 +471,39 @@ int main(int argc, char** argv)
     {
         std::ifstream in{vertexDataFile};
 
+        std::vector<int> groupsComponents;
+
+        std::string header;
+        std::getline(in, header);
+        {
+            std::istringstream iss(header);
+            std::string column;
+    
+            for(int i=0; i<2+4; i++) // skip IDX, VTX and position
+                std::getline(iss, column, ',');
+
+            std::string currentGroup{};
+            int currentGroupSize = 0;
+            while(std::getline(iss, column, ','))
+            {
+                int dot = column.rfind('.');
+                std::string left = column.substr(0, dot);
+                if(currentGroup.empty())
+                    currentGroup = left;
+                if(currentGroup != left)
+                {
+                    groupsComponents.push_back(currentGroupSize);
+                    currentGroup = left;
+                    currentGroupSize = 0;
+                }
+                currentGroupSize++;
+            }
+            groupsComponents.push_back(currentGroupSize);
+        }
+        if(verbose) std::cout << "Found " << groupsComponents.size() << " attributes in vertex data.\n";
+        totalInputStride = (groupsComponents.size()+1) * sizeof(glm::vec4);
+
         std::string line;
-        std::getline(in, line);
         for(; std::getline(in, line); vertexCount++)
         {
             std::vector<std::string> cells;
@@ -393,7 +517,7 @@ int main(int argc, char** argv)
                 }
             }
 
-            assert(vertexData.size() == vertexCount*(inputCount+1));
+            //assert(vertexData.size() == vertexCount*(inputCount+1));
 
             /*glm::vec4 pos{std::stof(cells[2]), stof(cells[3]), std::stof(cells[4]), std::stof(cells[5])};
             pos = pos*matrix;
@@ -405,10 +529,10 @@ int main(int argc, char** argv)
             vertexData.push_back(glm::vec4{uv, 0.0, 1.0});
 
             int cpos = 6;
-            for(int i=0; i<inputCount; i++)
+            for(int i=0; i<groupsComponents.size(); i++)
             {
                 glm::vec4 v{};
-                for(int j=0; j<componentCounts[i]; j++)
+                for(int j=0; j<groupsComponents[i]; j++)
                 {
                     v[j] = std::stof(cells[cpos++]);
                 }
@@ -433,21 +557,33 @@ int main(int argc, char** argv)
         vertexMemory.unmapMemory();
     }
 
-    std::vector<vk::AttachmentDescription> attachmentDescriptions{framebufferCount};
-    std::fill(attachmentDescriptions.begin(), attachmentDescriptions.end(), vk::AttachmentDescription{
-        {}, vk::Format::eR8G8B8A8Srgb, vk::SampleCountFlagBits::e1,
+    std::vector<vk::AttachmentDescription> attachmentDescriptions(framebufferCount*2);
+    std::fill(attachmentDescriptions.begin(), attachmentDescriptions.begin()+framebufferCount, vk::AttachmentDescription{
+        {}, vk::Format::eR8G8B8A8Srgb, samples,
         vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
+        vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+        vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal
+    });
+    std::fill(attachmentDescriptions.begin()+framebufferCount, attachmentDescriptions.end(), vk::AttachmentDescription{
+        {}, vk::Format::eR8G8B8A8Srgb, vk::SampleCountFlagBits::e1,
+        vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eStore,
         vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
         vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferSrcOptimal
     });
 
-    std::vector<vk::AttachmentReference> attachmentReferences{framebufferCount};
+    std::vector<vk::AttachmentReference> attachmentReferences(framebufferCount);
+    std::vector<vk::AttachmentReference> resolveReferences(framebufferCount);
     std::generate(attachmentReferences.begin(), attachmentReferences.end(), [x = uint32_t{0}]() mutable{
         return vk::AttachmentReference{
             x++, vk::ImageLayout::eColorAttachmentOptimal
         };
     });
-    vk::SubpassDescription subpass{{}, vk::PipelineBindPoint::eGraphics, {}, attachmentReferences, {}, {}, {}};
+    std::generate(resolveReferences.begin(), resolveReferences.end(), [x = uint32_t{0}, framebufferCount]() mutable{
+        return vk::AttachmentReference{
+            static_cast<uint32_t>(framebufferCount) + x++, vk::ImageLayout::eColorAttachmentOptimal
+        };
+    });
+    vk::SubpassDescription subpass{{}, vk::PipelineBindPoint::eGraphics, {}, attachmentReferences, resolveReferences, {}, {}};
     vk::SubpassDependency externalDependency1{
         VK_SUBPASS_EXTERNAL, 0,
         vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
@@ -463,8 +599,9 @@ int main(int argc, char** argv)
         {}, attachmentDescriptions, subpass, deps
     }};
 
-    std::vector<vk::ImageView> framebufferAttachments{framebufferCount};
+    std::vector<vk::ImageView> framebufferAttachments(framebufferCount*2);
     std::transform(framebufferImageViews.begin(), framebufferImageViews.end(), framebufferAttachments.begin(), [](vk::raii::ImageView& iv){return *iv;});
+    std::transform(resolveImageViews.begin(), resolveImageViews.end(), framebufferAttachments.begin()+framebufferCount, [](vk::raii::ImageView& iv){return *iv;});
     vk::raii::Framebuffer framebuffer{device, vk::FramebufferCreateInfo{
         {}, *renderPass, framebufferAttachments, width, height, 1
     }};
@@ -498,7 +635,7 @@ int main(int argc, char** argv)
     vk::raii::DescriptorSets descriptorSets{device, vk::DescriptorSetAllocateInfo{
         *descriptorPool, descriptorSetLayoutRefs
     }};
-    std::vector<vk::DescriptorSet> descriptorSetRefs{descriptorSets.size()};
+    std::vector<vk::DescriptorSet> descriptorSetRefs(descriptorSets.size());
     std::transform(descriptorSets.begin(), descriptorSets.end(), descriptorSetRefs.begin(), [](const auto& r){return *r;});
 
     std::vector<vk::raii::Image> descriptorImages;
@@ -527,7 +664,13 @@ int main(int argc, char** argv)
                 vk::DescriptorType type = binding["type"];
                 vk::WriteDescriptorSet write{descriptorSetRefs[currentSet], binding["binding"],
                     0, count, type};
-                if(type == vk::DescriptorType::eCombinedImageSampler)
+                if(type == vk::DescriptorType::eSampler)
+                {
+                    auto& images = descriptorImageInfos.emplace_back(std::make_unique<std::vector<vk::DescriptorImageInfo>>());
+                    images->push_back(vk::DescriptorImageInfo{*sampler});
+                    write.setImageInfo(*images);
+                }
+                else if(type == vk::DescriptorType::eCombinedImageSampler)
                 {
                     auto& images = descriptorImageInfos.emplace_back(std::make_unique<std::vector<vk::DescriptorImageInfo>>());
                     for(int i=0; i<count; i++)
@@ -542,6 +685,35 @@ int main(int argc, char** argv)
                         descriptorImageViews.push_back(std::move(imgView));
                     }
                     write.setImageInfo(*images);
+                }
+                else if(type == vk::DescriptorType::eSampledImage)
+                {
+                    auto& images = descriptorImageInfos.emplace_back(std::make_unique<std::vector<vk::DescriptorImageInfo>>());
+                    for(int i=0; i<count; i++)
+                    {
+                        std::filesystem::path p = binding["data"][i];
+                        auto [img, memory, imgView] = uploadImage(device, memoryProperties, pipelineDescriptionFile.parent_path() / p);
+                        images->push_back(vk::DescriptorImageInfo{
+                            {}, *imgView, vk::ImageLayout::eGeneral
+                        });
+                        descriptorImages.push_back(std::move(img));
+                        descriptorMemories.push_back(std::move(memory));
+                        descriptorImageViews.push_back(std::move(imgView));
+                    }
+                    write.setImageInfo(*images);
+                }
+                else if(type == vk::DescriptorType::eUniformBuffer)
+                {
+                    auto& buffers = descriptorBufferInfos.emplace_back(std::make_unique<std::vector<vk::DescriptorBufferInfo>>());
+                    for(int i=0; i<count; i++)
+                    {
+                        std::filesystem::path p = binding["data"][i];
+                        auto [buffer, memory] = uploadBuffer(device, memoryProperties, pipelineDescriptionFile.parent_path() / p);
+                        buffers->push_back(vk::DescriptorBufferInfo{*buffer, 0, VK_WHOLE_SIZE});
+                        descriptorBuffers.push_back(std::move(buffer));
+                        descriptorMemories.push_back(std::move(memory));
+                    }
+                    write.setBufferInfo(*buffers);
                 }
                 descriptorWrites.push_back(write);
             }
@@ -580,12 +752,12 @@ int main(int argc, char** argv)
         {}, VK_FALSE, VK_FALSE, vk::PolygonMode::eFill, vk::CullModeFlagBits::eNone,
         vk::FrontFace::eCounterClockwise, VK_FALSE, {}, {}, {}, 1.0
     };
-    vk::PipelineMultisampleStateCreateInfo pipelineMultisampleState{{}, vk::SampleCountFlagBits::e1, false};
+    vk::PipelineMultisampleStateCreateInfo pipelineMultisampleState{{}, samples, false};
     vk::PipelineDepthStencilStateCreateInfo pipelineDepthStencilState{{}, false};
-    std::vector<vk::PipelineColorBlendAttachmentState> blendAttachments{framebufferCount};
+    std::vector<vk::PipelineColorBlendAttachmentState> blendAttachments(framebufferCount);
     std::fill(blendAttachments.begin(), blendAttachments.end(), vk::PipelineColorBlendAttachmentState{
         false, {}, {}, {}, {}, {}, {},
-        vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
+        vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB
     });
     vk::PipelineColorBlendStateCreateInfo pipelineColorBlendState{{}, false, vk::LogicOp::eClear, blendAttachments, {}};
     vk::PipelineDynamicStateCreateInfo pipelineDynamicState{};
@@ -602,23 +774,30 @@ int main(int argc, char** argv)
 
     vk::raii::CommandBuffer commandBuffer{std::move(buffers[0])};
     commandBuffer.begin(vk::CommandBufferBeginInfo{});
-    std::vector<vk::ClearValue> clearValues{framebufferCount};
-    std::fill(clearValues.begin(), clearValues.end(), vk::ClearValue{vk::ClearColorValue{0.0f, 0.0f, 0.0f, 0.0f}});
+    std::vector<vk::ClearValue> clearValues(framebufferCount);
+    std::fill(clearValues.begin(), clearValues.end(), vk::ClearValue{vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f}});
     commandBuffer.beginRenderPass(vk::RenderPassBeginInfo{*renderPass, *framebuffer, scissors, clearValues}, vk::SubpassContents::eInline);
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0, descriptorSetRefs, {});
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
     commandBuffer.bindVertexBuffers(0, *vertexBuffer, {0});
     commandBuffer.draw(vertexCount, 1, 0, 0);
     commandBuffer.endRenderPass();
-    commandBuffer.copyImageToBuffer(*framebufferImages[framebufferIndex], vk::ImageLayout::eTransferSrcOptimal, *transferBuffer, vk::BufferImageCopy{
+    commandBuffer.copyImageToBuffer(*resolveImages[framebufferIndex], vk::ImageLayout::eTransferSrcOptimal, *transferBuffer, vk::BufferImageCopy{
         0, 0, 0, vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1), {0, 0, 0}, {width, height, 1}
     });
     commandBuffer.end();
 
     vk::raii::Fence fence{device, vk::FenceCreateInfo{}};
-    queue.submit(vk::SubmitInfo{{}, {}, *commandBuffer}, *fence);
 
+    std::cout << "Start rendering!" << std::endl;
+    auto startTime = std::chrono::high_resolution_clock::now();
+    
+    queue.submit(vk::SubmitInfo{{}, {}, *commandBuffer}, *fence);
     auto result = device.waitForFences(*fence, true, UINT64_MAX);
+    device.waitIdle();
+
+    auto endTime = std::chrono::high_resolution_clock::now();
+    std::cout << "Finished rendering in " << std::chrono::duration<double, std::milli>{endTime - startTime}.count() << " ms." << std::endl;
 
     if(rdoc_api) rdoc_api->EndFrameCapture(NULL, NULL);
     
