@@ -19,6 +19,6 @@ set -x VH_LAYER_OVERRIDE "$VH_LAYER_ROOT/override"
 
 set -x VH_WORKSPACE "$VH_ROOT/workspace"
 
-if [ -f "$VH_WORKSPACE/config.fish" ]; then
+if [ -f "$VH_WORKSPACE/config.fish" ]
 	source $VH_WORKSPACE/config.fish
-fi
+end
