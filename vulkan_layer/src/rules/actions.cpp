@@ -998,7 +998,7 @@ namespace CheekyLayer::rules::actions
 		VkMemoryAllocateInfo allocateInfo{};
 		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		allocateInfo.allocationSize = req.size;
-		allocateInfo.memoryTypeIndex = findMemoryType(deviceInfos[ctx.device].memory, 
+		allocateInfo.memoryTypeIndex = findMemoryType(deviceInfos[ctx.device].memory,
 			req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		device_dispatch[GetKey(device)].AllocateMemory(ctx.device, &allocateInfo, nullptr, &memory);
 
@@ -1056,7 +1056,7 @@ namespace CheekyLayer::rules::actions
 
 #ifdef USE_IMAGE_TOOLS
 				bool decompression = image_tools::is_decompression_supported(imageInfo.format);
-				if(decompression || 
+				if(decompression ||
 					imageInfo.format == VK_FORMAT_R8G8B8A8_SRGB ||
 					imageInfo.format == VK_FORMAT_R8G8B8A8_UNORM ||
 					imageInfo.format == VK_FORMAT_R16G16B16A16_SFLOAT ||
@@ -1100,15 +1100,15 @@ namespace CheekyLayer::rules::actions
 							});
 
 						stbi_write_png(filename.c_str(), w, h, 4, image, w*4);
-						*::logger << logger::begin << std::dec << "Framebuffer #" << m_attachment << " of size " 
+						*::logger << logger::begin << std::dec << "Framebuffer #" << m_attachment << " of size "
 							<< imageInfo.extent.width << "x" << imageInfo.extent.height
 							<< " and format " << vk::to_string((vk::Format)imageInfo.format)
-							<< " was encoded and written to PNG file \"" 
+							<< " was encoded and written to PNG file \""
 							<< filename << "\"." << logger::end;
 					}
 					catch(const std::exception& ex)
 					{
-						*::logger << logger::begin << std::dec << logger::error << "Could not encode and write framebuffer to PNG file \"" 
+						*::logger << logger::begin << std::dec << logger::error << "Could not encode and write framebuffer to PNG file \""
 							<< filename << "\": " << ex.what() << logger::end;
 					}
 				}
@@ -1121,14 +1121,14 @@ namespace CheekyLayer::rules::actions
 					if(!of.good())
 						throw RULE_ERROR("ofstream is not good");
 					of.write(data.data(), data.size());
-					*::logger << logger::begin << std::dec << "Framebuffer #" << m_attachment <<" of size " 
-						<< imageInfo.extent.width << "x" << imageInfo.extent.height << " (" << size 
+					*::logger << logger::begin << std::dec << "Framebuffer #" << m_attachment <<" of size "
+						<< imageInfo.extent.width << "x" << imageInfo.extent.height << " (" << size
 						<< " bytes) and format " << vk::to_string((vk::Format)imageInfo.format)
 						<< " was written to file \"" << filename << "\"." << logger::end;
 				}
 				catch(const std::exception& ex)
 				{
-					*::logger << logger::begin << std::dec << logger::error << "Could not write framebuffer of size " 
+					*::logger << logger::begin << std::dec << logger::error << "Could not write framebuffer of size "
 						<< size << " to file \"" << filename << "\": " << ex.what() << logger::end;
 				}
 #ifdef USE_IMAGE_TOOLS
@@ -1156,7 +1156,7 @@ namespace CheekyLayer::rules::actions
 	{
 		if(m_i == 0)
 			m_action->execute(type, handle, ctx, rule);
-		
+
 		m_i++;
 		m_i %= m_n;
 	}
@@ -1204,7 +1204,7 @@ namespace CheekyLayer::rules::actions
 		{
 			dstHandle = std::get<VkHandle>(m_dst->get(stype, data_type::Handle, handle, ctx, rule));
 		}
-		
+
 		std::vector<uint8_t> transferBuffer(m_size);
 
 		memoryAccess(ctx.device, (VkBuffer) srcHandle, [&transferBuffer, this, &ctx](void* ptr, VkDeviceSize size){
@@ -1452,7 +1452,7 @@ namespace CheekyLayer::rules::actions
 		user_function fnc = {
 			.data = m_function.get(),
 			.arguments = m_arguments,
-			.default_arguments{m_default_arguments.size()}
+			.default_arguments = std::vector<class data*>(m_default_arguments.size())
 		};
 		std::transform(m_default_arguments.cbegin(), m_default_arguments.cend(), fnc.default_arguments.begin(), std::mem_fn(&std::unique_ptr<data>::get));
 		rule_env.user_functions[m_name] = std::move(fnc);

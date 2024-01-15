@@ -5,11 +5,30 @@ import reg
 vkreg = reg.Registry()
 vkreg.loadFile("/usr/share/vulkan/registry/vk.xml")
 
+blacklist = [
+    "VkPipelineCacheStageValidationIndexEntry",
+    "VkPipelineCacheSafetyCriticalIndexEntry",
+    "VkPipelineCacheHeaderVersionSafetyCriticalOne",
+    "VkPipelineCacheValidationVersion",
+    "VkPipelineMatchControl",
+    "VkFaultData",
+    "VkFaultType",
+    "VkFaultLevel",
+    "VkFaultQueryBehavior",
+    "VkPipelinePoolSize",
+    "VkCommandPoolMemoryConsumption",
+    "VkExternalFenceHandleTypeFlagBits",
+    "VkExternalSemaphoreHandleTypeFlagBits",
+    "VkExternalMemoryHandleTypeFlagBits",
+]
+
 print("#include \"reflection/vkreflection.hpp\"")
 print("#include \"reflection/custom_structs.hpp\"")
 print("namespace CheekyLayer { namespace reflection {")
 print("reflection_map struct_reflection_map = {")
 for (name, description) in vkreg.typedict.items():
+    if name in blacklist:
+        continue
     if not 'category' in description.elem.attrib:
         continue
     if description.elem.attrib["category"] != "struct":
@@ -53,7 +72,11 @@ print("};");
 print("enum_map enum_reflection_map = {");
 for enum in vkreg.tree.findall("enums"):
     name=enum.attrib["name"]
+    if name in blacklist:
+        continue
     if name == "VkStructureType":
+        continue
+    if name == "VkObjectType":
         continue
     if name == "API Constants":
         continue

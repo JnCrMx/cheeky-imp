@@ -37,9 +37,9 @@ extern std::map<VkDescriptorSet, DescriptorState> descriptorStates;
 class unsupported_descriptor_type_exception : public std::runtime_error
 {
 	public:
-		unsupported_descriptor_type_exception(VkDescriptorType type) : 
+		unsupported_descriptor_type_exception(VkDescriptorType type) :
 			std::runtime_error("unsupported descriptor type "+std::to_string(type))
 		{
-			
+
 		}
 };

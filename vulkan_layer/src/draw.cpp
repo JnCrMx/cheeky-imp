@@ -7,6 +7,7 @@
 #include "reflection/reflectionparser.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
+#include "objects.hpp"
 
 #include <iomanip>
 #include <iterator>
@@ -14,6 +15,29 @@
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_enums.hpp>
+
+namespace CheekyLayer {
+
+VkResult device::CreateSwapchainKHR(const VkSwapchainCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSwapchainKHR* pSwapchain)
+{
+	VkResult result = dispatch.CreateSwapchainKHR(handle, pCreateInfo, pAllocator, pSwapchain);
+	if(result != VK_SUCCESS)
+		return result;
+
+/*
+	CheekyLayer::rules::swapchain_info info = {pCreateInfo};
+	CheekyLayer::rules::additional_info info2 = {.swapchain = info};
+
+	CheekyLayer::active_logger log = *logger << logger::begin;
+	CheekyLayer::rules::local_context ctx = { .logger = log, .info = &info2, .device = device};
+
+	CheekyLayer::rules::execute_rules(inst->rules, CheekyLayer::rules::selector_type::SwapchainCreate, (VkHandle) (*pSwapchain), ctx);
+	log << logger::end;
+*/
+
+	return result;
+}
+}
 
 using CheekyLayer::logger;
 using CheekyLayer::rules::VkHandle;
@@ -446,9 +470,9 @@ void verbose_descriptors(CheekyLayer::active_logger& log, CommandBufferState& st
 			DescriptorState& descriptorState = descriptorStates[set];
 			for(auto& [binding, info] : descriptorState.bindings)
 			{
-				log << "    | " 
-					<< std::setw(3) << i << " | " 
-					<< std::setw(7) << binding << " | " 
+				log << "    | "
+					<< std::setw(3) << i << " | "
+					<< std::setw(7) << binding << " | "
 					<< std::setw(6) << to_string(info.type) << " | "
 					<< std::setw(25) << vk::to_string((vk::DescriptorType)info.exactType) << " | ";
 				if(state.descriptorDynamicOffsets.size() > binding)
@@ -753,20 +777,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateSwapchainKHR(
     const VkAllocationCallbacks*                pAllocator,
     VkSwapchainKHR*                             pSwapchain)
 {
-	VkResult result = device_dispatch[GetKey(device)].CreateSwapchainKHR(device, pCreateInfo, pAllocator, pSwapchain);
-	if(result != VK_SUCCESS)
-		return result;
-
-	CheekyLayer::rules::swapchain_info info = {pCreateInfo};
-	CheekyLayer::rules::additional_info info2 = {.swapchain = info};
-
-	CheekyLayer::active_logger log = *logger << logger::begin;
-	CheekyLayer::rules::local_context ctx = { .logger = log, .info = &info2, .device = device};
-
-	CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::SwapchainCreate, (VkHandle) (*pSwapchain), ctx);
-	log << logger::end;
-
-	return VK_SUCCESS;
+	return CheekyLayer::get_device(device).CreateSwapchainKHR(pCreateInfo, pAllocator, pSwapchain);
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_QueuePresentKHR(

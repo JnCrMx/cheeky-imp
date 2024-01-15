@@ -65,3 +65,6 @@ add_backward(test_rule_parser_multiline)
 add_executable(test_server_socket server_socket.cpp)
 target_link_libraries(test_server_socket PUBLIC cheeky_layer)
 add_backward(test_server_socket)
+
+add_executable(test_vulkan vulkan_test.cpp)
+target_link_libraries(test_vulkan PUBLIC Vulkan::Vulkan)

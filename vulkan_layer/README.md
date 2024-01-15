@@ -81,3 +81,9 @@ The following options are available:
 | [image_tools](../image_tools/) | Automatic (de)compression of images. | Part of *cheeky-imp* |
 | [Doxygen](https://www.doxygen.nl) | Generating documentation | Must be installed manually on the system (*optional*). |
 | [exprtk](http://www.partow.net/programming/exprtk/) | ``math`` data | Submodule [``external/``](../external/)``exprtk`` |
+
+## Adding custom logic with Rules
+
+This Vulkan layer supports custom logic in the form of "rules".
+
+The rules are store in the ``ruleFile``; usually ``rules.txt``.

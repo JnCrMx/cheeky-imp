@@ -1,18 +1,17 @@
-#include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <dlfcn.h>
-#include <exception>
-#include <iterator>
 #include <mutex>
-#include <fstream>
-#include <sstream>
-#include <stdexcept>
 #include <string.h>
 #include <string>
 #include <vulkan/vulkan_core.h>
 #include <memory>
 #include <filesystem>
 #include <assert.h>
+
+#include <spdlog/spdlog.h>
+#include <spdlog/async.h>
+#include <spdlog/sinks/basic_file_sink.h>
 
 #include "config.hpp"
 #include "dispatch.hpp"
@@ -23,7 +22,7 @@
 #include "rules/rules.hpp"
 #include "rules/reader.hpp"
 #include "draw.hpp"
-#include "utils.hpp"
+#include "objects.hpp"
 
 using CheekyLayer::logger;
 
@@ -34,7 +33,6 @@ CheekyLayer::logger* logger;
 std::vector<std::string> overrideCache;
 std::vector<std::string> dumpCache;
 
-std::vector<VkInstance> instances;
 std::vector<std::unique_ptr<CheekyLayer::rules::rule>> rules;
 std::map<CheekyLayer::rules::selector_type, bool> has_rules;
 
@@ -124,20 +122,14 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 	if(ret != VK_SUCCESS)
 		return ret;
 
-	if(!instances.empty())
-	{
-		*logger << logger::begin << "CreateInstance: " << *pInstance << " -> " << ret << logger::end;
-		
-		instances.push_back(*pInstance);
-		InitInstanceDispatchTable(*pInstance, fpGetInstanceProcAddr);
+	spdlog::info("CreateInstance results in {} with dispatch key {}", fmt::ptr(*pInstance), GetKey(*pInstance));
+	spdlog::default_logger()->flush();
 
-		return ret;
-	}
+	scoped_lock l(global_lock);
+	auto& instance = CheekyLayer::instances[GetKey(*pInstance)] = std::make_unique<CheekyLayer::instance>(pCreateInfo, pInstance);
+    InitInstanceDispatchTable(*pInstance, fpGetInstanceProcAddr, instance->dispatch);
 
-	instances.push_back(*pInstance);
-	InitInstanceDispatchTable(*pInstance, fpGetInstanceProcAddr);
-
-	global_config = CheekyLayer::DEFAULT_CONFIG;
+	/*global_config = CheekyLayer::DEFAULT_CONFIG;
 	try
 	{
 		std::string configFile = std::getenv(CheekyLayer::Contants::CONFIG_ENV.c_str());
@@ -164,13 +156,23 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 		if(global_config["application"] != applicationName)
 		{
 			layer_disabled = true;
-			logfile = "/dev/null";
+			//logfile = "/dev/null";
+		} else {
+			layer_disabled = false;
 		}
 	}
 	hook_draw_calls = global_config.map<bool>("hookDraw", CheekyLayer::config::to_bool);
 
 	std::ofstream out(logfile);
 	logger = new CheekyLayer::logger(out);
+
+	static unsigned int logger_id = 0;
+	auto async_file = spdlog::basic_logger_mt<spdlog::async_factory>("instance #"+std::to_string(logger_id++), logfile+".spdlog");
+	spdlog::set_default_logger(async_file);
+	spdlog::info("Hello from {} version {} from {} {} for application {} using engine {}",
+		CheekyLayer::Contants::LAYER_NAME, CheekyLayer::Contants::GIT_VERSION,
+		__DATE__, __TIME__, applicationName, engineName);
+	spdlog::flush_every(std::chrono::seconds(3));
 
 	*logger << logger::begin << "Hello from " << CheekyLayer::Contants::LAYER_NAME
 		<< " version " << CheekyLayer::Contants::GIT_VERSION
@@ -215,7 +217,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 				*logger << logger::begin << logger::error << "Cannot find dumped resources for " << type << ": " << ex.what() << logger::end;
 			}
 		}*/
-	}
+	/*}
 	load_plugins();
 
 	std::string rulefile = global_config["ruleFile"];
@@ -267,66 +269,38 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 		CheekyLayer::rules::local_context ctx = { .logger = log };
 		CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::Init, VK_NULL_HANDLE, ctx);
 		log << logger::end;
-	}
+	}*/
 
 	return ret;
 }
 
-std::map<VkPhysicalDevice, VkInstance> physicalDeviceInstances;
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_EnumeratePhysicalDevices(
     VkInstance                                  instance,
     uint32_t*                                   pPhysicalDeviceCount,
     VkPhysicalDevice*                           pPhysicalDevices)
 {
-	VkResult r = instance_dispatch[GetKey(instance)].EnumeratePhysicalDevices(instance, pPhysicalDeviceCount, pPhysicalDevices);
-
-	if(pPhysicalDeviceCount && pPhysicalDevices)
-	{
-		for(int i=0; i<*pPhysicalDeviceCount; i++)
-		{
-			physicalDeviceInstances[pPhysicalDevices[i]] = instance;
-		}
-	}
-
-	return r;
+	return CheekyLayer::get_instance(instance).dispatch.EnumeratePhysicalDevices(instance, pPhysicalDeviceCount, pPhysicalDevices);
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyInstance(VkInstance instance, const VkAllocationCallbacks *pAllocator)
 {
 	scoped_lock l(global_lock);
 
-	auto p = std::find(instances.begin(), instances.end(), instance);
-	if(p != instances.end())
-	{
-		instances.erase(p);
-	}
-
-	instance_dispatch[GetKey(instance)].DestroyInstance(instance, pAllocator);
-	instance_dispatch.erase(GetKey(instance));
-
-	*logger << logger::begin << "DestroyInstance: " << instance << logger::end;
-
-	/*for(auto& [name, fd] : CheekyLayer::rules::rule_env.fds)
-	{
-		fd->close();
-	}
-	CheekyLayer::rules::rule_env.fds.clear();
-
-	for(auto& t : CheekyLayer::rules::rule_env.threads)
-		t.join();
-	CheekyLayer::rules::rule_env.threads.clear();*/
+	auto& inst = CheekyLayer::get_instance(instance);
+	inst.logger->info("Destroying instance {}", fmt::ptr(instance));
+	inst.dispatch.DestroyInstance(instance, pAllocator);
+	CheekyLayer::instances.erase(GetKey(instance));
 }
 
-VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,
-		const VkAllocationCallbacks *pAllocator, VkDevice *pDevice)
-{
+namespace CheekyLayer {
+
+VkResult instance::CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkDevice *pDevice) {
     VkLayerDeviceCreateInfo *chain_info = get_chain_info(pCreateInfo, VK_LAYER_LINK_INFO);
 
     PFN_vkGetInstanceProcAddr fpGetInstanceProcAddr = chain_info->u.pLayerInfo->pfnNextGetInstanceProcAddr;
     PFN_vkGetDeviceProcAddr fpGetDeviceProcAddr = chain_info->u.pLayerInfo->pfnNextGetDeviceProcAddr;
-    PFN_vkCreateDevice fpCreateDevice = (PFN_vkCreateDevice)fpGetInstanceProcAddr(physicalDeviceInstances[physicalDevice], "vkCreateDevice");
+    PFN_vkCreateDevice fpCreateDevice = (PFN_vkCreateDevice)fpGetInstanceProcAddr(handle, "vkCreateDevice");
     if (fpCreateDevice == NULL) {
-		std::abort();
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     chain_info->u.pLayerInfo = chain_info->u.pLayerInfo->pNext;
@@ -335,35 +309,69 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateDevice(VkPhysicalDevice ph
 	if(ret != VK_SUCCESS)
 		return ret;
 
-	InitDeviceDispatchTable(*pDevice, fpGetDeviceProcAddr);
+	spdlog::info("CreateDevice results in {} with dispatch key {}", fmt::ptr(*pDevice), GetKey(*pDevice));
 
-	VkPhysicalDeviceProperties props;
-	instance_dispatch.begin()->second.GetPhysicalDeviceProperties(physicalDevice, &props);
-	*logger << logger::begin << "CreateDevice: " << *pDevice << " for " << props.deviceName << " -> " << ret <<  " with " << pCreateInfo->enabledLayerCount << " layers:" << logger::end;
-	for(int i=0; i<pCreateInfo->enabledLayerCount; i++)
+	auto& dev = ::CheekyLayer::devices[GetKey(*pDevice)] = std::make_unique<device>(this, fpGetDeviceProcAddr, physicalDevice, pCreateInfo, pDevice);
+	devices[*pDevice] = dev.get();
+    InitDeviceDispatchTable(*pDevice, fpGetDeviceProcAddr, dev->dispatch);
+
+	logger->flush();
+
+	return VK_SUCCESS;
+}
+
+void device::GetDeviceQueue(uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue *pQueue) {
+	dispatch.GetDeviceQueue(handle, queueFamilyIndex, queueIndex, pQueue);
+	logger->info("GetDeviceQueue: {}, {}, {} -> {}", fmt::ptr(handle), queueFamilyIndex, queueIndex, fmt::ptr(*pQueue));
+
+	if(!(queueFamilies[queueFamilyIndex].queueFlags & VK_QUEUE_GRAPHICS_BIT))
+		return;
+
+	if(transferQueue == VK_NULL_HANDLE)
 	{
-		*logger << logger::begin << '\t' << pCreateInfo->ppEnabledLayerNames[i] << logger::end;
+		dispatch.GetDeviceQueue(handle, queueFamilyIndex, queueIndex, &transferQueue);
+		*reinterpret_cast<void**>(transferQueue) = *reinterpret_cast<void**>(handle);
+
+		VkCommandPoolCreateInfo poolInfo;
+		poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+		poolInfo.pNext = nullptr;
+		poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+		poolInfo.queueFamilyIndex = queueFamilyIndex;
+		if(dispatch.CreateCommandPool(handle, &poolInfo, nullptr, &transferPool) != VK_SUCCESS) {
+			logger->error("failed to create command pool");
+			return;
+		}
+
+		VkCommandBufferAllocateInfo allocateInfo;
+		allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocateInfo.pNext = nullptr;
+		allocateInfo.commandPool = transferPool;
+		allocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		allocateInfo.commandBufferCount = 1;
+		if(dispatch.AllocateCommandBuffers(handle, &allocateInfo, &transferBuffer) != VK_SUCCESS) {
+			logger->error("failed to allocate command buffer");
+			return;
+		}
+		*reinterpret_cast<void**>(transferBuffer) = *reinterpret_cast<void**>(handle);
+
+		logger->info("Created transfer command buffer {} in pool {} for queue family {} on device {}", fmt::ptr(transferBuffer), fmt::ptr(transferPool), queueFamilyIndex, fmt::ptr(handle));
+
+		/*
+		// now we are "ready"
+		CheekyLayer::active_logger log = *logger << logger::begin;
+		CheekyLayer::rules::local_context ctx = { .logger = log, .device = device };
+		CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::DeviceCreate, (VkHandle) device, ctx);
+		log << logger::end;
+		*/
 	}
-	*logger << logger::begin << "and " << pCreateInfo->enabledExtensionCount << " extensions:" << logger::end;
-	for(int i=0; i<pCreateInfo->enabledExtensionCount; i++)
-	{
-		*logger << logger::begin << '\t' << pCreateInfo->ppEnabledExtensionNames[i] << logger::end;
-	}
+}
 
-	VkPhysicalDeviceMemoryProperties memProperties;
-	instance_dispatch.begin()->second.GetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+}
 
-	uint32_t count;
-	instance_dispatch.begin()->second.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, nullptr);
-	std::vector<VkQueueFamilyProperties> families(count);
-	instance_dispatch.begin()->second.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, families.data());
-
-	physicalDevices[*pDevice] = physicalDevice;
-	deviceInfos[*pDevice] = {props, memProperties, families};
-
-	*logger << logger::begin << "Debug?" << std::boolalpha << fpGetDeviceProcAddr(*pDevice, "vkSetDebugUtilsObjectNameEXT") << logger::end;
-
-	return ret;
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,
+		const VkAllocationCallbacks *pAllocator, VkDevice *pDevice)
+{
+	return CheekyLayer::get_instance(physicalDevice).CreateDevice(physicalDevice, pCreateInfo, pAllocator, pDevice);
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_GetPhysicalDeviceQueueFamilyProperties(
@@ -372,7 +380,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_GetPhysicalDeviceQueueFamilyProperti
     VkQueueFamilyProperties*                    pQueueFamilyProperties)
 {
 	*pQueueFamilyPropertyCount = 1;
-	instance_dispatch.begin()->second.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties);
+	CheekyLayer::get_instance(physicalDevice).dispatch.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties);
 	*pQueueFamilyPropertyCount = 1;
 }
 
@@ -382,7 +390,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_GetPhysicalDeviceQueueFamilyProperti
     VkQueueFamilyProperties2*                   pQueueFamilyProperties)
 {
 	*pQueueFamilyPropertyCount = 1;
-	instance_dispatch.begin()->second.GetPhysicalDeviceQueueFamilyProperties2(physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties);
+	CheekyLayer::get_instance(physicalDevice).dispatch.GetPhysicalDeviceQueueFamilyProperties2(physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties);
 	*pQueueFamilyPropertyCount = 1;
 }
 
@@ -392,53 +400,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_GetDeviceQueue(
     uint32_t                                    queueIndex,
     VkQueue*                                    pQueue)
 {
-	*logger << logger::begin << "GetDeviceQueue: " << device << ", " << queueFamilyIndex << ", " << queueIndex << " -> " << *pQueue << logger::end;
-
-	device_dispatch[GetKey(device)].GetDeviceQueue(device, queueFamilyIndex, queueIndex, pQueue);
-
-	queueDevices[*pQueue] = device;
-
-	if(!(deviceInfos[device].queueFamilies[queueFamilyIndex].queueFlags & VK_QUEUE_GRAPHICS_BIT))
-		return;
-
-	if(!transferQueues.contains(device))
-	{
-		VkQueue layerQueue;
-		device_dispatch[GetKey(device)].GetDeviceQueue(device, queueFamilyIndex, queueIndex, &layerQueue);
-		*reinterpret_cast<void**>(layerQueue) = *reinterpret_cast<void**>(device);
-		graphicsQueues[device] = layerQueue;
-		transferQueues[device] = layerQueue;
-
-		VkCommandPoolCreateInfo poolInfo;
-		poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-		poolInfo.pNext = nullptr;
-		poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-		poolInfo.queueFamilyIndex = queueFamilyIndex;
-		VkCommandPool pool;
-		if(device_dispatch[GetKey(device)].CreateCommandPool(device, &poolInfo, nullptr, &pool) != VK_SUCCESS)
-			*logger << logger::begin << logger::error << "failed to create command pool" << logger::end;
-		transferPools[device] = pool;
-
-		VkCommandBufferAllocateInfo allocateInfo;
-		allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-		allocateInfo.pNext = nullptr;
-		allocateInfo.commandPool = pool;
-		allocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-		allocateInfo.commandBufferCount = 1;
-		VkCommandBuffer commandBuffer;
-		if(device_dispatch[GetKey(device)].AllocateCommandBuffers(device, &allocateInfo, &commandBuffer) != VK_SUCCESS)
-			*logger << logger::begin << logger::error << "failed to allocate command buffer" << logger::end;
-		*reinterpret_cast<void**>(commandBuffer) = *reinterpret_cast<void**>(device);
-		transferCommandBuffers[device] = commandBuffer;
-
-		*logger << logger::begin << "Created transfer command buffer " << commandBuffer << " in pool " << pool << " for queue family " << queueFamilyIndex << " on device " << device << logger::end;
-
-		// now we are "ready"
-		CheekyLayer::active_logger log = *logger << logger::begin;
-		CheekyLayer::rules::local_context ctx = { .logger = log, .device = device };
-		CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::DeviceCreate, (VkHandle) device, ctx);
-		log << logger::end;
-	}
+	return CheekyLayer::get_device(device).GetDeviceQueue(queueFamilyIndex, queueIndex, pQueue);
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyDevice(VkDevice device, const VkAllocationCallbacks *pAllocator)
@@ -512,7 +474,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_EnumerateDeviceExtensionProperti
 			return VK_SUCCESS;
 
 		scoped_lock l(global_lock);
-		return instance_dispatch[GetKey(physicalDevice)].EnumerateDeviceExtensionProperties(physicalDevice, pLayerName, pPropertyCount, pProperties);
+		return CheekyLayer::get_instance(physicalDevice).dispatch.EnumerateDeviceExtensionProperties(physicalDevice, pLayerName, pPropertyCount, pProperties);
 	}
 
 	// don't expose any extensions

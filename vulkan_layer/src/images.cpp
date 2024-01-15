@@ -5,6 +5,7 @@
 #include "rules/rules.hpp"
 #include "utils.hpp"
 #include "images.hpp"
+#include "objects.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -28,6 +29,59 @@
 #include <stb_image_write.h>
 #endif
 
+namespace CheekyLayer {
+
+VkResult device::CreateImage(const VkImageCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkImage* pImage)
+{
+	VkResult ret = dispatch.CreateImage(handle, pCreateInfo, pAllocator, pImage);
+	if(ret != VK_SUCCESS)
+	{
+		logger->warn("CreateImage: {}x{} @ {} samples={} FAILED!", pCreateInfo->extent.width, pCreateInfo->extent.height,
+				pCreateInfo->mipLevels, pCreateInfo->samples);
+		return ret;
+	}
+	images[*pImage] = *pCreateInfo;
+
+	VkMemoryRequirements memRequirements;
+	dispatch.GetImageMemoryRequirements(handle, *pImage, &memRequirements);
+
+	logger->info("CreateImage: {}x{} @ {} samples={} memory={}, image={}", pCreateInfo->extent.width, pCreateInfo->extent.height,
+			pCreateInfo->mipLevels, pCreateInfo->samples, memRequirements.size, fmt::ptr(*pImage));
+
+	if(dispatch.SetDebugUtilsObjectNameEXT)
+	{
+		std::ostringstream names{};
+		names << "Image " << std::hex << (rules::VkHandle)(*pImage);
+		std::string name = names.str();
+
+		VkDebugUtilsObjectNameInfoEXT info{};
+		info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+		info.objectType = VK_OBJECT_TYPE_IMAGE;
+		info.objectHandle = (uint64_t) *pImage;
+		info.pObjectName = name.c_str();
+		dispatch.SetDebugUtilsObjectNameEXT(handle, &info);
+	}
+	return ret;
+}
+
+VkResult device::BindImageMemory(VkImage image, VkDeviceMemory memory, VkDeviceSize memoryOffset)
+{
+	VkResult ret = dispatch.BindImageMemory(handle, image, memory, memoryOffset);
+	logger->info("BindImageMemory: image={} memory={} offset={}", fmt::ptr(image), fmt::ptr(memory), memoryOffset);
+	return ret;
+}
+
+VkResult device::CreateImageView(const VkImageViewCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkImageView* pView)
+{
+	VkResult ret = dispatch.CreateImageView(handle, pCreateInfo, pAllocator, pView);
+	if(ret == VK_SUCCESS) {
+		imageViews[*pView] = pCreateInfo->image;
+	}
+	return ret;
+}
+
+}
+
 using CheekyLayer::logger;
 using CheekyLayer::rules::VkHandle;
 
@@ -45,39 +99,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateImage(
 	const VkAllocationCallbacks*                pAllocator,
 	VkImage*                                    pImage)
 {
-	VkResult ret = device_dispatch[GetKey(device)].CreateImage(device, pCreateInfo, pAllocator, pImage);
-	if(ret != VK_SUCCESS)
-	{
-		*logger << logger::begin << logger::error << "CreateImage: " << pCreateInfo->extent.width << "x" << pCreateInfo->extent.height
-				<< " @ " << pCreateInfo->mipLevels << " samples=" << pCreateInfo->samples << " pImage=" << pImage << " FAILED!" << logger::end;
-		return ret;
-	}
-	images[*pImage] = *pCreateInfo;
-	imageDevices[*pImage] = device;
-
-	VkMemoryRequirements memRequirements;
-	device_dispatch[GetKey(device)].GetImageMemoryRequirements(device, *pImage, &memRequirements);
-
-	*logger << logger::begin << "CreateImage: " << pCreateInfo->extent.width << "x" << pCreateInfo->extent.height
-			<< " @ " << pCreateInfo->mipLevels << " samples=" << pCreateInfo->samples
-			<< " memory=" << memRequirements.size << " image=" << *pImage << logger::end;
-
-	if(device_dispatch[GetKey(device)].SetDebugUtilsObjectNameEXT)
-	{
-		std::ostringstream names{};
-		names << "Image " << std::hex << (VkHandle)(*pImage);
-		std::string name = names.str();
-		*logger << logger::begin << name << logger::end;
-
-		VkDebugUtilsObjectNameInfoEXT info{};
-		info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
-		info.objectType = VK_OBJECT_TYPE_IMAGE;
-		info.objectHandle = (uint64_t) *pImage;
-		info.pObjectName = name.c_str();
-		device_dispatch[GetKey(device)].SetDebugUtilsObjectNameEXT(device, &info);
-	}
-
-	return ret;
+	return CheekyLayer::get_device(device).CreateImage(pCreateInfo, pAllocator, pImage);
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_BindImageMemory(
@@ -86,9 +108,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_BindImageMemory(
 	VkDeviceMemory                              memory,
 	VkDeviceSize                                memoryOffset)
 {
-	*logger << logger::begin << "BindImageMemory: image=" << image << std::hex << " memory=" << memory << " offset=" << memoryOffset << logger::end;
-
-	return device_dispatch[GetKey(device)].BindImageMemory(device, image, memory, memoryOffset);
+	return CheekyLayer::get_device(device).BindImageMemory(image, memory, memoryOffset);
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateImageView(
@@ -97,11 +117,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateImageView(
 	const VkAllocationCallbacks*                pAllocator,
 	VkImageView*                                pView)
 {
-	VkResult result = device_dispatch[GetKey(device)].CreateImageView(device, pCreateInfo, pAllocator, pView);
-
-	imageViews[*pView] = pCreateInfo->image;
-
-	return result;
+	return CheekyLayer::get_device(device).CreateImageView(pCreateInfo, pAllocator, pView);
 }
 
 static inline bool IsExtentSizeZero(const VkExtent3D* extent) {

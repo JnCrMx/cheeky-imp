@@ -2,12 +2,67 @@
 #include "dispatch.hpp"
 #include "layer.hpp"
 #include "utils.hpp"
+#include "objects.hpp"
 #include <vulkan/vulkan_core.h>
-
-#include <filesystem>
 
 using CheekyLayer::logger;
 using CheekyLayer::rules::VkHandle;
+
+namespace CheekyLayer {
+
+VkResult device::CreateBuffer(const VkBufferCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkBuffer* pBuffer)
+{
+    VkResult ret = dispatch.CreateBuffer(handle, pCreateInfo, pAllocator, pBuffer);
+    buffers[*pBuffer] = *pCreateInfo;
+
+    if(dispatch.SetDebugUtilsObjectNameEXT)
+    {
+		std::ostringstream names{};
+        names << "Buffer " << std::hex << (VkHandle)(*pBuffer);
+        std::string name = names.str();
+
+        VkDebugUtilsObjectNameInfoEXT info{};
+        info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+        info.objectType = VK_OBJECT_TYPE_BUFFER;
+        info.objectHandle = (uint64_t) *pBuffer;
+        info.pObjectName = name.c_str();
+        dispatch.SetDebugUtilsObjectNameEXT(handle, &info);
+    }
+
+    return ret;
+}
+
+VkResult device::BindBufferMemory(VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize memoryOffset)
+{
+    bufferMemories[buffer]=memory;
+    bufferMemoryOffsets[buffer]=memoryOffset;
+
+    logger->info("BindBufferMemory: buffer={} memory={} offset={:#x}", fmt::ptr(buffer), fmt::ptr(memory), memoryOffset);
+
+    return dispatch.BindBufferMemory(handle, buffer, memory, memoryOffset);
+}
+
+VkResult device::MapMemory(VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, VkMemoryMapFlags flags, void** ppData)
+{
+    VkResult ret = dispatch.MapMemory(handle, memory, offset, size, flags, ppData);
+    logger->info("MapMemory: memory={} offset={:#x} size={:#x} flags={}", fmt::ptr(memory), offset, size, flags);
+
+    if(ret == VK_SUCCESS)
+    {
+        memoryMappings[memory] = {.pointer = *ppData, .offset = offset, .size = size};
+    }
+    return ret;
+}
+
+void device::UnmapMemory(VkDeviceMemory memory)
+{
+    dispatch.UnmapMemory(handle, memory);
+    logger->info("UnmapMemory: memory={}", fmt::ptr(memory));
+
+    memoryMappings.erase(memory);
+}
+
+} // namespace CheekyLayer
 
 std::map<VkBuffer, VkBufferCreateInfo> buffers;
 std::map<VkBuffer, VkDevice> bufferDevices;
@@ -17,26 +72,7 @@ std::map<VkDeviceMemory, memory_map_info> memoryMappings;
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateBuffer(VkDevice device, const VkBufferCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkBuffer* pBuffer)
 {
-    VkResult ret = device_dispatch[GetKey(device)].CreateBuffer(device, pCreateInfo, pAllocator, pBuffer);
-    buffers[*pBuffer] = *pCreateInfo;
-    bufferDevices[*pBuffer] = device;
-
-    if(device_dispatch[GetKey(device)].SetDebugUtilsObjectNameEXT)
-    {
-		std::ostringstream names{};
-        names << "Buffer " << std::hex << (VkHandle)(*pBuffer);
-        std::string name = names.str();
-		*logger << logger::begin << name << logger::end;
-
-        VkDebugUtilsObjectNameInfoEXT info{};
-        info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
-        info.objectType = VK_OBJECT_TYPE_BUFFER;
-        info.objectHandle = (uint64_t) *pBuffer;
-        info.pObjectName = name.c_str();
-        device_dispatch[GetKey(device)].SetDebugUtilsObjectNameEXT(device, &info);
-    }
-
-    return ret;
+    return CheekyLayer::get_device(device).CreateBuffer(pCreateInfo, pAllocator, pBuffer);
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_BindBufferMemory(
@@ -45,42 +81,21 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_BindBufferMemory(
         VkDeviceMemory                              memory,
         VkDeviceSize                                memoryOffset)
 {
-    try
-    {
-        bufferMemories[buffer]=memory;
-        bufferMemoryOffsets[buffer]=memoryOffset;
-
-        *logger << logger::begin << "BindBufferMemory: buffer=" << buffer << " memory=" << memory << " offset=" << std::hex << memoryOffset << logger::end;
-
-        return device_dispatch[GetKey(device)].BindBufferMemory(device, buffer, memory, memoryOffset);
-    }
-    catch(const std::exception& ex)
-    {
-        *logger << logger::begin << logger::error << "BindBufferMemory: " << ex.what() << logger::end;
-    }
-    return VK_ERROR_UNKNOWN;
+    return CheekyLayer::get_device(device).BindBufferMemory(buffer, memory, memoryOffset);
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_MapMemory(
     VkDevice device, VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size,
     VkMemoryMapFlags flags, void** ppData)
 {
-    *logger << logger::begin << "MapMemory: memory=" << memory << " offset=" << offset << " size=" << size << " flags=" << flags << logger::end;
-    
-    VkResult result = device_dispatch[GetKey(device)].MapMemory(device, memory, offset, size, flags, ppData);
-    if(result == VK_SUCCESS)
-    {
-        memoryMappings[memory] = {.pointer = *ppData, .offset = offset, .size = size};
-    }
-    return result;
+    return CheekyLayer::get_device(device).MapMemory(memory, offset, size, flags, ppData);
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_UnmapMemory(
     VkDevice                                    device,
     VkDeviceMemory                              memory)
 {
-    memoryMappings.erase(memory);
-    device_dispatch[GetKey(device)].UnmapMemory(device, memory);
+    return CheekyLayer::get_device(device).UnmapMemory(memory);
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBuffer(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferCopy* pRegions)

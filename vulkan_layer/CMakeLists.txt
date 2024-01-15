@@ -9,12 +9,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Vulkan REQUIRED FATAL_ERROR)
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
+find_package(spdlog REQUIRED)
 
 file(GLOB_RECURSE sources src/**.cpp external/Vulkan-ValidationLayers/layers/vk_format_utils.cpp)
 
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/vkreflectionmap.cpp
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/generate_reflection.py
-    COMMAND PYTHONPATH=/usr/share/vulkan/registry/ python ${CMAKE_CURRENT_SOURCE_DIR}/generate_reflection.py > ${CMAKE_CURRENT_BINARY_DIR}/vkreflectionmap.cpp)
+    COMMAND PYTHONPATH=/usr/share/vulkan/registry/ python3 ${CMAKE_CURRENT_SOURCE_DIR}/generate_reflection.py > ${CMAKE_CURRENT_BINARY_DIR}/vkreflectionmap.cpp)
 list(APPEND sources ${CMAKE_CURRENT_BINARY_DIR}/vkreflectionmap.cpp)
 
 add_library(cheeky_layer SHARED ${sources})
@@ -23,7 +24,7 @@ target_include_directories(cheeky_layer PUBLIC include/)
 target_include_directories(cheeky_layer PUBLIC external/Vulkan-ValidationLayers/layers/)
 target_include_directories(cheeky_layer PUBLIC external/exprtk)
 target_include_directories(cheeky_layer PUBLIC ${Vulkan_INCLUDE_DIR} ${OPENSSL_INCLUDE_DIR})
-  
+
 target_link_libraries(cheeky_layer PUBLIC ${Vulkan_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
 target_link_libraries(cheeky_layer PRIVATE Threads::Threads)
 
@@ -93,6 +94,7 @@ endif()
 add_library(spirv-reflect STATIC external/SPIRV-Reflect/spirv_reflect.c)
 target_include_directories(spirv-reflect PUBLIC external/SPIRV-Reflect/)
 target_link_libraries(cheeky_layer PUBLIC spirv-reflect)
+target_link_libraries(cheeky_layer PUBLIC spdlog::spdlog)
 
 if(CHEEKY_LAYER_DOCS)
     find_package(Doxygen)
@@ -123,7 +125,7 @@ add_backward(cheeky_layer)
 enable_testing()
 add_subdirectory(test)
 
-FetchContent_Declare(cmake_git_version_tracking                   
+FetchContent_Declare(cmake_git_version_tracking
   GIT_REPOSITORY https://github.com/andrew-hardin/cmake-git-version-tracking.git
   GIT_TAG 904dbda1336ba4b9a1415a68d5f203f576b696bb
 )

@@ -3,7 +3,7 @@
 #include <vulkan/vk_platform.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vk_layer.h>
-#include <vulkan/vk_layer_dispatch_table.h>
+#include <vulkan/generated/vk_layer_dispatch_table.h>
 
 #include <map>
 #include <string.h>
@@ -22,8 +22,8 @@ extern std::map<void*, VkLayerDispatchTable> device_dispatch;
 inline bool layer_disabled = false;
 inline bool hook_draw_calls = false;
 
-void InitInstanceDispatchTable(VkInstance instance, PFN_vkGetInstanceProcAddr gpa);
-void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa);
+void InitInstanceDispatchTable(VkInstance instance, PFN_vkGetInstanceProcAddr gpa, VkLayerInstanceDispatchTable& dispatchTable);
+void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa, VkLayerDispatchTable& dispatchTable);
 
 #define InstanceHook(func) \
 	(void)((VkLayerInstanceDispatchTable*)0)->func; \

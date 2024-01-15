@@ -1,0 +1,26 @@
+present{
+	compare(
+		unpack(UInt32, 16, datahook:data(mouse)),
+		==,
+		number(1)
+	)
+} -> seq(
+	dbus:set(
+        org.freedesktop.ratbag1,
+        /org/freedesktop/ratbag1/led/hidraw3/p0/l0,
+		org.freedesktop.ratbag1.Led,
+		Color,
+		(
+			math(r*255\, r => unpack(Float, 0, datahook:data(mouse)))
+			math(g*255\, g => unpack(Float, 4, datahook:data(mouse)))
+			math(b*255\, b => unpack(Float, 8, datahook:data(mouse)))
+		)
+	),
+	dbus:call(
+		org.freedesktop.ratbag1,
+		/org/freedesktop/ratbag1/device/hidraw2,
+		org.freedesktop.ratbag1.Device,
+		Commit,,),
+	datahook:set(mouse, 16, pack(UInt32, number(0)))
+)
+image{} -> logx(reduce(map(unpack(Array, Float, 3, 0, string("1234")), string, convert(number, string, current_element())), string, string(""), concat(current_reduction(), current_element(), string(" "))))
