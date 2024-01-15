@@ -29,6 +29,11 @@ int main(int argc, char* argv[])
 
 	{
 		std::ifstream in(inputPath, std::ios::binary | std::ios::ate);
+		if(!in)
+		{
+			std::cerr << "Cannot open file: " << inputPath << std::endl;
+			return 2;
+		}
 		
 		size_t size = in.tellg();
 		data.resize(size);

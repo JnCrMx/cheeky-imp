@@ -39,7 +39,7 @@ except:
     collection = bpy.data.collections.new("Pose")
     bpy.context.scene.collection.children.link(collection)
     
-with open("vhmesh.txt") as f:
+with open(bpy.path.abspath("//vhmesh.txt")) as f:
     for x in f:
         part=x.split()[0]
             
@@ -52,9 +52,9 @@ with open("vhmesh.txt") as f:
         sk_basis.interpolation = 'KEY_LINEAR'
         obj.data.shape_keys.use_relative = True
         
-        with open("vhpose.txt") as ps:
+        with open(bpy.path.abspath("//vhpose.txt")) as ps:
             for y in ps:
                 poseName=y.split()[0]
-                with open(f"poses/{poseName}.json") as f:
+                with open(bpy.path.abspath(f"//poses/{poseName}.json")) as f:
                     pose = json.load(f)
                     pose_object(poseName, part, pose, obj)

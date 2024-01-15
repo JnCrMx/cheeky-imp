@@ -9,13 +9,13 @@ fi
 while read line; do
 	part=$(echo $line | cut -f1 -d" ")
 	descriptor=$(echo $line | cut -f2 -d" ")
-	
+
 	indexCount=$(echo $line | cut -f3 -d" ")
 	firstIndex=$(echo $line | cut -f4 -d" ")
 	vertexOffset=$(echo $line | cut -f5 -d" ")
-	
+
 	index=$(echo $line | cut -f6 -d" ")
-	
+
 	additional=( $(echo $line | cut -f7- -d" ") )
 	for i in ${!additional[*]}
 	do
@@ -23,7 +23,7 @@ while read line; do
 			additional[$i]="$VH_LAYER_DUMP/buffers/${additional[$i]}.buf"
 		fi
 	done
-	
+
 	echo "Unpacking mesh for part $part to base_$part.obj ..."
 	"$VH_BIN/mesh_buffer_tools/extract" $part "$VH_ROOT/descriptors/$descriptor.txt" base_$part.obj $indexCount $firstIndex $vertexOffset "$VH_LAYER_DUMP/buffers/$index.buf" ${additional[*]}
 done <vhmesh.txt

@@ -9,6 +9,7 @@
 #include <vector>
 #include <map>
 #include <optional>
+#include <filesystem>
 #include <assert.h>
 
 #include <boost/interprocess/file_mapping.hpp>
@@ -90,7 +91,13 @@ int main(int argc, char *argv[])
 	std::vector<std::unique_ptr<mbt::buffer>> buffers(bindingCount);
 	for(int i=0; i<bindingCount; i++)
 	{
-		buffers[i] = std::make_unique<mbt::buffer>(argv[8 + 2*i + 0], std::atoi(argv[8 + 2*i + 1]), boost::interprocess::mode_t::read_only);
+		auto f = argv[8 + 2*i + 0];
+		if(!std::filesystem::exists(f))
+		{
+			std::cerr << "File not found: " << f << '\n';
+			return 2;
+		}
+		buffers[i] = std::make_unique<mbt::buffer>(f, std::atoi(argv[8 + 2*i + 1]), boost::interprocess::mode_t::read_only);
 	}
 
 	int vertexCount = buffers[0]->count();
