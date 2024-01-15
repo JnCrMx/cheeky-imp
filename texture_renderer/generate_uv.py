@@ -6,7 +6,7 @@ argv = argv[argv.index("--") + 1:]
 
 bpy.ops.object.delete()
 
-bpy.ops.import_scene.obj(filepath=argv[0])
+bpy.ops.wm.obj_import(filepath=argv[0])
 obj = bpy.context.selected_objects[0]
 
 context = bpy.context
@@ -23,8 +23,9 @@ bpy.ops.mesh.select_all(action='SELECT')
 bpy.ops.uv.unwrap(method='ANGLE_BASED', margin=0.0002)
 bpy.ops.object.editmode_toggle()
 
-bpy.ops.export_scene.obj(filepath=argv[1], 
-    use_selection=True, use_edges=False, use_normals=False, 
-    use_uvs=True, use_materials=False, use_blen_objects=False, 
-    use_triangles=True, keep_vertex_order=True
+bpy.ops.wm.obj_export(filepath=argv[1],
+    export_selected_objects=True, export_pbr_extensions=False, export_normals=False,
+    export_uv=True, export_colors=False, export_materials=False, export_vertex_groups=False,
+    export_object_groups=False, export_material_groups=False,
+    export_triangulated_mesh=True
 )

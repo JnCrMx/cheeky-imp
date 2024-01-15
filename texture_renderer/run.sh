@@ -9,6 +9,7 @@ attachment=1
 samples=4
 width=2048
 height=2048
+uvscale=1.1
 
 dir=$1
 
@@ -20,7 +21,8 @@ for d in $dir/*/; do
         $SCRIPTPATH/build/texture_renderer --output $dir/$event/texture.png \
             --attachment $attachment --samples $samples --width $width --height $height \
             --shader $dir/$event/shader.frag --vertices $dir/$event/vertices.csv \
-            --pipeline $dir/$event/pipeline.json --obj $dir/$event/model-uv.obj &
+            --pipeline $dir/$event/pipeline.json --obj $dir/$event/model-uv.obj \
+            --uv-scale $uvscale &
     fi
 done
 wait

@@ -64,13 +64,13 @@ std::tuple<std::unique_ptr<glslang::TShader>, std::unique_ptr<glslang::TProgram>
     {
         throw std::runtime_error(shader->getInfoLog());
     }
-    
+
     std::unique_ptr<glslang::TProgram> program = std::make_unique<glslang::TProgram>();
-	program->addShader(shader.get());
-	if(!program->link(messages))
-	{
+    program->addShader(shader.get());
+    if(!program->link(messages))
+    {
         throw std::runtime_error(program->getInfoLog());
-	}
+    }
     return {std::move(shader), std::move(program)};
 }
 
@@ -190,6 +190,7 @@ int main(int argc, char** argv)
         //("matrix", "Perspective matrix to use for undoing transformations", cxxopts::value<glm::mat4>()->default_value("{1, 0, 0, 0}{0, 1, 0, 0}{0, 0, 1, 0}{0, 0, 0, 1}"), "matrix")
         //("no-invert", "Do not invert the matrix")
         ("obj", "Wavefront OBJ file to read the UVs from", cxxopts::value<std::filesystem::path>(), "path")
+        ("uv-scale", "Scale the individual UV triangles by this factor", cxxopts::value<float>()->default_value("1.0"), "scale")
         ("d,device", "Name of PhysicalDevice to use", cxxopts::value<std::string>()->default_value("auto"), "name")
         ("help", "Print this help message")
         ("v,verbose", "Verbose output")
@@ -244,6 +245,8 @@ int main(int argc, char** argv)
     auto shaderFile = optionResult["shader"].as<std::filesystem::path>();
     auto pipelineDescriptionFile = optionResult["pipeline"].as<std::filesystem::path>();
     auto objFile = optionResult["obj"].as<std::filesystem::path>();
+    auto uvScale = optionResult["uv-scale"].as<float>();
+
     std::string shaderCode = read_file(shaderFile);
     nlohmann::json pipelineDescription;
     {
@@ -266,9 +269,9 @@ int main(int argc, char** argv)
     std::vector<unsigned int> fragmentSpv{};
     glslang::GlslangToSpv(*fragmentProgram->getIntermediate(EShLanguage::EShLangFragment), fragmentSpv);
 
-	fragmentProgram->buildReflection(EShReflectionIntermediateIO | EShReflectionSeparateBuffers | 
-		EShReflectionAllBlockVariables | EShReflectionUnwrapIOBlocks | EShReflectionAllIOVariables);
-    std::size_t framebufferCount = fragmentProgram->getNumPipeOutputs();
+    fragmentProgram->buildReflection(EShReflectionIntermediateIO | EShReflectionSeparateBuffers |
+        EShReflectionAllBlockVariables | EShReflectionUnwrapIOBlocks | EShReflectionAllIOVariables);
+    std::size_t framebufferCount = std::max(static_cast<uint32_t>(fragmentProgram->getNumPipeOutputs()), framebufferIndex+1);
     std::size_t inputCount = fragmentProgram->getNumPipeInputs();
 
     std::vector<vk::VertexInputAttributeDescription> vertexInputAttributes;
@@ -311,7 +314,7 @@ int main(int argc, char** argv)
 
         const auto* type = input.getType();
         uint32_t location = type->getQualifier().layoutLocation;
-        vertexCode << "    output" << location << " = input" << location << ";\n"; 
+        vertexCode << "    output" << location << " = input" << location << ";\n";
     }
     vertexCode << "}\n";
     uint32_t totalInputStride = static_cast<uint32_t>(vertexInputAttributes.size()*sizeof(glm::vec4));
@@ -346,7 +349,7 @@ int main(int argc, char** argv)
         vk::raii::PhysicalDevices physicalDevices{instance};
         auto it = std::find_if(physicalDevices.begin(), physicalDevices.end(), [deviceName](vk::raii::PhysicalDevice& dev){
             const auto& props = dev.getProperties();
-            return props.deviceName == deviceName;
+            return std::string(props.deviceName) == deviceName;
         });
 
         if(it == physicalDevices.end())
@@ -356,7 +359,7 @@ int main(int argc, char** argv)
         }
         physicalDevice = std::move(*it);
     }
-    
+
     const auto& props = physicalDevice.getProperties();
     std::cout << "Picked device #" << props.vendorID << ":" << props.deviceID << ": " << std::quoted(std::string(props.deviceName)) << " of type " << vk::to_string(props.deviceType) << ".\n";
     const auto& memoryProperties = physicalDevice.getMemoryProperties();
@@ -373,7 +376,7 @@ int main(int argc, char** argv)
     };
     vk::raii::Device device(physicalDevice, vk::DeviceCreateInfo{{}, queueCreateInfos});
     vk::raii::Queue queue{device, queueFamilyIndex, 0};
-    
+
     vk::raii::CommandPool pool{device, vk::CommandPoolCreateInfo{{}, queueFamilyIndex}};
     vk::raii::CommandBuffers buffers{device, vk::CommandBufferAllocateInfo{*pool, vk::CommandBufferLevel::ePrimary, 1}};
 
@@ -433,9 +436,9 @@ int main(int argc, char** argv)
                 vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
             }};
 
-            resolveImages.push_back(std::move(image));
-            resolveMemories.push_back(std::move(memory));
-            resolveImageViews.push_back(std::move(imageView));
+            resolveImages.emplace_back(std::move(image));
+            resolveMemories.emplace_back(std::move(memory));
+            resolveImageViews.emplace_back(std::move(imageView));
         }
     }
     vk::raii::Buffer transferBuffer{device, vk::BufferCreateInfo{
@@ -467,6 +470,21 @@ int main(int argc, char** argv)
                 vertexUVs.push_back({u, v});
             }
         }
+
+        if(uvScale != 1.0f)
+        {
+            for(std::size_t i = 0; i<vertexUVs.size(); i+=3)
+            {
+                glm::vec2& a = vertexUVs[i+0];
+                glm::vec2& b = vertexUVs[i+1];
+                glm::vec2& c = vertexUVs[i+2];
+
+                glm::vec2 center = (a+b+c)/3.0f;
+                a = (a-center)*uvScale + center;
+                b = (b-center)*uvScale + center;
+                c = (c-center)*uvScale + center;
+            }
+        }
     }
     {
         std::ifstream in{vertexDataFile};
@@ -478,7 +496,7 @@ int main(int argc, char** argv)
         {
             std::istringstream iss(header);
             std::string column;
-    
+
             for(int i=0; i<2+4; i++) // skip IDX, VTX and position
                 std::getline(iss, column, ',');
 
@@ -647,7 +665,7 @@ int main(int argc, char** argv)
         {}, vk::Filter::eLinear, vk::Filter::eLinear,
         vk::SamplerMipmapMode::eNearest,
         vk::SamplerAddressMode::eRepeat, vk::SamplerAddressMode::eRepeat, vk::SamplerAddressMode::eRepeat,
-        0.0f, false, 0.0f, false, vk::CompareOp::eNever, 0.0f, 0.0f, 
+        0.0f, false, 0.0f, false, vk::CompareOp::eNever, 0.0f, 0.0f,
         vk::BorderColor::eFloatTransparentBlack, false
     }};
     {
@@ -762,14 +780,14 @@ int main(int argc, char** argv)
     vk::PipelineColorBlendStateCreateInfo pipelineColorBlendState{{}, false, vk::LogicOp::eClear, blendAttachments, {}};
     vk::PipelineDynamicStateCreateInfo pipelineDynamicState{};
     vk::GraphicsPipelineCreateInfo pipelineCreateInfo{
-        {}, pipelineStages, 
+        {}, pipelineStages,
         &pipelineInputState, &pipelineInputAssemblyState, &pipelineTessellationState,
         &pipelineViewportState, &pipelineRasterizationState, &pipelineMultisampleState,
         &pipelineDepthStencilState, &pipelineColorBlendState, &pipelineDynamicState,
         *pipelineLayout, *renderPass, 0
     };
     vk::raii::Pipeline graphicsPipeline{device, std::nullptr_t(), pipelineCreateInfo};
-    
+
     if(rdoc_api) rdoc_api->StartFrameCapture(NULL, NULL);
 
     vk::raii::CommandBuffer commandBuffer{std::move(buffers[0])};
@@ -791,7 +809,7 @@ int main(int argc, char** argv)
 
     std::cout << "Start rendering!" << std::endl;
     auto startTime = std::chrono::high_resolution_clock::now();
-    
+
     queue.submit(vk::SubmitInfo{{}, {}, *commandBuffer}, *fence);
     auto result = device.waitForFences(*fence, true, UINT64_MAX);
     device.waitIdle();
@@ -800,7 +818,7 @@ int main(int argc, char** argv)
     std::cout << "Finished rendering in " << std::chrono::duration<double, std::milli>{endTime - startTime}.count() << " ms." << std::endl;
 
     if(rdoc_api) rdoc_api->EndFrameCapture(NULL, NULL);
-    
+
     {
         auto size = width*height*4;
         std::vector<char> copy(size);
@@ -809,6 +827,6 @@ int main(int argc, char** argv)
         std::copy(ptr, ptr+size, copy.begin());
         transferMemory.unmapMemory();
 
-	    stbi_write_png(optionResult["output"].as<std::filesystem::path>().c_str(), width, height, 4, copy.data(), width*4);
+        stbi_write_png(optionResult["output"].as<std::filesystem::path>().c_str(), width, height, 4, copy.data(), width*4);
     }
 }
