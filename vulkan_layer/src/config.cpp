@@ -6,31 +6,36 @@ namespace CheekyLayer
 {
 	const std::function<bool(std::string)> config::to_bool = [](std::string s) {return s == "true";};
 
-	std::string config::operator[](std::string key)
+	config::config(const std::unordered_map<std::string, std::string>& v) : values(v)
 	{
-		return values[key];
+		log_file = map<std::filesystem::path>("logFile", [](std::string s) {return std::filesystem::path(s);});
+		application = map<std::string>("application", [](std::string s) {return s;});
+		hook_draw_calls = map<bool>("hookDraw", to_bool);
+		rule_file = map<std::filesystem::path>("ruleFile", [](std::string s) {return std::filesystem::path(s);});
+
+		dump = map<bool>("dump", to_bool);
+		dump_png = map<bool>("dumpPng", to_bool);
+		dump_png_flipped = map<bool>("dumpPngFlipped", to_bool);
+		dump_directory = map<std::filesystem::path>("dumpDirectory", [](std::string s) {return std::filesystem::path(s);});
+
+		override = map<bool>("override", to_bool);
+		override_directory = map<std::filesystem::path>("overrideDirectory", [](std::string s) {return std::filesystem::path(s);});
 	}
 
-	bool config::has(std::string key)
+	const std::string& config::operator[](const std::string& key) const
 	{
-		return values.find(key) != values.end();
+		return values.contains(key) ? values.at(key) : DEFAULT_CONFIG.values.at(key);
 	}
 
-	config config::operator+(config other)
+	bool config::has(const std::string& key)
 	{
-		config c;
-
-		for(auto it = values.begin(); it != values.end(); it++)
-			c.values[it->first] = it->second;
-		
-		for(auto it = other.values.begin(); it != other.values.end(); it++)
-			c.values[it->first] = it->second;
-
-		return c;
+		return values.contains(key);
 	}
 
 	std::istream& operator>>(std::istream& is, config& config)
 	{
+		std::unordered_map<std::string, std::string> values;
+
 		std::string line;
 		while(std::getline(is, line))
 		{
@@ -44,16 +49,19 @@ namespace CheekyLayer
 
 				if(std::getline(is_line, value))
 				{
-					config.values[key] = value;
+					values[key] = value;
 				}
 			}
 		}
+		config = CheekyLayer::config(values);
 
 		return is;
 	}
 
-	const config DEFAULT_CONFIG(std::map<std::string, std::string>({
+	const config DEFAULT_CONFIG(std::unordered_map<std::string, std::string>({
 		{"dump", "false"},
+		{"dumpPng", "false"},
+		{"dumpPngFlipped", "false"},
 		{"dumpDirectory", "/tmp/vulkan_dump"},
 		{"override", "true"},
 		{"overrideDirectory", "./override"},

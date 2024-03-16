@@ -1,18 +1,18 @@
 #pragma once
 
-#include "buffers.hpp"
-
 #include <cstdint>
 #include <cstdlib>
+#include <span>
 #include <string>
-#include <map>
+#include <functional>
 #include <vulkan/vulkan.h>
 
-void sha256_string(const uint8_t *buf, size_t len, char outputBuffer[65]);
-bool should_dump(std::string hash);
-bool has_override(std::string hash);
+std::string sha256_string(std::span<const unsigned char> data);
+std::string sha256_string(const unsigned char *buf, std::size_t len);
+bool should_dump(const std::string& hash);
+bool has_override(const std::string& hash);
 
-void replace(std::string& string, const std::string search, const std::string replacement);
+void replace(std::string& string, const std::string& search, const std::string& replacement);
 
 uint32_t findMemoryType(VkPhysicalDeviceMemoryProperties memProperties, uint32_t typeFilter, VkMemoryPropertyFlags properties);
 

@@ -20,7 +20,6 @@ instance::instance(const VkInstanceCreateInfo *pCreateInfo, VkInstance* pInstanc
  : id(instance_id++), handle(*pInstance) {
     std::fill(reinterpret_cast<char*>(&dispatch), reinterpret_cast<char*>(&dispatch)+sizeof(dispatch), 0);
 
-    config = CheekyLayer::DEFAULT_CONFIG;
     try
 	{
 		std::string configFile = std::getenv(CheekyLayer::Contants::CONFIG_ENV.c_str());
@@ -39,19 +38,14 @@ instance::instance(const VkInstanceCreateInfo *pCreateInfo, VkInstance* pInstanc
 	if(pCreateInfo->pApplicationInfo && pCreateInfo->pApplicationInfo->pEngineName)
 		engineName = pCreateInfo->pApplicationInfo->pEngineName;
 
-    if(!config["application"].empty()) {
-        enabled = config["application"] == applicationName;
-    }
-    else {
-        enabled = true;
-    }
+    enabled = config.application.empty() || config.application == applicationName;
 
     if(!enabled) {
         return;
     }
-    hook_draw_calls = config.map<bool>("hookDrawCalls", CheekyLayer::config::to_bool);
+    hook_draw_calls = config.hook_draw_calls;
 
-	std::string logfile = config["logFile"];
+	std::string logfile = config.log_file;
 	replace(logfile, "{{pid}}", std::to_string(getpid()));
 	replace(logfile, "{{inst}}", std::to_string((uint64_t)*pInstance));
 
@@ -67,7 +61,7 @@ instance::instance(const VkInstanceCreateInfo *pCreateInfo, VkInstance* pInstanc
 	{
 		try
 		{
-			std::filesystem::directory_iterator it(config["overrideDirectory"]+"/"+type);
+			std::filesystem::directory_iterator it(config.override_directory / type);
 
 			int count = 0;
 			std::transform(std::filesystem::begin(it), std::filesystem::end(it), std::inserter(overrideCache, overrideCache.end()), [&count](auto e){
@@ -82,7 +76,7 @@ instance::instance(const VkInstanceCreateInfo *pCreateInfo, VkInstance* pInstanc
 		}
 	}
 
-    std::ifstream rulesIn(config["rulesFile"]);
+    std::ifstream rulesIn(config.rule_file);
     CheekyLayer::rules::numbered_streambuf numberer{rulesIn};
     while(rulesIn.good())
     {
@@ -127,7 +121,8 @@ instance& instance::operator=(instance&& other) {
 }
 
 device::device(instance* inst, PFN_vkGetDeviceProcAddr gdpa, VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo, VkDevice *pDevice)
-    : inst(inst), handle(*pDevice), logger(inst->logger), gdpa(gdpa), physicalDevice(physicalDevice) {
+    : inst(inst), handle(*pDevice), gdpa(gdpa), physicalDevice(physicalDevice) {
+    logger = inst->logger->clone(fmt::format("device #{}/{}: {}", inst->id, inst->devices.size(), fmt::ptr(handle)));
     logger->info("Created device {}", fmt::ptr(handle));
     std::fill(reinterpret_cast<char*>(&dispatch), reinterpret_cast<char*>(&dispatch)+sizeof(dispatch), 0);
 
@@ -139,6 +134,7 @@ device::device(instance* inst, PFN_vkGetDeviceProcAddr gdpa, VkPhysicalDevice ph
     inst->dispatch.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, queueFamilies.data());
 
     has_debug = gdpa(*pDevice, "vkSetDebugUtilsObjectNameEXT");
+    logger->info(has_debug ? "Device has debug utils" : "Device does not have debug utils");
 }
 
 }

@@ -1,8 +1,8 @@
 #pragma once
 
+#include <filesystem>
 #include <functional>
 #include <string>
-#include <map>
 
 namespace CheekyLayer
 {
@@ -11,21 +11,32 @@ namespace CheekyLayer
 		public:
 			const static std::function<bool(std::string)> to_bool;
 
-			config() {}
-			config(std::map<std::string, std::string> v) : values(v) {}
+			config() : config(std::unordered_map<std::string, std::string>{}) {}
+			config(const std::unordered_map<std::string, std::string>& v);
 
-			bool has(std::string key);
-			
+			bool has(const std::string& key);
+
 			template<typename T>
-			T map(std::string key, std::function<T(std::string)> mapper)
+			T map(const std::string& key, std::function<T(std::string)> mapper)
 			{
 				return mapper((*this)[key]);
 			}
+			const std::string& operator[](const std::string& key) const;
 
-			std::string operator[](std::string key);
-			config operator+(config other);
+			std::filesystem::path log_file;
+			std::string application;
+			bool hook_draw_calls;
+			std::filesystem::path rule_file;
+
+			bool dump;
+			bool dump_png;
+			bool dump_png_flipped;
+			std::filesystem::path dump_directory;
+
+			bool override;
+			std::filesystem::path override_directory;
 		private:
-			std::map<std::string, std::string> values;
+			std::unordered_map<std::string, std::string> values;
 
 			friend std::istream& operator>>(std::istream&, config&);
 	};

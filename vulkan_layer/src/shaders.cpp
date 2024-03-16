@@ -94,7 +94,7 @@ std::tuple<bool, std::string> compileShader(EShLanguage stage, std::string glslC
 		return {false, std::string(program.getInfoLog())};
 	}
 
-	program.buildReflection(EShReflectionIntermediateIO | EShReflectionSeparateBuffers | 
+	program.buildReflection(EShReflectionIntermediateIO | EShReflectionSeparateBuffers |
 		EShReflectionAllBlockVariables | EShReflectionUnwrapIOBlocks | EShReflectionAllIOVariables);
 
 	glslang::GlslangToSpv(*program.getIntermediate(stage), shaderCode);
@@ -112,10 +112,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 #ifdef USE_GLSLANG
 	std::map<std::string, ShaderCacheEntry>::iterator it;
 #endif
-
-	char hash[65];
-	sha256_string((uint8_t*) pCreateInfo->pCode, pCreateInfo->codeSize, hash);
-	std::string hash_string(hash);
+	std::string hash_string = sha256_string((uint8_t*) pCreateInfo->pCode, pCreateInfo->codeSize);
 
 	CheekyLayer::active_logger log = *logger << logger::begin << "CreateShaderModule: " << "size=" << pCreateInfo->codeSize << " hash=" << hash_string;
 
@@ -235,7 +232,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 
 					uint32_t *buffer = (uint32_t*) malloc(length);
 					std::copy(spv.begin(), spv.end(), buffer);
-					
+
 					pCreateInfo->pCode = buffer;
 					pCreateInfo->codeSize = length;
 

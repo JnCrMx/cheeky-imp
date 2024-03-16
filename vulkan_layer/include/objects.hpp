@@ -36,19 +36,28 @@ struct device {
     VkCommandPool transferPool;
     VkCommandBuffer transferBuffer;
 
+    struct buffer {
+        VkBuffer buffer;
+        VkBufferCreateInfo createInfo;
+        VkDeviceMemory memory;
+        VkDeviceSize memoryOffset;
+    };
     struct memory_map_info {
         void* pointer;
         VkDeviceSize offset;
         VkDeviceSize size;
     };
-    std::unordered_map<VkBuffer, VkBufferCreateInfo> buffers;
-    std::map<VkBuffer, VkDeviceMemory> bufferMemories;
-    std::map<VkBuffer, VkDeviceSize> bufferMemoryOffsets;
+    std::map<VkBuffer, buffer> buffers;
     std::map<VkDeviceMemory, memory_map_info> memoryMappings;
 
-    std::unordered_map<VkImage, VkImageCreateInfo> images;
-    std::unordered_map<VkImage, VkDevice> imageDevices;
-    std::unordered_map<VkImageView, VkImage> imageViews;
+    struct image {
+        VkImage image;
+        VkImageCreateInfo createInfo;
+        VkDeviceMemory memory;
+        VkDeviceSize memoryOffset;
+        VkImageView view;
+    };
+    std::map<VkImage, image> images;
 
     void GetDeviceQueue(uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue *pQueue);
 
@@ -113,6 +122,9 @@ inline instance& get_instance(VkPhysicalDevice physicalDevice) {
 }
 inline device& get_device(VkDevice device) {
     return *devices.at(GetKey(device));
+}
+inline device& get_device(VkCommandBuffer commandBuffer) {
+    return *devices.at(GetKey(commandBuffer));
 }
 
 }

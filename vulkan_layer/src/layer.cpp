@@ -309,7 +309,7 @@ VkResult instance::CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceC
 	if(ret != VK_SUCCESS)
 		return ret;
 
-	spdlog::info("CreateDevice results in {} with dispatch key {}", fmt::ptr(*pDevice), GetKey(*pDevice));
+	logger->info("CreateDevice results in {} with dispatch key {}", fmt::ptr(*pDevice), GetKey(*pDevice));
 
 	auto& dev = ::CheekyLayer::devices[GetKey(*pDevice)] = std::make_unique<device>(this, fpGetDeviceProcAddr, physicalDevice, pCreateInfo, pDevice);
 	devices[*pDevice] = dev.get();
@@ -405,7 +405,9 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_GetDeviceQueue(
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyDevice(VkDevice device, const VkAllocationCallbacks *pAllocator)
 {
-	scoped_lock l(global_lock);
+	CheekyLayer::get_device(device).inst->devices.erase(device);
+
+	/*scoped_lock l(global_lock);
 	if(logger)
 		*logger << logger::begin << "DestroyDevice: " << device << logger::end;
 
@@ -427,7 +429,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyDevice(VkDevice device, const
 
 	device_dispatch[GetKey(device)].DestroyDevice(device, pAllocator);
 
-	device_dispatch.erase(GetKey(device));
+	device_dispatch.erase(GetKey(device));*/
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_EnumerateInstanceLayerProperties(uint32_t *pPropertyCount, VkLayerProperties *pProperties)

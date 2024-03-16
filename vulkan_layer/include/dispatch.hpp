@@ -60,12 +60,12 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa, VkLa
 	DeviceHook(MapMemory) \
 	DeviceHook(UnmapMemory) \
 	\
-	DeviceHook(CreateShaderModule) \
-	DeviceHook(CreateGraphicsPipelines) \
-	DeviceHook(CreatePipelineLayout) \
-	\
 	DeviceHook(CmdCopyBufferToImage) \
 	DeviceHook(CmdCopyBuffer) \
+	\
+	/*DeviceHook(CreateShaderModule) \
+	DeviceHook(CreateGraphicsPipelines) \
+	DeviceHook(CreatePipelineLayout) \
 	\
 	DeviceHook(CreateFramebuffer) \
 	DeviceHook(CreateSwapchainKHR) \
@@ -94,7 +94,7 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa, VkLa
 		DeviceHook(FreeCommandBuffers) \
 		DeviceHook(EndCommandBuffer) \
 		DeviceHook(QueueSubmit) \
-	}\
+	}\*/
 
 #define InstanceDispatch(name) \
 	dispatchTable.name = (PFN_vk##name)gpa(instance, "vk"#name);

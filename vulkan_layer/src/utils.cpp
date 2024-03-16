@@ -1,4 +1,5 @@
 #include "utils.hpp"
+#include "buffers.hpp"
 #include "layer.hpp"
 #include "dispatch.hpp"
 
@@ -6,32 +7,36 @@
 #include <cstdio>
 #include <openssl/sha.h>
 
-void sha256_string(const uint8_t *buf, size_t len, char outputBuffer[65])
+std::string sha256_string(const std::span<const unsigned char> data)
 {
 	unsigned char hash[SHA256_DIGEST_LENGTH];
-	SHA256_CTX sha256;
-	SHA256_Init(&sha256);
-	SHA256_Update(&sha256, buf, len);
-	SHA256_Final(hash, &sha256);
+	SHA256(data.data(), data.size(), hash);
+
+	char outputBuffer[65];
 	int i = 0;
 	for (i = 0; i < SHA256_DIGEST_LENGTH; i++)
 	{
 		sprintf(outputBuffer + (i * 2), "%02x", hash[i]);
 	}
 	outputBuffer[64] = 0;
+
+	return std::string(outputBuffer);
+}
+std::string sha256_string(const unsigned char* data, std::size_t len) {
+	return sha256_string(std::span(data, len));
 }
 
-bool should_dump(std::string hash)
+bool should_dump(const std::string& hash)
 {
 	return std::find(dumpCache.begin(), dumpCache.end(), hash) == dumpCache.end();
 }
 
-bool has_override(std::string hash)
+bool has_override(const std::string& hash)
 {
 	return std::find(overrideCache.begin(), overrideCache.end(), hash) != overrideCache.end();
 }
 
-void replace(std::string& string, const std::string search, const std::string replacement)
+void replace(std::string& string, const std::string& search, const std::string& replacement)
 {
 	if(search.empty())
 		return;

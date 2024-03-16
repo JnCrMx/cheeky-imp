@@ -13,7 +13,10 @@ namespace CheekyLayer {
 VkResult device::CreateBuffer(const VkBufferCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkBuffer* pBuffer)
 {
     VkResult ret = dispatch.CreateBuffer(handle, pCreateInfo, pAllocator, pBuffer);
-    buffers[*pBuffer] = *pCreateInfo;
+
+    auto& buffer = buffers[*pBuffer];
+    buffer.buffer = *pBuffer;
+    buffer.createInfo = *pCreateInfo;
 
     if(dispatch.SetDebugUtilsObjectNameEXT)
     {
@@ -34,8 +37,8 @@ VkResult device::CreateBuffer(const VkBufferCreateInfo* pCreateInfo, const VkAll
 
 VkResult device::BindBufferMemory(VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize memoryOffset)
 {
-    bufferMemories[buffer]=memory;
-    bufferMemoryOffsets[buffer]=memoryOffset;
+    buffers[buffer].memory = memory;
+    buffers[buffer].memoryOffset = memoryOffset;
 
     logger->info("BindBufferMemory: buffer={} memory={} offset={:#x}", fmt::ptr(buffer), fmt::ptr(memory), memoryOffset);
 
@@ -62,7 +65,54 @@ void device::UnmapMemory(VkDeviceMemory memory)
     memoryMappings.erase(memory);
 }
 
-} // namespace CheekyLayer
+void device::CmdCopyBuffer(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferCopy* pRegions)
+{
+    auto& src = buffers[srcBuffer];
+    auto& dst = buffers[dstBuffer];
+
+    auto offset = src.memoryOffset + pRegions[0].srcOffset;
+    auto size = pRegions[0].size;
+
+    void* data;
+    VkResult ret = dispatch.MapMemory(handle, src.memory, offset, size, 0, &data);
+    if(ret == VK_SUCCESS)
+    {
+        std::string hash_string = sha256_string((uint8_t*) data, size);
+        logger->info("CmdCopyBuffer: src={}@{:x}, dst={}@{:x}, hash={}",
+            fmt::ptr(srcBuffer), pRegions[0].srcOffset, fmt::ptr(dstBuffer), pRegions[0].dstOffset, hash_string);
+
+        if(dispatch.SetDebugUtilsObjectNameEXT)
+        {
+            std::string name = "Buffer "+hash_string;
+
+            VkDebugUtilsObjectNameInfoEXT info{};
+            info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+            info.objectType = VK_OBJECT_TYPE_BUFFER;
+            info.objectHandle = (uint64_t) dstBuffer;
+            info.pObjectName = name.c_str();
+            dispatch.SetDebugUtilsObjectNameEXT(handle, &info);
+        }
+
+        if(inst->config.dump) {
+            auto outputPath = inst->config.dump_directory / "buffers" / (hash_string + ".buf");
+            std::ofstream out(outputPath, std::ios_base::binary);
+            if(out.good())
+                out.write((char*)data, (size_t)size);
+        }
+
+        dispatch.UnmapMemory(handle, src.memory);
+    }
+    else
+    {
+        logger->info("CmdCopyBuffer: src={}@{:x}, dst={}@{:x}",
+            fmt::ptr(srcBuffer), pRegions[0].srcOffset, fmt::ptr(dstBuffer), pRegions[0].dstOffset);
+        logger->warn("Cannot map memory: {}", fmt::underlying(ret));
+    }
+
+    dispatch.CmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, regionCount, pRegions);
+}
+
+}
 
 std::map<VkBuffer, VkBufferCreateInfo> buffers;
 std::map<VkBuffer, VkDevice> bufferDevices;
@@ -100,7 +150,8 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_UnmapMemory(
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBuffer(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferCopy* pRegions)
 {
-	CheekyLayer::active_logger log = *logger << logger::begin;
+    return CheekyLayer::get_device(commandBuffer).CmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, regionCount, pRegions);
+	/*CheekyLayer::active_logger log = *logger << logger::begin;
     log << "CmdCopyBuffer: src=" << srcBuffer << " @ " << std::hex << pRegions[0].srcOffset << std::dec
             << " dst=" << dstBuffer << " @ " << std::hex << pRegions[0].dstOffset << std::dec;
     log.flush();
@@ -116,15 +167,13 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBuffer(VkCommandBuffer comman
     VkResult ret = dispatch.MapMemory(device, memory, offset, size, 0, &data);
     if(ret == VK_SUCCESS)
     {
-        char hash[65];
-        sha256_string((uint8_t*)data, (size_t)size, hash);
-        std::string hash_string(hash);
+        std::string hash_string = sha256_string((uint8_t*) data, size);
 
         CheekyLayer::rules::rule_env.hashes[(VkHandle)dstBuffer] = hash_string;
 		CheekyLayer::rules::local_context ctx = { .logger = log, .device = device};
 		CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::Buffer, (VkHandle)dstBuffer, ctx);
 
-        log << " hash=" << hash;
+        log << " hash=" << hash_string;
 
         if(device_dispatch[GetKey(device)].SetDebugUtilsObjectNameEXT)
         {
@@ -138,14 +187,14 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBuffer(VkCommandBuffer comman
             device_dispatch[GetKey(device)].SetDebugUtilsObjectNameEXT(device, &info);
         }
 
-        if(global_config.map<bool>("dump", CheekyLayer::config::to_bool)/* && should_dump(hash_string)*/)
+        if(global_config.map<bool>("dump", CheekyLayer::config::to_bool)/* && should_dump(hash_string) * /)
 		{
             std::string outputPath = global_config["dumpDirectory"]+"/buffers/"+hash_string+".buf";
             {
                 /*{
 				    scoped_lock l(global_lock);
                     dumpCache.push_back(hash_string);
-                }*/
+                }* /
                 std::ofstream out(outputPath, std::ios_base::binary);
                 if(out.good())
                     out.write((char*)data, (size_t)size);
@@ -171,5 +220,5 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBuffer(VkCommandBuffer comman
     }
    	log << logger::end;
 
-    dispatch.CmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, regionCount, pRegions);
+    dispatch.CmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, regionCount, pRegions);*/
 }
