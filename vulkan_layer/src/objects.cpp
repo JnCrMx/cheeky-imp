@@ -137,4 +137,27 @@ device::device(instance* inst, PFN_vkGetDeviceProcAddr gdpa, VkPhysicalDevice ph
     logger->info(has_debug ? "Device has debug utils" : "Device does not have debug utils");
 }
 
+void device::execute_rules(rules::selector_type type, rules::VkHandle handle, rules::calling_context& ctx) {
+    rules::local_context local{
+        .logger = *this->logger,
+        .printVerbose = ctx.printVerbose,
+        .info = ctx.info.has_value() ? &ctx.info.value() : nullptr,
+        .instance = inst,
+        .device = this,
+        .commandBuffer = ctx.commandBuffer,
+        .commandBufferState = ctx.commandBufferState,
+        .canceled = ctx.canceled,
+        .overrides = ctx.overrides,
+        .customTag = ctx.customTag,
+        .creationCallbacks = ctx.creationCallbacks,
+        .local_variables = ctx.local_variables,
+        .customPointer = ctx.customPointer,
+    };
+    rules::execute_rules(inst->rules, type, handle, inst->global_context, local);
+}
+
+bool device::has_override(const std::string& name) {
+    return inst->overrideCache.contains(name);
+}
+
 }

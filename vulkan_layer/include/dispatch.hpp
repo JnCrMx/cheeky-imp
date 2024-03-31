@@ -6,9 +6,6 @@
 #include <vulkan/generated/vk_layer_dispatch_table.h>
 
 #include <map>
-#include <string.h>
-
-#include "layer.hpp"
 
 template<typename DispatchableType>
 void* GetKey(DispatchableType inst)

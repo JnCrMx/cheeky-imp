@@ -3,6 +3,7 @@
 #include "rules/rules.hpp"
 
 #include <experimental/iterator>
+#include <ranges>
 
 namespace CheekyLayer::rules::datas
 {
@@ -19,20 +20,17 @@ namespace CheekyLayer::rules::datas
 		return true;
 	}
 
-	data_value global_data::get(selector_type, data_type type, VkHandle, local_context& ctx, rule &)
+	data_value global_data::get(selector_type, data_type type, VkHandle, global_context& global, local_context&, rule &)
 	{
-		if(!rule_env.global_variables.contains(m_name))
+		if(!global.global_variables.contains(m_name))
 		{
-			std::ostringstream oss;
-			oss << "no such global variable: " << m_name << ", the following are available: ";
-			std::transform(rule_env.global_variables.begin(), rule_env.global_variables.end(), std::experimental::make_ostream_joiner(ctx.logger.raw(), ", "), [](const auto& a){
-				return a.first;
-			});
+			auto message = fmt::format("no such global variable: {}, the following are available: {}", m_name,
+				fmt::join(global.global_variables | std::ranges::views::keys, ", "));
 
-			throw RULE_ERROR(oss.str());
+			throw RULE_ERROR(message);
 		}
 
-		auto& data = rule_env.global_variables.at(m_name);
+		auto& data = global.global_variables.at(m_name);
 
 		bool okay = true;
 		switch(type)
@@ -74,20 +72,17 @@ namespace CheekyLayer::rules::datas
 		return true;
 	}
 
-	data_value local_data::get(selector_type, data_type type, VkHandle, local_context& ctx, rule &)
+	data_value local_data::get(selector_type, data_type type, VkHandle, global_context&, local_context& local, rule &)
 	{
-		if(!ctx.local_variables.contains(m_name))
+		if(!local.local_variables.contains(m_name))
 		{
-			std::ostringstream oss;
-			oss << "no such local variable: " << m_name << ", the following are available: ";
-			std::transform(ctx.local_variables.begin(), ctx.local_variables.end(), std::experimental::make_ostream_joiner(ctx.logger.raw(), ", "), [](const auto& a){
-				return a.first;
-			});
+			auto message = fmt::format("no such local variable: {}, the following are available: {}", m_name,
+				fmt::join(local.local_variables | std::ranges::views::keys, ", "));
 
-			throw RULE_ERROR(oss.str());
+			throw RULE_ERROR(message);
 		}
 
-		auto& data = ctx.local_variables.at(m_name);
+		auto& data = local.local_variables.at(m_name);
 
 		bool okay = true;
 		switch(type)

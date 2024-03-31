@@ -1,10 +1,9 @@
 #include "layer.hpp"
-#include "dispatch.hpp"
+#include "objects.hpp"
 #include "utils.hpp"
-#include "shaders.hpp"
+
 #include <fstream>
 #include <filesystem>
-#include <iterator>
 #include <sys/types.h>
 #include <vulkan/vulkan_core.h>
 
@@ -18,18 +17,6 @@
 #include <ResourceLimits.h>
 #include <GlslangToSpv.h>
 #endif
-
-#include <streambuf>
-#include <cstdint>
-#include <stdexcept>
-
-using CheekyLayer::logger;
-using CheekyLayer::rules::VkHandle;
-
-static uint64_t currentCustomShaderHandle = 0xABC1230000;
-std::map<VkHandle, VkHandle> customShaderHandles;
-
-std::map<VkHandle, spv_reflect::ShaderModule> shaderReflections;
 
 #ifdef USE_SPIRV
 std::string stage_to_string(spv::ExecutionModel stage)
@@ -104,38 +91,30 @@ std::tuple<bool, std::string> compileShader(EShLanguage stage, std::string glslC
 }
 #endif
 
-VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice device, VkShaderModuleCreateInfo *pCreateInfo, VkAllocationCallbacks *pAllocator,
-		VkShaderModule *pShaderModule)
+namespace CheekyLayer {
+
+VkResult device::CreateShaderModule(const VkShaderModuleCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkShaderModule *pShaderModule)
 {
-	//scoped_lock l(global_lock);
+	VkShaderModuleCreateInfo createInfo = *pCreateInfo;
 
 #ifdef USE_GLSLANG
 	std::map<std::string, ShaderCacheEntry>::iterator it;
 #endif
-	std::string hash_string = sha256_string((uint8_t*) pCreateInfo->pCode, pCreateInfo->codeSize);
 
-	CheekyLayer::active_logger log = *logger << logger::begin << "CreateShaderModule: " << "size=" << pCreateInfo->codeSize << " hash=" << hash_string;
-
-	if(global_config.map<bool>("dump", CheekyLayer::config::to_bool)/* && should_dump(hash_string)*/)
-	{
-		/*{
-			scoped_lock l(global_lock);
-			dumpCache.push_back(hash_string);
-		}*/
+	std::string hash_string = sha256_string((uint8_t*) createInfo.pCode, createInfo.codeSize);
+	if(inst->config.dump) {
 		{
-			std::string outputPath = global_config["dumpDirectory"]+"/shaders/"+hash_string+".spv";
+			std::string outputPath = inst->config.dump_directory / "shaders" / (hash_string+".spv");
 			if(!std::filesystem::exists(outputPath))
 			{
 				std::ofstream out(outputPath, std::ios_base::binary);
 				if(out.good())
-					out.write((char*)pCreateInfo->pCode, (size_t)pCreateInfo->codeSize);
+					out.write((char*)createInfo.pCode, (size_t)createInfo.codeSize);
 			}
 		}
-
 #ifdef USE_SPIRV
-		try
-		{
-			std::vector<uint32_t> spirv_binary(pCreateInfo->pCode, pCreateInfo->pCode+(pCreateInfo->codeSize/sizeof(uint32_t)));
+		try {
+			std::vector<uint32_t> spirv_binary(createInfo.pCode, createInfo.pCode+(createInfo.codeSize/sizeof(uint32_t)));
 			spirv_cross::CompilerGLSL glsl(std::move(spirv_binary));
 
 			spirv_cross::CompilerGLSL::Options options;
@@ -165,128 +144,111 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice devi
 			if(!stages.empty())
 				stage = stage_to_string(stages[0].execution_model);
 
-			std::ofstream out2(global_config["dumpDirectory"]+"/shaders/"+hash_string+"."+stage);
-			if(out2.good())
-				out2 << code;
-		}
-		catch(std::runtime_error& ex)
-		{
-			log << logger::error << "Cannot decompile: " << ex.what();
+			std::ofstream out(inst->config.dump_directory / "shaders" / (hash_string+"."+stage));
+			if(out.good())
+				out << code;
+		} catch(std::runtime_error& ex) {
+			logger->error("Cannot decompile: {}", ex.what());
 		}
 #endif
 	}
-	if(global_config.map<bool>("override", CheekyLayer::config::to_bool) && has_override(hash_string))
-	{
-		std::ifstream in(global_config["overrideDirectory"]+"/shaders/"+hash_string+".spv");
-		if(in.good())
-		{
-			in.seekg(0, std::ios::end);
-			size_t length = in.tellg();
-			in.seekg(0, std::ios::beg);
 
-			log << " found shader override! " << "size=" << length;
+	if(inst->config.override) {
+		if(has_override(hash_string)) {
+			std::ifstream in(inst->config.override_directory / "shaders" / (hash_string+".spv"));
+			if(in.good()) {
+				in.seekg(0, std::ios::end);
+				size_t length = in.tellg();
+				in.seekg(0, std::ios::beg);
 
-			uint8_t *buffer = (uint8_t*) malloc(length);
-			in.read((char*) buffer, length);
+				logger->info("Found shader override! size={}", length);
 
-			pCreateInfo->pCode = (uint32_t*) buffer;
-			pCreateInfo->codeSize = length;
-		}
+				uint8_t *buffer = (uint8_t*) malloc(length);
+				in.read((char*) buffer, length);
+
+				createInfo.pCode = (uint32_t*) buffer;
+				createInfo.codeSize = length;
+			}
 #ifdef USE_GLSLANG
-		else if((it = shaderCache.find(hash_string)) != shaderCache.end())
-		{
-			pCreateInfo->pCode = it->second.pointer;
-			pCreateInfo->codeSize = it->second.size;
-			log << " found cached shader override! " << "size=" << it->second.size;
-		}
-		else
-		{
-			EShLanguage stage;
-			std::string code;
+			else if((it = shaderCache.find(hash_string)) != shaderCache.end()) {
+				createInfo.pCode = it->second.pointer;
+				createInfo.codeSize = it->second.size;
+				logger->info("Found cached shader override! size={}", it->second.size);
+			}
+			else {
+				EShLanguage stage;
+				std::string code;
 
-			for(std::string suffix : {"vert", "frag", "comp"})
-			{
-				std::ifstream in2(global_config["overrideDirectory"]+"/shaders/"+hash_string+"."+suffix);
-				if(in2.good())
-				{
+				for(std::string suffix : {"vert", "frag", "comp"}) {
+					std::ifstream in(inst->config.override_directory / "shaders" / (hash_string + "." + suffix));
+					if(!in.good())
+						continue;
+
 					stage = string_to_stage(suffix);
-
-					in2.seekg(0, std::ios::end);
-					code.reserve(in2.tellg());
-					in2.seekg(0, std::ios::beg);
-					code.assign(std::istreambuf_iterator<char>(in2), std::istreambuf_iterator<char>());
-
+					code = std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 					break;
 				}
-			}
 
-			if(!code.empty())
-			{
-				std::vector<uint32_t> spv;
-				auto [result, message] = compileShader(stage, code, spv);
+				if(!code.empty()) {
+					std::vector<uint32_t> spv;
+					auto [result, message] = compileShader(stage, code, spv);
 
-				if(result)
-				{
-					size_t length = spv.size() * sizeof(uint32_t);
-					log << " found and compiled shader override! " << "size=" << length;
+					if(result) {
+						size_t length = spv.size() * sizeof(uint32_t);
+						logger->info("Found and compiled shader override! size={}", length);
 
-					uint32_t *buffer = (uint32_t*) malloc(length);
-					std::copy(spv.begin(), spv.end(), buffer);
+						uint32_t *buffer = (uint32_t*) malloc(length);
+						std::copy(spv.begin(), spv.end(), buffer);
 
-					pCreateInfo->pCode = buffer;
-					pCreateInfo->codeSize = length;
+						createInfo.pCode = buffer;
+						createInfo.codeSize = length;
 
-					shaderCache[hash_string] = {buffer, length};
-				}
-				else
-				{
-					log << logger::error << "compilation failed: " << message;
+						shaderCache[hash_string] = {buffer, length};
+					} else {
+						logger->error("Compilation failed: {}", message);
+					}
 				}
 			}
-		}
 #endif
+		}
 	}
 
-	VkResult result = device_dispatch[GetKey(device)].CreateShaderModule(device, pCreateInfo, pAllocator, pShaderModule);
+	VkResult result = dispatch.CreateShaderModule(handle, &createInfo, pAllocator, pShaderModule);
+	if(result != VK_SUCCESS)
+		return result;
 
-	if(result == VK_SUCCESS)
-	{
-		VkHandle handle = (VkHandle)*pShaderModule;
-		VkHandle customHandle = customShaderHandles[handle] = (VkHandle) currentCustomShaderHandle++;
+	rules::VkHandle handle = (rules::VkHandle)*pShaderModule;
+	rules::VkHandle customHandle = customShaderHandles[handle] = (rules::VkHandle) currentCustomShaderHandle++;
 
-		spv_reflect::ShaderModule reflection(pCreateInfo->codeSize, pCreateInfo->pCode);
-		if(reflection.GetResult() == SPV_REFLECT_RESULT_SUCCESS)
-		{
-			shaderReflections[customHandle] = std::move(reflection);
-		}
-		else
-		{
-			log << logger::error << "shader reflection failed!";
-		}
-
-		if(device_dispatch[GetKey(device)].SetDebugUtilsObjectNameEXT)
-		{
-			std::string name = "Shader "+hash_string;
-
-			VkDebugUtilsObjectNameInfoEXT info{};
-			info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
-			info.objectType = VK_OBJECT_TYPE_SHADER_MODULE;
-			info.objectHandle = (uint64_t) *pShaderModule;
-			info.pObjectName = name.c_str();
-			device_dispatch[GetKey(device)].SetDebugUtilsObjectNameEXT(device, &info);
-		}
-
-		/*auto p = CheekyLayer::rule_env.hashes.find(handle);
-		if(p != CheekyLayer::rule_env.hashes.end() && hash_string != p->second)
-		{
-			log << " Shader module collision: " << handle << " (formerly known as " << p->second << ") will be replaced";
-		}*/
-
-		CheekyLayer::rules::rule_env.hashes[customHandle] = hash_string;
-		CheekyLayer::rules::local_context ctx = {log};
-		CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::Shader, customHandle, ctx);
+	spv_reflect::ShaderModule reflection(createInfo.codeSize, createInfo.pCode);
+	if(reflection.GetResult() == SPV_REFLECT_RESULT_SUCCESS) {
+		shaderReflections[customHandle] = std::move(reflection);
+	} else {
+		logger->error("shader reflection failed: {}!", fmt::underlying(reflection.GetResult()));
 	}
 
-	log << logger::end;
+	if(has_debug) {
+		std::string name = "Shader "+hash_string;
+
+		VkDebugUtilsObjectNameInfoEXT info{};
+		info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+		info.objectType = VK_OBJECT_TYPE_SHADER_MODULE;
+		info.objectHandle = (uint64_t) *pShaderModule;
+		info.pObjectName = name.c_str();
+		dispatch.SetDebugUtilsObjectNameEXT(this->handle, &info);
+	}
+
+	put_hash(customHandle, hash_string);
+	rules::calling_context ctx{};
+	execute_rules(rules::selector_type::Shader, customHandle, ctx);
+
 	return result;
+}
+
+}
+
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo *pCreateInfo, VkAllocationCallbacks *pAllocator,
+		VkShaderModule *pShaderModule)
+{
+	return CheekyLayer::get_device(device).CreateShaderModule(pCreateInfo, pAllocator, pShaderModule);
 }

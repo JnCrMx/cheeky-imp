@@ -15,7 +15,7 @@ namespace CheekyLayer::rules::conditions
 					throw std::runtime_error("the \"hash\" condition is only supported for buffer, image and shader selectors, but not for "+to_string(type)+" selectors");
 			}
 			virtual void read(std::istream&);
-			virtual bool test(selector_type, VkHandle, local_context&);
+			virtual bool test(selector_type, VkHandle, global_context&, local_context&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			std::string m_hash;
@@ -28,7 +28,7 @@ namespace CheekyLayer::rules::conditions
 		public:
 			mark_condition(selector_type type) : selector_condition(type) {}
 			virtual void read(std::istream&);
-			virtual bool test(selector_type, VkHandle, local_context&);
+			virtual bool test(selector_type, VkHandle, global_context&, local_context&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			std::string m_mark;
@@ -44,7 +44,7 @@ namespace CheekyLayer::rules::conditions
 					throw std::runtime_error("the \"with\" condition is only supported for draw and pipeline selectors, but not for "+to_string(type)+" selectors");
 			}
 			virtual void read(std::istream&);
-			virtual bool test(selector_type, VkHandle, local_context&);
+			virtual bool test(selector_type, VkHandle, global_context&, local_context&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			std::unique_ptr<selector> m_selector;
@@ -57,7 +57,7 @@ namespace CheekyLayer::rules::conditions
 		public:
 			not_condition(selector_type type) : selector_condition(type) {}
 			virtual void read(std::istream&);
-			virtual bool test(selector_type, VkHandle, local_context&);
+			virtual bool test(selector_type, VkHandle, global_context&, local_context&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			std::unique_ptr<selector_condition> m_condition;
@@ -70,7 +70,7 @@ namespace CheekyLayer::rules::conditions
 		public:
 			or_condition(selector_type type) : selector_condition(type) {}
 			virtual void read(std::istream&);
-			virtual bool test(selector_type, VkHandle, local_context&);
+			virtual bool test(selector_type, VkHandle, global_context&, local_context&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			std::vector<std::unique_ptr<selector_condition>> m_conditions;
@@ -93,7 +93,7 @@ namespace CheekyLayer::rules::conditions
 		public:
 			compare_condition(selector_type type) : selector_condition(type) {}
 			virtual void read(std::istream&);
-			virtual bool test(selector_type, VkHandle, local_context&);
+			virtual bool test(selector_type, VkHandle, global_context&, local_context&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			std::unique_ptr<data> m_left;
@@ -115,7 +115,7 @@ namespace CheekyLayer::rules::conditions
 					throw std::runtime_error("the \"custom\" condition is only supported for custom selectors, but not for "+to_string(type)+" selectors");
 			}
 			virtual void read(std::istream&);
-			virtual bool test(selector_type, VkHandle, local_context&);
+			virtual bool test(selector_type, VkHandle, global_context&, local_context&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			std::string m_tag;

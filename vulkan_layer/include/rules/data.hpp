@@ -12,7 +12,7 @@ namespace CheekyLayer::rules::datas
 		public:
 			string_data(selector_type type) : data(type) {}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -27,7 +27,7 @@ namespace CheekyLayer::rules::datas
 		public:
 			concat_data(selector_type type) : data(type) {}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -44,7 +44,7 @@ namespace CheekyLayer::rules::datas
 					throw std::runtime_error("the \"vkstruct\" data is only supported for pipeline and draw selectors, but not for "+to_string(type)+" selectors");
 			}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -61,7 +61,7 @@ namespace CheekyLayer::rules::datas
 					throw std::runtime_error("the \"vkdescriptor\" data is only supported for draw selectors, but not for "+to_string(type)+" selectors");
 			}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -80,7 +80,7 @@ namespace CheekyLayer::rules::datas
 					throw std::runtime_error("the \"received\" data is only supported for receive selectors, but not for "+to_string(type)+" selectors");
 			}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -92,7 +92,7 @@ namespace CheekyLayer::rules::datas
 		public:
 			convert_data(selector_type type) : data(type) {}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -108,7 +108,7 @@ namespace CheekyLayer::rules::datas
 		public:
 			string_clean_data(selector_type type) : data(type) {}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -122,7 +122,7 @@ namespace CheekyLayer::rules::datas
 		public:
 			number_data(selector_type type) : data(type) {}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -132,11 +132,11 @@ namespace CheekyLayer::rules::datas
 	};
 
 	class math_data : public data
-	{	
+	{
 		public:
 			math_data(selector_type type) : data(type) {}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -164,7 +164,7 @@ namespace CheekyLayer::rules::datas
 		public:
 			unpack_data(selector_type type) : data(type) {}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -181,7 +181,7 @@ namespace CheekyLayer::rules::datas
 		public:
 			pack_data(selector_type type) : data(type) {}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -196,7 +196,7 @@ namespace CheekyLayer::rules::datas
 		public:
 			current_element_data(selector_type type) : data(type) {}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -208,7 +208,7 @@ namespace CheekyLayer::rules::datas
 		public:
 			current_index_data(selector_type type) : data(type) {}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -220,7 +220,7 @@ namespace CheekyLayer::rules::datas
 		public:
 			map_data(selector_type type) : data(type) {}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -236,7 +236,7 @@ namespace CheekyLayer::rules::datas
 		public:
 			current_reduction_data(selector_type type) : data(type) {}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -248,7 +248,7 @@ namespace CheekyLayer::rules::datas
 		public:
 			reduce_data(selector_type type) : data(type) {}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -265,7 +265,7 @@ namespace CheekyLayer::rules::datas
 		public:
 			global_data(selector_type type) : data(type) {}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -279,7 +279,7 @@ namespace CheekyLayer::rules::datas
 		public:
 			local_data(selector_type type) : data(type) {}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -293,7 +293,7 @@ namespace CheekyLayer::rules::datas
 		public:
 			split_data(selector_type type) : data(type) {}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -308,7 +308,7 @@ namespace CheekyLayer::rules::datas
 		public:
 			call_function_data(selector_type type) : data(type) {}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -323,7 +323,7 @@ namespace CheekyLayer::rules::datas
 		public:
 			at_data(selector_type type) : data(type) {}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:
@@ -338,7 +338,7 @@ namespace CheekyLayer::rules::datas
 		public:
 			vkhandle_data(selector_type type) : data(type) {}
 			virtual void read(std::istream&);
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&);
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&);
 			virtual bool supports(selector_type, data_type);
 			virtual std::ostream& print(std::ostream&);
 		private:

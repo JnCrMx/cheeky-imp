@@ -3,13 +3,18 @@
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
+#include <functional>
 #include <netinet/in.h>
-#include <ostream>
 #include <thread>
 #include <vector>
 #include <string>
 #include <memory>
-#include <future>
+
+namespace CheekyLayer
+{
+	struct instance;
+	struct device;
+}
 
 namespace CheekyLayer::rules::ipc
 {
@@ -51,7 +56,21 @@ namespace CheekyLayer::rules::ipc
 	class socket : public file_descriptor
 	{
 		public:
-			socket(socket_type type, std::string hostname, int port, protocol_type protocol);
+			socket(socket_type type, std::string hostname, int port, protocol_type protocol, instance* instance)
+				: socket(type, hostname, port, protocol) {
+				m_instance = instance;
+				m_device = nullptr;
+			}
+			socket(socket_type type, std::string hostname, int port, protocol_type protocol, device* device)
+				: socket(type, hostname, port, protocol) {
+				m_instance = nullptr;
+				m_device = device;
+			}
+			socket(socket_type type, std::string hostname, int port, protocol_type protocol, instance* instance, device* device)
+				: socket(type, hostname, port, protocol) {
+				m_instance = instance;
+				m_device = device;
+			}
 			virtual void close();
 			virtual size_t write(std::vector<uint8_t>&, int arg = 0);
 
@@ -60,6 +79,11 @@ namespace CheekyLayer::rules::ipc
 			static protocol_type protocol_type_from_string(std::string s);
 			static std::string protocol_type_to_string(protocol_type e);
 		protected:
+			socket(socket_type type, std::string hostname, int port, protocol_type protocol);
+
+			instance* m_instance;
+			device* m_device;
+
 			int m_fd;
 			socket_type m_type;
 			protocol_type m_protocol;
@@ -72,10 +96,29 @@ namespace CheekyLayer::rules::ipc
 	class server_socket : public file_descriptor
 	{
 		public:
-			server_socket(socket_type type, std::string hostname, int port, protocol_type protocol);
+			server_socket(socket_type type, std::string hostname, int port, protocol_type protocol, instance* instance)
+				: server_socket(type, hostname, port, protocol) {
+				m_instance = instance;
+				m_device = nullptr;
+			}
+			server_socket(socket_type type, std::string hostname, int port, protocol_type protocol, device* device)
+				: server_socket(type, hostname, port, protocol) {
+				m_instance = nullptr;
+				m_device = device;
+			}
+			server_socket(socket_type type, std::string hostname, int port, protocol_type protocol, instance* instance, device* device)
+				: server_socket(type, hostname, port, protocol) {
+				m_instance = instance;
+				m_device = device;
+			}
 			virtual void close();
 			virtual size_t write(std::vector<uint8_t>&, int client);
 		protected:
+			server_socket(socket_type type, std::string hostname, int port, protocol_type protocol);
+
+			instance* m_instance;
+			device* m_device;
+
 			int m_fd;
 			socket_type m_type;
 			protocol_type m_protocol;

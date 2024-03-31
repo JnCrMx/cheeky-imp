@@ -1,14 +1,12 @@
 #include "rules/ipc.hpp"
-#include "logger.hpp"
 #include "layer.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
+#include "objects.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
-#include <future>
-#include <iomanip>
 #include <ios>
 
 #include <sys/socket.h>
@@ -17,6 +15,9 @@
 #include <errno.h>
 #include <string.h>
 #include <poll.h>
+
+#define LOGGER \
+	(m_device ? m_device->logger : m_instance->logger)
 
 namespace CheekyLayer::rules::ipc
 {
@@ -197,7 +198,7 @@ namespace CheekyLayer::rules::ipc
 						uint8_t* buffer = new uint8_t[size];
 
 						n = read(fd, buffer, size);
-				
+
 						handler(buffer, n);
 					}
 					else if(n == 0) break;
@@ -238,18 +239,19 @@ namespace CheekyLayer::rules::ipc
 	void socket::receiveThread(std::stop_token stop)
 	{
 		listen_helper(stop, m_protocol, m_fd, [this](uint8_t* data, size_t size){
-			active_logger log = *::logger << logger::begin;
-
 			receive_info info = { .socket = this, .buffer = data, .size = size };
-			additional_info info2 = { .receive = info };
-			local_context ctx = { .logger = log, .info = &info2, .local_variables = {{"socket:name", m_name}} };
+			calling_context ctx{
+				.info = info,
+				.local_variables = {{"socket:name", m_name}}
+			};
 
-			execute_rules(::rules, selector_type::Receive, 0, ctx);
-
-			log << logger::end;
+			if(m_device) {
+				m_device->execute_rules(selector_type::Receive, VK_NULL_HANDLE, ctx);
+			} else if(m_instance) {
+				m_instance->execute_rules(selector_type::Receive, VK_NULL_HANDLE, ctx);
+			}
 		});
-		if(::logger)
-			*::logger << logger::begin << "receiving thread for fd " << std::quoted(m_name) << " exited" << logger::end;
+		LOGGER->info("receiving thread for fd \"{}\" exited", m_name);
 	}
 
 	server_socket::server_socket(socket_type type, std::string hostname, int port, protocol_type protocol) : m_type(type) , m_protocol(protocol)
@@ -319,32 +321,36 @@ namespace CheekyLayer::rules::ipc
 		std::string ip = inet_ntoa(addr.sin_addr);
 		int port = htons(addr.sin_port);
 		{
-			active_logger log = *::logger << logger::begin;
-
-			log << "accepted client " << fd << " (" << ip << ":" << port << ") for server " << std::quoted(m_name) << "\n";
+			LOGGER->info("accepted client {} ({}:{}) for server {}", fd, ip, port, m_name);
 
 			receive_info info = { .socket = this, .buffer = nullptr, .size = 0, .extra = fd };
-			additional_info info2 = { .receive = info };
-			local_context ctx = { .logger = log, .info = &info2, .customTag = "connect", .local_variables = {{"socket:name", m_name}} };
+			calling_context ctx{
+				.info = info,
+				.customTag = "connect",
+				.local_variables = {{"socket:name", m_name}}
+			};
 
-			execute_rules(::rules, selector_type::Custom, 0, ctx);
-
-			log << logger::end;
+			if(m_device) {
+				m_device->execute_rules(selector_type::Custom, VK_NULL_HANDLE, ctx);
+			} else if(m_instance) {
+				m_instance->execute_rules(selector_type::Custom, VK_NULL_HANDLE, ctx);
+			}
 		}
 
 		listen_helper(stop, m_protocol, fd, [this, fd](uint8_t* data, size_t size){
-			active_logger log = *::logger << logger::begin;
+			receive_info info = { .socket = this, .buffer = data, .size = size };
+			calling_context ctx{
+				.info = info,
+				.local_variables = {{"socket:name", m_name}}
+			};
 
-			receive_info info = { .socket = this, .buffer = data, .size = size, .extra = fd };
-			additional_info info2 = { .receive = info };
-			local_context ctx = { .logger = log, .info = &info2, .local_variables = {{"socket:name", m_name}} };
-
-			execute_rules(::rules, selector_type::Receive, 0, ctx);
-
-			log << logger::end;
+			if(m_device) {
+				m_device->execute_rules(selector_type::Receive, VK_NULL_HANDLE, ctx);
+			} else if(m_instance) {
+				m_instance->execute_rules(selector_type::Receive, VK_NULL_HANDLE, ctx);
+			}
 		});
-		if(::logger)
-			*::logger << logger::begin << "client " << fd << " (" << ip << ":" << port << ") for server " << std::quoted(m_name) << " disconnected" << logger::end;
+		LOGGER->info("client {} ({}:{}) for server {} disconnected", fd, ip, port, m_name);
 	}
 
 	size_t server_socket::write(std::vector<uint8_t>& data, int fd)

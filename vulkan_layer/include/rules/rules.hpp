@@ -8,8 +8,6 @@
 #include <vector>
 #include <string>
 #include <map>
-#include <functional>
-#include <variant>
 
 #define BACKWARD_HAS_DW 1
 #include <backward.hpp>
@@ -58,7 +56,7 @@ namespace CheekyLayer::rules
 			virtual ~selector_condition() = default;
 
 			virtual void read(std::istream&) = 0;
-			virtual bool test(selector_type, VkHandle, local_context&) = 0;
+			virtual bool test(selector_type, VkHandle, global_context&, local_context&) = 0;
 			virtual std::ostream& print(std::ostream& out)
 			{
 				out << "unkownCondition()";
@@ -89,8 +87,8 @@ namespace CheekyLayer::rules
 
 		protected:
     		static map_type * getMap() {
-        		if(map == nullptr) { map = new map_type; } 
-	        	return map; 
+        		if(map == nullptr) { map = new map_type; }
+	        	return map;
     		}
 
 		private:
@@ -98,8 +96,8 @@ namespace CheekyLayer::rules
 	};
 
 	template<typename T>
-		struct condition_register : condition_factory { 
-    		condition_register(std::string const& s) { 
+		struct condition_register : condition_factory {
+    		condition_register(std::string const& s) {
         		getMap()->insert(std::make_pair(s, &default_create_condition<T>));
     	}
 	};
@@ -109,7 +107,7 @@ namespace CheekyLayer::rules
 	class selector
 	{
 		public:
-			bool test(selector_type, VkHandle, local_context&);
+			bool test(selector_type, VkHandle, global_context&, local_context&);
 			std::ostream& print(std::ostream& out);
 			[[nodiscard]] selector_type get_type() const { return m_type; };
 		private:
@@ -127,7 +125,7 @@ namespace CheekyLayer::rules
 			virtual ~action() = default;
 
 			virtual void read(std::istream&) = 0;
-			virtual void execute(selector_type, VkHandle, local_context&, rule&) = 0;
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&) = 0;
 			virtual std::ostream& print(std::ostream& out)
 			{
 				out << "unkownAction()";
@@ -158,8 +156,8 @@ namespace CheekyLayer::rules
 
 		protected:
     		static map_type * getMap() {
-        		if(map == nullptr) { map = new map_type; } 
-	        	return map; 
+        		if(map == nullptr) { map = new map_type; }
+	        	return map;
     		}
 
 		private:
@@ -167,8 +165,8 @@ namespace CheekyLayer::rules
 	};
 
 	template<typename T>
-		struct action_register : action_factory { 
-    		action_register(std::string const& s) { 
+		struct action_register : action_factory {
+    		action_register(std::string const& s) {
         		getMap()->insert(std::make_pair(s, &default_create_action<T>));
     	}
 	};
@@ -199,7 +197,7 @@ namespace CheekyLayer::rules
 			virtual ~data() = default;
 
 			virtual void read(std::istream&) = 0;
-			virtual data_value get(selector_type, data_type, VkHandle, local_context&, rule&) = 0;
+			virtual data_value get(selector_type, data_type, VkHandle, global_context&, local_context&, rule&) = 0;
 			virtual bool supports(selector_type, data_type) = 0;
 			virtual std::ostream& print(std::ostream& out)
 			{
@@ -231,8 +229,8 @@ namespace CheekyLayer::rules
 
 		protected:
     		static map_type * getMap() {
-        		if(map == nullptr) { map = new map_type; } 
-	        	return map; 
+        		if(map == nullptr) { map = new map_type; }
+	        	return map;
     		}
 
 		private:
@@ -240,8 +238,8 @@ namespace CheekyLayer::rules
 	};
 
 	template<typename T>
-		struct data_register : data_factory { 
-    		data_register(std::string const& s) { 
+		struct data_register : data_factory {
+    		data_register(std::string const& s) {
         		getMap()->insert(std::make_pair(s, &default_create_data<T>));
     	}
 	};
@@ -249,7 +247,7 @@ namespace CheekyLayer::rules
 	class rule
 	{
 		public:
-			void execute(selector_type type, VkHandle handle, local_context& ctx);
+			void execute(selector_type type, VkHandle handle, global_context& global, local_context& local);
 			std::ostream& print(std::ostream& out);
 			void disable();
 			[[nodiscard]] selector_type get_type() const {
@@ -268,7 +266,7 @@ namespace CheekyLayer::rules
 	std::istream& operator>>(std::istream&, rule&);
 	std::istream& operator>>(std::istream&, selector&);
 
-	void execute_rules(std::vector<std::unique_ptr<rule>>& rules, selector_type type, VkHandle handle, local_context& ctx);
+	void execute_rules(std::vector<std::unique_ptr<rule>>& rules, selector_type type, VkHandle handle, global_context& global, local_context& local);
 
 	inline void (*rule_disable_callback)(rule* rule);
 }

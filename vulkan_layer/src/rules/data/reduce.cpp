@@ -1,7 +1,6 @@
 #include "rules/data.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
-#include "utils.hpp"
 
 namespace CheekyLayer::rules::datas
 {
@@ -13,34 +12,34 @@ namespace CheekyLayer::rules::datas
 		check_stream(in, ')');
 	}
 
-	data_value current_reduction_data::get(selector_type, data_type type, VkHandle, local_context& ctx, rule &)
+	data_value current_reduction_data::get(selector_type, data_type type, VkHandle, global_context&, local_context& local, rule &)
 	{
-		if(!ctx.currentReduction)
+		if(!local.currentReduction)
 			throw RULE_ERROR("no current reduction");
 
 		bool okay = true;
 		switch(type)
 		{
 			case String:
-				okay = std::holds_alternative<std::string>(*ctx.currentReduction);
+				okay = std::holds_alternative<std::string>(*local.currentReduction);
 				break;
 			case Raw:
-				okay = std::holds_alternative<std::vector<uint8_t>>(*ctx.currentReduction);
+				okay = std::holds_alternative<std::vector<uint8_t>>(*local.currentReduction);
 				break;
 			case Handle:
-				okay = std::holds_alternative<VkHandle>(*ctx.currentReduction);
+				okay = std::holds_alternative<VkHandle>(*local.currentReduction);
 				break;
 			case Number:
-				okay = std::holds_alternative<double>(*ctx.currentReduction);
+				okay = std::holds_alternative<double>(*local.currentReduction);
 				break;
 			case List:
-				okay = std::holds_alternative<data_list>(*ctx.currentReduction);
+				okay = std::holds_alternative<data_list>(*local.currentReduction);
 				break;
 		}
 		if(!okay)
 			throw RULE_ERROR("requested type "+to_string(type)+" does not match type of current reduction");
 
-		return *ctx.currentReduction;
+		return *local.currentReduction;
 	}
 
 	bool current_reduction_data::supports(selector_type, data_type)
@@ -101,22 +100,22 @@ namespace CheekyLayer::rules::datas
 		return t == m_dstType;
 	}
 
-	data_value reduce_data::get(selector_type stype, data_type type, VkHandle handle, local_context& ctx, rule& rule)
+	data_value reduce_data::get(selector_type stype, data_type type, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
-		data_list src = std::get<data_list>(m_src->get(stype, data_type::List, handle, ctx, rule));
+		data_list src = std::get<data_list>(m_src->get(stype, data_type::List, handle, global, local, rule));
 
-		auto savedElem = ctx.currentElement;
-		auto savedRedu = ctx.currentReduction;
+		auto savedElem = local.currentElement;
+		auto savedRedu = local.currentReduction;
 
-		data_value val = m_init->get(stype, m_dstType, handle, ctx, rule);
-		ctx.currentReduction = &val;
+		data_value val = m_init->get(stype, m_dstType, handle, global, local, rule);
+		local.currentReduction = &val;
 		for(data_value& elem : src.values)
 		{
-			ctx.currentElement = &elem;
-			val = m_accumulator->get(stype, m_dstType, handle, ctx, rule);
+			local.currentElement = &elem;
+			val = m_accumulator->get(stype, m_dstType, handle, global, local, rule);
 		}
-		ctx.currentReduction = savedRedu;
-		ctx.currentElement = savedElem;
+		local.currentReduction = savedRedu;
+		local.currentElement = savedElem;
 
 		return val;
 	}

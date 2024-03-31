@@ -1,11 +1,10 @@
 #include "rules/conditions.hpp"
 #include "rules/rules.hpp"
 #include "rules/execution_env.hpp"
+
 #include <compare>
-#include <cstddef>
 #include <memory>
 #include <ostream>
-#include <stdexcept>
 #include <string>
 #include <istream>
 
@@ -19,10 +18,10 @@ namespace CheekyLayer::rules::conditions
 	condition_register<compare_condition> compare_condition::reg("compare");
 	condition_register<custom_condition> custom_condition::reg("custom");
 
-	bool hash_condition::test(selector_type stype, VkHandle handle, local_context&)
+	bool hash_condition::test(selector_type stype, VkHandle handle, global_context& global, local_context&)
 	{
-		auto p = rule_env.hashes.find(handle);
-		if(p == rule_env.hashes.end())
+		auto p = global.hashes.find(handle);
+		if(p == global.hashes.end())
 			return false;
 		return p->second == m_hash;
 	}
@@ -38,12 +37,12 @@ namespace CheekyLayer::rules::conditions
 		return out;
 	}
 
-	bool mark_condition::test(selector_type stype, VkHandle handle, local_context&)
+	bool mark_condition::test(selector_type stype, VkHandle handle, global_context& global, local_context&)
 	{
-		auto p = rule_env.marks.find(handle);
-		if(p == rule_env.marks.end())
+		auto p = global.marks.find(handle);
+		if(p == global.marks.end())
 			return false;
-		return std::find(p->second.begin(), p->second.end(), m_mark) != p->second.end();
+		return p->second.contains(m_mark);
 	}
 
 	void mark_condition::read(std::istream& in)
@@ -57,32 +56,34 @@ namespace CheekyLayer::rules::conditions
 		return out;
 	}
 
-	bool with_condition::test(selector_type stype, VkHandle handle, local_context& ctx)
+	bool with_condition::test(selector_type stype, VkHandle handle, global_context& global, local_context& local)
 	{
 		std::vector<std::pair<selector_type, VkHandle>> list;
 		if(stype == selector_type::Draw)
 		{
-			std::transform(ctx.info->draw.images.begin(), ctx.info->draw.images.end(), std::back_inserter(list), [](auto h){
+			auto& info = std::get<draw_info>(*local.info);
+			std::transform(info.images.begin(), info.images.end(), std::back_inserter(list), [](auto h){
 				return std::pair{selector_type::Image, h};
 			});
-			std::transform(ctx.info->draw.vertexBuffers.begin(), ctx.info->draw.vertexBuffers.end(), std::back_inserter(list), [](auto h){
+			std::transform(info.vertexBuffers.begin(), info.vertexBuffers.end(), std::back_inserter(list), [](auto h){
 				return std::pair{selector_type::Buffer, h};
 			});
-			std::transform(ctx.info->draw.shaders.begin(), ctx.info->draw.shaders.end(), std::back_inserter(list), [](auto h){
+			std::transform(info.shaders.begin(), info.shaders.end(), std::back_inserter(list), [](auto h){
 				return std::pair{selector_type::Shader, h};
 			});
-			list.push_back({selector_type::Buffer, ctx.info->draw.indexBuffer});
+			list.push_back({selector_type::Buffer, info.indexBuffer});
 		}
 		if(stype == selector_type::Pipeline)
 		{
-			std::transform(ctx.info->pipeline.shaderStages.begin(), ctx.info->pipeline.shaderStages.end(), std::back_inserter(list), [](auto h){
+			auto& info = std::get<pipeline_info>(*local.info);
+			std::transform(info.shaderStages.begin(), info.shaderStages.end(), std::back_inserter(list), [](auto h){
 				return std::pair{selector_type::Shader, h};
 			});
 		}
 
 		for(auto [stype2, handle2] : list)
 		{
-			if(m_selector->test(stype2, handle2, ctx))
+			if(m_selector->test(stype2, handle2, global, local))
 				return true;
 		}
 
@@ -96,7 +97,7 @@ namespace CheekyLayer::rules::conditions
 
 		char end = in.get();
 		if(end != ')')
-			throw std::runtime_error("expected ')', but got '"+std::string(1, end)+"' instead");
+			throw RULE_ERROR("expected ')', but got '"+std::string(1, end)+"' instead");
 	}
 
 	std::ostream& with_condition::print(std::ostream& out)
@@ -108,9 +109,9 @@ namespace CheekyLayer::rules::conditions
 		return out;
 	}
 
-	bool not_condition::test(selector_type type, VkHandle handle, local_context& ctx)
+	bool not_condition::test(selector_type type, VkHandle handle, global_context& global, local_context& local)
 	{
-		return !m_condition->test(type, handle, ctx);
+		return !m_condition->test(type, handle, global, local);
 	}
 
 	void not_condition::read(std::istream& in)
@@ -128,11 +129,11 @@ namespace CheekyLayer::rules::conditions
 		return out;
 	}
 
-	bool or_condition::test(selector_type type, VkHandle handle, local_context& ctx)
+	bool or_condition::test(selector_type type, VkHandle handle, global_context& global, local_context& local)
 	{
 		for(auto& c : m_conditions)
 		{
-			if(c->test(type, handle, ctx))
+			if(c->test(type, handle, global, local))
 				return true;
 		}
 		return false;
@@ -166,11 +167,11 @@ namespace CheekyLayer::rules::conditions
 		return out;
 	}
 
-	bool compare_condition::test(selector_type type, VkHandle handle, local_context& ctx)
+	bool compare_condition::test(selector_type type, VkHandle handle, global_context& global, local_context& local)
 	{
 		rule dummy{};
-		data_value v1 = m_left->get(type, m_dtype, handle, ctx, dummy);
-		data_value v2 = m_right->get(type, m_dtype, handle, ctx, dummy);
+		data_value v1 = m_left->get(type, m_dtype, handle, global, local, dummy);
+		data_value v2 = m_right->get(type, m_dtype, handle, global, local, dummy);
 
 		std::partial_ordering result = std::partial_ordering::unordered;
 		switch(m_dtype)
@@ -241,7 +242,7 @@ namespace CheekyLayer::rules::conditions
 			return GreaterThan;
 		if(s=="!=" || s=="<>" || s=="NotEqual" || s=="NE" || s=="NotEqualTo")
 			return NotEqual;
-		throw std::runtime_error("unknown comparison_operator \""+s+"\"");
+		throw RULE_ERROR("unknown comparison_operator \""+s+"\"");
 	}
 
 	void compare_condition::read(std::istream& in)
@@ -264,8 +265,8 @@ namespace CheekyLayer::rules::conditions
 			m_dtype = data_type::String;
 		else if(m_left->supports(m_type, data_type::Raw) && m_right->supports(m_type, data_type::Raw))
 			m_dtype = data_type::Raw;
-		else 
-			throw std::runtime_error("only numbers and strings and raw data can be compared");
+		else
+			throw RULE_ERROR("only numbers and strings and raw data can be compared");
 	}
 
 	std::ostream& compare_condition::print(std::ostream& out)
@@ -278,9 +279,9 @@ namespace CheekyLayer::rules::conditions
 		return out;
 	}
 
-	bool custom_condition::test(selector_type, VkHandle, local_context& ctx)
+	bool custom_condition::test(selector_type, VkHandle, global_context&, local_context& local)
 	{
-		return ctx.customTag == m_tag;
+		return local.customTag == m_tag;
 	}
 
 	void custom_condition::read(std::istream& in)

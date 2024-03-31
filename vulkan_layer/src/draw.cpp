@@ -1,9 +1,6 @@
-#include "draw.hpp"
 #include "dispatch.hpp"
 #include "layer.hpp"
-#include "logger.hpp"
 #include "descriptors.hpp"
-#include "shaders.hpp"
 #include "reflection/reflectionparser.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
@@ -24,49 +21,139 @@ VkResult device::CreateSwapchainKHR(const VkSwapchainCreateInfoKHR* pCreateInfo,
 	if(result != VK_SUCCESS)
 		return result;
 
-/*
-	CheekyLayer::rules::swapchain_info info = {pCreateInfo};
-	CheekyLayer::rules::additional_info info2 = {.swapchain = info};
-
-	CheekyLayer::active_logger log = *logger << logger::begin;
-	CheekyLayer::rules::local_context ctx = { .logger = log, .info = &info2, .device = device};
-
-	CheekyLayer::rules::execute_rules(inst->rules, CheekyLayer::rules::selector_type::SwapchainCreate, (VkHandle) (*pSwapchain), ctx);
-	log << logger::end;
-*/
+	rules::swapchain_info info = {pCreateInfo};
+	rules::calling_context ctx{
+		.info = info
+	};
+	execute_rules(rules::selector_type::SwapchainCreate, (VkHandle)(*pSwapchain), ctx);
 
 	return result;
 }
+
+VkResult device::AllocateCommandBuffers(const VkCommandBufferAllocateInfo* pAllocateInfo, VkCommandBuffer* pCommandBuffers) {
+	VkResult result = dispatch.AllocateCommandBuffers(handle, pAllocateInfo, pCommandBuffers);
+	if(result != VK_SUCCESS)
+		return result;
+
+	logger->info("AllocateCommandBuffers: {}", pAllocateInfo->commandBufferCount);
+
+	for(int i=0; i<pAllocateInfo->commandBufferCount; i++)
+	{
+		commandBufferStates[pCommandBuffers[i]] = {handle};
+
+		inst->global_context.on_EndCommandBuffer[pCommandBuffers[i]] = {};
+		inst->global_context.on_QueueSubmit[pCommandBuffers[i]] = {};
+	}
+
+	return result;
 }
 
-using CheekyLayer::logger;
-using CheekyLayer::rules::VkHandle;
+void device::FreeCommandBuffers(VkCommandPool commandPool, uint32_t commandBufferCount, const VkCommandBuffer* pCommandBuffers) {
+	logger->info("FreeCommandBuffers: {}", commandBufferCount);
 
-std::map<VkPipelineLayout, PipelineLayoutInfo> pipelineLayouts;
-std::map<VkFramebuffer, FramebufferInfo> framebuffers;
-std::map<VkCommandBuffer, CommandBufferState> commandBufferStates;
-std::map<VkPipeline, PipelineState> pipelineStates;
+	for(int i=0; i<commandBufferCount; i++)
+	{
+		commandBufferStates.erase(pCommandBuffers[i]);
+
+		inst->global_context.on_EndCommandBuffer.erase(pCommandBuffers[i]);
+		inst->global_context.on_QueueSubmit.erase(pCommandBuffers[i]);
+	}
+
+	dispatch.FreeCommandBuffers(handle, commandPool, commandBufferCount, pCommandBuffers);
+}
+
+VkResult device::CreateFramebuffer(const VkFramebufferCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkFramebuffer* pFramebuffer)
+{
+	VkResult result = dispatch.CreateFramebuffer(handle, pCreateInfo, pAllocator, pFramebuffer);
+	framebuffers[*pFramebuffer] = framebuffer(pCreateInfo);
+	return result;
+}
+
+VkResult device::CreatePipelineLayout(const VkPipelineLayoutCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkPipelineLayout* pPipelineLayout)
+{
+	VkResult result = dispatch.CreatePipelineLayout(handle, pCreateInfo, pAllocator, pPipelineLayout);
+	if(result != VK_SUCCESS)
+		return result;
+
+	pipeline_layout_info& info = pipelineLayouts[*pPipelineLayout];
+	info.setLayouts = std::vector<VkDescriptorSetLayout>(pCreateInfo->pSetLayouts, pCreateInfo->pSetLayouts+pCreateInfo->setLayoutCount);
+	info.pushConstantRanges = std::vector<VkPushConstantRange>(pCreateInfo->pPushConstantRanges, pCreateInfo->pPushConstantRanges+pCreateInfo->pushConstantRangeCount);
+
+	return result;
+}
+
+VkResult device::CreateGraphicsPipelines(VkPipelineCache pipelineCache, uint32_t createInfoCount, const VkGraphicsPipelineCreateInfo* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines)
+{
+	std::vector<std::remove_cvref_t<decltype(std::declval<rules::local_context>().creationCallbacks)>> callbacks;
+	for(unsigned int i=0; i<createInfoCount; i++) {
+		VkGraphicsPipelineCreateInfo* info = const_cast<VkGraphicsPipelineCreateInfo*>(&pCreateInfos[i]);
+
+		std::vector<VkHandle> shaderStages;
+		std::transform(info->pStages, info->pStages+info->stageCount, std::back_inserter(shaderStages), [this](VkPipelineShaderStageCreateInfo s){
+			return customShaderHandles[s.module];
+		});
+
+		rules::pipeline_info pinfo = {shaderStages, info};
+		rules::calling_context ctx{
+			.info = pinfo
+		};
+		execute_rules(rules::selector_type::Pipeline, VK_NULL_HANDLE, ctx);
+
+		for(const auto& o : ctx.overrides) {
+			try {
+				reflection::parse_assign(o, info, "VkGraphicsPipelineCreateInfo");
+			} catch(const std::exception& e) {
+				logger->error("Failed to process override \"{}\": {}", o, e.what());
+			}
+		}
+		callbacks.push_back(ctx.creationCallbacks);
+	}
+	VkResult result = dispatch.CreateGraphicsPipelines(handle, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines);
+
+	if(result != VK_SUCCESS)
+		return result;
+
+	for(unsigned int i=0; i<createInfoCount; i++) {
+		if(pPipelines[i] == VK_NULL_HANDLE)
+			continue;
+
+		pipeline_state state = {};
+		VkGraphicsPipelineCreateInfo info = pCreateInfos[i];
+
+		state.stages.resize(info.stageCount);
+		for(unsigned int j=0; j<info.stageCount; j++) {
+			VkPipelineShaderStageCreateInfo shaderInfo = info.pStages[j];
+			VkHandle customHandle = customShaderHandles[shaderInfo.module];
+
+			auto p = inst->global_context.hashes.find(customHandle);
+			std::string hash = "unknown";
+			if(p != inst->global_context.hashes.end())
+				hash = p->second;
+
+			state.stages[j] = {shaderInfo.stage, shaderInfo.module, customHandle, hash, std::string(shaderInfo.pName)};
+		}
+		state.vertexBindingDescriptions = std::vector(info.pVertexInputState->pVertexBindingDescriptions,
+			info.pVertexInputState->pVertexBindingDescriptions + info.pVertexInputState->vertexBindingDescriptionCount);
+		state.vertexAttributeDescriptions = std::vector(info.pVertexInputState->pVertexAttributeDescriptions,
+			info.pVertexInputState->pVertexAttributeDescriptions + info.pVertexInputState->vertexAttributeDescriptionCount);
+
+		pipelineStates[pPipelines[i]] = std::move(state);
+
+		for(auto& cb : callbacks[i]) {
+			cb(pPipelines[i]);
+		}
+	}
+	return result;
+}
+
+}
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_AllocateCommandBuffers(
     VkDevice                                    device,
     const VkCommandBufferAllocateInfo*          pAllocateInfo,
     VkCommandBuffer*                            pCommandBuffers)
 {
-	VkResult result = device_dispatch[GetKey(device)].AllocateCommandBuffers(device, pAllocateInfo, pCommandBuffers);
-	CheekyLayer::active_logger log = *logger << logger::begin << "AllocateCommandBuffers: " << pAllocateInfo->commandBufferCount << " -> {";
-	for(int i=0; i<pAllocateInfo->commandBufferCount; i++)
-	{
-		log << pCommandBuffers[i] << (i==pAllocateInfo->commandBufferCount-1?"}":",");
-		commandBufferStates[pCommandBuffers[i]] = {device};
-
-		CheekyLayer::rules::rule_env.on_EndCommandBuffer[pCommandBuffers[i]] = {};
-		CheekyLayer::rules::rule_env.on_QueueSubmit[pCommandBuffers[i]] = {};
-	}
-	log << logger::end;
-
-	quick_dispatch = device_dispatch[GetKey(device)];
-
-	return result;
+	return CheekyLayer::get_device(device).AllocateCommandBuffers(pAllocateInfo, pCommandBuffers);
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_FreeCommandBuffers(
@@ -75,17 +162,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_FreeCommandBuffers(
     uint32_t                                    commandBufferCount,
     const VkCommandBuffer*                      pCommandBuffers)
 {
-	CheekyLayer::active_logger log = *logger << logger::begin << "FreeCommandBuffers: " << commandBufferCount << " -> {";
-	for(int i=0; i<commandBufferCount; i++)
-	{
-		log << pCommandBuffers[i] << (i==commandBufferCount-1?"}":",");
-		commandBufferStates.erase(pCommandBuffers[i]);
-
-		CheekyLayer::rules::rule_env.on_EndCommandBuffer.erase(pCommandBuffers[i]);
-		CheekyLayer::rules::rule_env.on_QueueSubmit.erase(pCommandBuffers[i]);
-	}
-	log << logger::end;
-	device_dispatch[GetKey(device)].FreeCommandBuffers(device, commandPool, commandBufferCount, pCommandBuffers);
+	return CheekyLayer::get_device(device).FreeCommandBuffers(commandPool, commandBufferCount, pCommandBuffers);
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateFramebuffer(
@@ -94,12 +171,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateFramebuffer(
     const VkAllocationCallbacks*                pAllocator,
     VkFramebuffer*                              pFramebuffer)
 {
-	VkResult result = device_dispatch[GetKey(device)].CreateFramebuffer(device, pCreateInfo, pAllocator, pFramebuffer);
-
-	FramebufferInfo i(pCreateInfo);
-	framebuffers[*pFramebuffer] = i;
-
-	return result;
+	return CheekyLayer::get_device(device).CreateFramebuffer(pCreateInfo, pAllocator, pFramebuffer);
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreatePipelineLayout(
@@ -108,16 +180,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreatePipelineLayout(
     const VkAllocationCallbacks*                pAllocator,
     VkPipelineLayout*                           pPipelineLayout)
 {
-	VkResult result = device_dispatch[GetKey(device)].CreatePipelineLayout(device, pCreateInfo, pAllocator, pPipelineLayout);
-
-	if(result == VK_SUCCESS)
-	{
-		PipelineLayoutInfo& info = pipelineLayouts[*pPipelineLayout];
-		info.setLayouts = std::vector<VkDescriptorSetLayout>(pCreateInfo->pSetLayouts, pCreateInfo->pSetLayouts+pCreateInfo->setLayoutCount);
-		info.pushConstantRanges = std::vector<VkPushConstantRange>(pCreateInfo->pPushConstantRanges, pCreateInfo->pPushConstantRanges+pCreateInfo->pushConstantRangeCount);
-	}
-
-	return result;
+	return CheekyLayer::get_device(device).CreatePipelineLayout(pCreateInfo, pAllocator, pPipelineLayout);
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateGraphicsPipelines(
@@ -128,77 +191,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateGraphicsPipelines(
     const VkAllocationCallbacks*                pAllocator,
     VkPipeline*                                 pPipelines)
 {
-	CheekyLayer::active_logger log = *logger << logger::begin;
-
-	std::vector<decltype(std::declval<CheekyLayer::rules::local_context>().creationConsumers)> consumers;
-	for(int i=0; i<createInfoCount; i++)
-	{
-		VkGraphicsPipelineCreateInfo* info = const_cast<VkGraphicsPipelineCreateInfo*>(pCreateInfos+i);
-
-		std::vector<VkHandle> shaderStages;
-		std::transform(info->pStages, info->pStages+info->stageCount, std::back_inserter(shaderStages), [](VkPipelineShaderStageCreateInfo s){
-			return customShaderHandles[s.module];
-		});
-
-		CheekyLayer::rules::pipeline_info pinfo = {shaderStages, info};
-		CheekyLayer::rules::additional_info info2 = { .pipeline = pinfo };
-
-		CheekyLayer::rules::local_context ctx = { .logger = log, .info = &info2, .device = device };
-		CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::Pipeline, VK_NULL_HANDLE, ctx);
-
-		for(auto o : ctx.overrides)
-		{
-			try
-			{
-				CheekyLayer::reflection::parse_assign(o, info, "VkGraphicsPipelineCreateInfo");
-			}
-			catch(const std::exception& e)
-			{
-				log << logger::error << "Failed to process override \"" << o << "\": " << e.what();
-			}
-		}
-		consumers.push_back(ctx.creationConsumers);
-	}
-	log << logger::end;
-
-    VkResult result = device_dispatch[GetKey(device)].CreateGraphicsPipelines(device, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines);
-
-	if(result == VK_SUCCESS)
-	{
-		for(int i=0; i<createInfoCount; i++)
-		{
-			if(pPipelines[i] == VK_NULL_HANDLE)
-				continue;
-
-			PipelineState state = {};
-			VkGraphicsPipelineCreateInfo info = pCreateInfos[i];
-
-			state.stages.resize(info.stageCount);
-			for(int j=0; j<info.stageCount; j++)
-			{
-				VkPipelineShaderStageCreateInfo shaderInfo = info.pStages[j];
-				VkHandle customHandle = customShaderHandles[shaderInfo.module];
-
-				auto p = CheekyLayer::rules::rule_env.hashes.find(customHandle);
-				std::string hash = "unknown";
-				if(p != CheekyLayer::rules::rule_env.hashes.end())
-					hash = p->second;
-
-				state.stages[j] = {shaderInfo.stage, shaderInfo.module, customHandle, hash, std::string(shaderInfo.pName)};
-			}
-			state.vertexBindingDescriptions = std::vector(info.pVertexInputState->pVertexBindingDescriptions,
-				info.pVertexInputState->pVertexBindingDescriptions + info.pVertexInputState->vertexBindingDescriptionCount);
-			state.vertexAttributeDescriptions = std::vector(info.pVertexInputState->pVertexAttributeDescriptions,
-				info.pVertexInputState->pVertexAttributeDescriptions + info.pVertexInputState->vertexAttributeDescriptionCount);
-
-			pipelineStates[pPipelines[i]] = std::move(state);
-
-			for(auto& consumer : consumers[i])
-				consumer(pPipelines[i]);
-		}
-	}
-
-    return result;
+	return CheekyLayer::get_device(device).CreateGraphicsPipelines(pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines);
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindDescriptorSets(

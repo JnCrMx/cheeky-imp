@@ -34,6 +34,7 @@ namespace CheekyLayer
 			std::filesystem::path dump_directory;
 
 			bool override;
+			bool override_png_flipped;
 			std::filesystem::path override_directory;
 		private:
 			std::unordered_map<std::string, std::string> values;

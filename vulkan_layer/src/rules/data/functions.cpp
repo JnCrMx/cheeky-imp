@@ -1,7 +1,6 @@
 #include "rules/data.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
-#include "utils.hpp"
 
 namespace CheekyLayer::rules::datas
 {
@@ -39,41 +38,39 @@ namespace CheekyLayer::rules::datas
 
 	bool call_function_data::supports(selector_type stype, data_type dtype)
 	{
-		if(!rule_env.user_functions.contains(m_function))
-			return true;
-		return rule_env.user_functions.at(m_function).data->supports(stype, dtype);
+		return true;
 	}
 
-	data_value call_function_data::get(selector_type stype, data_type dtype, VkHandle handle, local_context& ctx, rule& rule)
+	data_value call_function_data::get(selector_type stype, data_type dtype, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
-		if(!rule_env.user_functions.contains(m_function))
+		if(!global.user_functions.contains(m_function))
 			throw RULE_ERROR("function not found: " + m_function);
-		auto& func = rule_env.user_functions.at(m_function);
+		auto& func = global.user_functions.at(m_function);
 		if(func.arguments.size() - func.default_arguments.size() > m_args.size())
 			throw RULE_ERROR("not enough arguments to call function " + m_function);
 
 		struct restore {
-			decltype(ctx)& ctx;
+			decltype(local)& ctx;
 			decltype(ctx.local_variables) vars;
 
 			restore(decltype(ctx)& ctx) : ctx(ctx), vars(ctx.local_variables) {}
 			~restore() {ctx.local_variables = vars;}
-		} restore = {ctx};
+		} restore = {local};
 
 		int args = std::min(func.arguments.size(), m_args.size());
 		for(int i=0; i<args; i++)
 		{
 			std::string argName = "_"+std::to_string(i+1);
-			data_value value = m_args.at(i)->get(stype, func.arguments.at(i), handle, ctx, rule);
-			ctx.local_variables[argName] = value;
+			data_value value = m_args.at(i)->get(stype, func.arguments.at(i), handle, global, local, rule);
+			local.local_variables[argName] = value;
 		}
 		for(int i=args; i<func.arguments.size(); i++)
 		{
 			std::string argName = "_"+std::to_string(i+1);
 			int index = i-func.arguments.size()+func.default_arguments.size();
-			data_value value = func.default_arguments.at(index)->get(stype, func.arguments.at(i), handle, ctx, rule);
-			ctx.local_variables[argName] = value;
+			data_value value = func.default_arguments.at(index)->get(stype, func.arguments.at(i), handle, global, local, rule);
+			local.local_variables[argName] = value;
 		}
-		return func.data->get(stype, dtype, handle, ctx, rule);
+		return func.data->get(stype, dtype, handle, global, local, rule);
 	}
 }

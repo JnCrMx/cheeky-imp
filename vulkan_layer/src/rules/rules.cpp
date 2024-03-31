@@ -1,5 +1,4 @@
 #include "rules/rules.hpp"
-#include "logger.hpp"
 #include "rules/execution_env.hpp"
 
 #include <exception>
@@ -204,25 +203,25 @@ namespace CheekyLayer::rules
 		throw std::runtime_error("unknown data_type \""+s+"\"");
 	}
 
-	bool selector::test(selector_type type, VkHandle handle, local_context& ctx)
+	bool selector::test(selector_type type, VkHandle handle, global_context& global, local_context& local)
 	{
 		if(type != m_type)
 			return false;
 		for(auto& c : m_conditions)
 		{
-			if(!c->test(type, handle, ctx))
+			if(!c->test(type, handle, global, local))
 				return false;
 		}
 		return true;
 	}
 
-	void rule::execute(selector_type type, VkHandle handle, local_context& ctx)
+	void rule::execute(selector_type type, VkHandle handle, global_context& global, local_context& local)
 	{
 		if(m_disabled)
 			return;
 
-		if(m_selector->test(type, handle, ctx))
-			m_action->execute(type, handle, ctx, *this);
+		if(m_selector->test(type, handle, global, local))
+			m_action->execute(type, handle, global, local, *this);
 	}
 
 	void rule::disable()
@@ -234,27 +233,28 @@ namespace CheekyLayer::rules
 		}
 	}
 
-	void execute_rules(std::vector<std::unique_ptr<rule>>& rules, selector_type type, VkHandle handle, local_context& ctx)
+	void execute_rules(std::vector<std::unique_ptr<rule>>& rules, selector_type type, VkHandle handle, global_context& global, local_context& local)
 	{
 		for(auto& r : rules)
 		{
 			try
 			{
-				r->execute(type, handle, ctx);
+				r->execute(type, handle, global, local);
 			}
 			catch(const rule_error& ex)
 			{
-				ctx.logger << logger::error << "Failed to execute a rule: " << ex.what() << "\n";
+				std::ostringstream oss;
 				backward::Printer p;
 				p.color_mode = backward::ColorMode::never;
 				p.object = true;
 				p.address = true;
 				p.snippet = true;
-				p.print(ex.stack_trace, ctx.logger.raw());
+				p.print(ex.stack_trace, oss);
+				local.logger.error("Failed to execute a rule: {}\n{}", ex.what(), oss.str());
 			}
 			catch(const std::exception& ex)
 			{
-				ctx.logger << logger::error << "Failed to execute a rule: " << ex.what() << "(" << typeid(ex).name() << ")";
+				local.logger.error("Failed to execute a rule: {}", ex.what());
 			}
 		}
 	}

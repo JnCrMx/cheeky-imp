@@ -1,10 +1,7 @@
 #include "rules/data.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
-#include "reflection/reflectionparser.hpp"
 #include "utils.hpp"
-
-#include <iomanip>
 
 namespace CheekyLayer::rules::datas
 {
@@ -23,7 +20,7 @@ namespace CheekyLayer::rules::datas
 		check_stream(in, ')');
 	}
 
-	data_value string_data::get(selector_type, data_type type, VkHandle, local_context &, rule &)
+	data_value string_data::get(selector_type, data_type type, VkHandle, global_context&, local_context&, rule &)
 	{
 		std::string s = m_string;
 		replace(s, "$]", ")");
@@ -38,7 +35,7 @@ namespace CheekyLayer::rules::datas
 				std::transform(s.begin(), s.end(), v.begin(), [](char a) {return (uint8_t)a;});
 				return v; }
 			default:
-				throw std::runtime_error("cannot return data type "+to_string(type));
+				throw RULE_ERROR("cannot return data type "+to_string(type));
 		}
 	}
 
@@ -70,14 +67,14 @@ namespace CheekyLayer::rules::datas
 		check_stream(in, ')');
 	}
 
-	data_value concat_data::get(selector_type stype, data_type type, VkHandle handle, local_context& ctx, rule& rule)
+	data_value concat_data::get(selector_type stype, data_type type, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
 		if(type == data_type::String)
 		{
 			std::string str = "";
 			for(auto& p : m_parts)
 			{
-				str += std::get<std::string>(p->get(stype, type, handle, ctx, rule));
+				str += std::get<std::string>(p->get(stype, type, handle, global, local, rule));
 			}
 			return str;
 		}
@@ -87,12 +84,12 @@ namespace CheekyLayer::rules::datas
 
 			for(auto& p : m_parts)
 			{
-				auto v = std::get<std::vector<uint8_t>>(p->get(stype, type, handle, ctx, rule));
+				auto v = std::get<std::vector<uint8_t>>(p->get(stype, type, handle, global, local, rule));
 				std::copy(v.begin(), v.end(), std::back_inserter(vs));
 			}
 			return vs;
 		}
-		throw std::runtime_error("cannot concatenate data type "+to_string(type));
+		throw RULE_ERROR("cannot concatenate data type "+to_string(type));
 	}
 
 	bool concat_data::supports(selector_type stype, data_type type)
@@ -119,11 +116,11 @@ namespace CheekyLayer::rules::datas
 		check_stream(in, ')');
 	}
 
-	data_value received_data::get(selector_type, data_type type, VkHandle, local_context& ctx, rule &)
+	data_value received_data::get(selector_type, data_type type, VkHandle, global_context&, local_context& local, rule &)
 	{
 		if(type != data_type::Raw)
-			throw std::runtime_error("cannot return data type "+to_string(type));
-		receive_info& info = ctx.info->receive;
+			throw RULE_ERROR("cannot return data type "+to_string(type));
+		receive_info& info = std::get<receive_info>(*local.info);
 		return std::vector<uint8_t>(info.buffer, info.buffer + info.size);
 	}
 
@@ -144,14 +141,14 @@ namespace CheekyLayer::rules::datas
 		check_stream(in, ')');
 
 		if(!m_data->supports(m_type, data_type::String))
-			throw std::runtime_error("data does not support string data");
+			throw RULE_ERROR("data does not support string data");
 	}
 
-	data_value string_clean_data::get(selector_type stype, data_type type, VkHandle handle, local_context& ctx, rule& rule)
+	data_value string_clean_data::get(selector_type stype, data_type type, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
 		if(type != data_type::String)
-			throw std::runtime_error("cannot return data type "+to_string(type));
-		std::string s = std::get<std::string>(m_data->get(stype, data_type::String, handle, ctx, rule));
+			throw RULE_ERROR("cannot return data type "+to_string(type));
+		std::string s = std::get<std::string>(m_data->get(stype, data_type::String, handle, global, local, rule));
 
 		s.erase(std::remove_if(s.begin(), s.end(), [](char c) {
 			return !std::isprint(c);
@@ -179,10 +176,10 @@ namespace CheekyLayer::rules::datas
 		check_stream(in, ')');
 	}
 
-	data_value number_data::get(selector_type, data_type type, VkHandle, local_context &, rule &)
+	data_value number_data::get(selector_type, data_type type, VkHandle, global_context&, local_context &, rule &)
 	{
 		if(type != data_type::Number)
-			throw std::runtime_error("cannot return data type "+to_string(type));
+			throw RULE_ERROR("cannot return data type "+to_string(type));
 
 		return m_number;
 	}
@@ -206,18 +203,18 @@ namespace CheekyLayer::rules::datas
 		skip_ws(in);
 
 		if(!m_data->supports(m_type, data_type::String))
-			throw std::runtime_error("data does not support string data");
+			throw RULE_ERROR("data does not support string data");
 
 		in >> std::quoted(m_delimiter);
 		skip_ws(in);
 		check_stream(in, ')');
 	}
 
-	data_value split_data::get(selector_type stype, data_type type, VkHandle handle, local_context& ctx, rule& rule)
+	data_value split_data::get(selector_type stype, data_type type, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
 		if(type != data_type::List)
-			throw std::runtime_error("cannot return data type "+to_string(type));
-		std::string s = std::get<std::string>(m_data->get(stype, data_type::String, handle, ctx, rule));
+			throw RULE_ERROR("cannot return data type "+to_string(type));
+		std::string s = std::get<std::string>(m_data->get(stype, data_type::String, handle, global, local, rule));
 
 		data_list list;
 		std::string::size_type pos = 0;
@@ -264,9 +261,9 @@ namespace CheekyLayer::rules::datas
 		check_stream(in, ')');
 	}
 
-	data_value at_data::get(selector_type stype, data_type dtype, VkHandle handle, local_context& ctx, rule& rule)
+	data_value at_data::get(selector_type stype, data_type dtype, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
-		auto list = std::get<data_list>(m_src->get(stype, data_type::List, handle, ctx, rule));
+		auto list = std::get<data_list>(m_src->get(stype, data_type::List, handle, global, local, rule));
 		auto& thing = list.values.at(m_index);
 
 		bool okay = true;

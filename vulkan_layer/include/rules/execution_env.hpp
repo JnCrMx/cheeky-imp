@@ -2,9 +2,10 @@
 
 #include <cstdint>
 #include <memory>
+#include <set>
+#include <spdlog/logger.h>
 #include <sys/socket.h>
 #include <vulkan/vulkan.h>
-#include "logger.hpp"
 #include <map>
 #include <string>
 #include <vector>
@@ -15,6 +16,11 @@
 #include <vulkan/vulkan_core.h>
 #include "rules/ipc.hpp"
 #include "reflection/custom_structs.hpp"
+
+namespace CheekyLayer {
+	struct instance;
+	struct device;
+}
 
 struct CommandBufferState;
 namespace CheekyLayer::rules
@@ -42,7 +48,7 @@ namespace CheekyLayer::rules
 	class global_context
 	{
 		public:
-			std::map<VkHandle, std::vector<std::string>> marks;
+			std::map<VkHandle, std::set<std::string>> marks;
 			std::map<VkHandle, std::string> hashes;
 
 			std::map<VkCommandBuffer, std::vector<std::function<void(local_context&)>>> on_EndCommandBuffer;
@@ -62,16 +68,12 @@ namespace CheekyLayer::rules
 				on_EndRenderPass[commandBuffer].push_back(function);
 			}
 
-			std::map<std::string, std::unique_ptr<ipc::file_descriptor>> fds;
-
+			std::unordered_map<std::string, std::unique_ptr<ipc::file_descriptor>> fds;
 			std::vector<std::thread> threads;
 
-			std::map<std::string, data_value> global_variables;
-
-			std::map<std::string, user_function> user_functions;
+			std::unordered_map<std::string, data_value> global_variables;
+			std::unordered_map<std::string, user_function> user_functions;
 	};
-
-	inline global_context rule_env;
 
 	struct draw_info
 	{
@@ -107,34 +109,56 @@ namespace CheekyLayer::rules
 		const VkSwapchainCreateInfoKHR* info;
 	};
 
-	union additional_info
+	using additional_info = std::variant<
+		draw_info,
+		pipeline_info,
+		receive_info,
+		present_info,
+		swapchain_info
+	>;
+
+	struct calling_context
 	{
-		draw_info draw;
-		pipeline_info pipeline;
-		receive_info receive;
-		present_info present;
-		swapchain_info swapchain;
+		std::function<void(spdlog::logger&)> printVerbose;
+		std::optional<additional_info> info;
+
+		VkCommandBuffer commandBuffer;
+		CommandBufferState* commandBufferState;
+
+		bool canceled;
+		std::vector<std::string> overrides;
+		std::string customTag;
+		std::vector<std::function<void(VkHandle)>> creationCallbacks;
+
+		std::unordered_map<std::string, data_value> local_variables;
+
+		void* customPointer;
 	};
 
 	struct local_context
 	{
-		active_logger& logger;
-		std::optional<std::function<void(active_logger)>> printVerbose;
+		spdlog::logger& logger;
+		std::function<void(spdlog::logger&)> printVerbose;
+
 		additional_info* info;
+
+		CheekyLayer::instance* instance;
+		CheekyLayer::device* device;
+
 		VkCommandBuffer commandBuffer;
-		VkDevice device;
-		bool canceled = false;
-		std::vector<std::string> overrides;
 		CommandBufferState* commandBufferState;
-		std::string customTag;
-		std::vector<std::function<void(VkHandle)>> creationConsumers;
+
+		bool& canceled;
+		std::vector<std::string>& overrides;
+		const std::string& customTag;
+		std::vector<std::function<void(VkHandle)>>& creationCallbacks;
 
 		int currentIndex;
 		data_value* currentElement;
 		data_value* currentReduction;
 
-		std::map<std::string, data_value> local_variables;
+		std::unordered_map<std::string, data_value>& local_variables;
 
-		void* customPointer;
+		void*& customPointer;
 	};
 }

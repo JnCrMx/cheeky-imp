@@ -20,7 +20,7 @@ namespace CheekyLayer::rules::actions
      * mark(<mark>)
      * \endcode
 	 * \param <mark> The string to make the handle with. Must not contain ')'.
-	 * 
+	 *
 	 * \par Example
 	 * This rule marks any image with the \ref conditions::hash_condition "hash" "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 	 * with the string "my-image".
@@ -33,7 +33,7 @@ namespace CheekyLayer::rules::actions
 		public:
 			mark_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			std::string m_mark;
@@ -42,7 +42,7 @@ namespace CheekyLayer::rules::actions
 	};
 
 	/** Removes one mark or all marks from a handle.
-	 * 
+	 *
 	 * \par Usage
 	 * \code{.unparsed}
 	 * unmark(*)
@@ -51,7 +51,7 @@ namespace CheekyLayer::rules::actions
 	 * 1. Removes all marks from the handle.
 	 * 2. Removes on mark from the handle.
 	 * \param <mark> The mark to remove from the handle. Must not contain ')'.
-	 * 
+	 *
 	 * \par Example
 	 * This rule removes the \ref actions::mark_action "mark" "hello" from all images \ref conditions::mark_condition "marked" with it.
 	 * \code{.unparsed}
@@ -63,7 +63,7 @@ namespace CheekyLayer::rules::actions
 		public:
 			unmark_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			std::string m_mark;
@@ -123,7 +123,7 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 		public:
 			verbose_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 
@@ -162,7 +162,7 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 		public:
 			sequence_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			std::vector<std::unique_ptr<action>> m_actions;
@@ -178,7 +178,7 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 					throw std::runtime_error("the \"each\" action is only supported for draw selectors, but not for "+to_string(type)+" selectors");
 			}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			std::unique_ptr<selector> m_selector;
@@ -199,7 +199,7 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 		public:
 			on_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		protected:
 			on_action_event on_action_event_from_string(std::string s)
@@ -239,7 +239,7 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 		public:
 			disable_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 
@@ -254,7 +254,7 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 					throw std::runtime_error("the \"cancel\" action is only supported for draw selectors, but not for "+to_string(type)+" selectors");
 			}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 
@@ -266,7 +266,7 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 		public:
 			log_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			std::string m_text;
@@ -279,7 +279,7 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 		public:
 			log_extended_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			std::unique_ptr<data> m_data;
@@ -292,7 +292,7 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 		public:
 			override_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			std::string m_expression;
@@ -305,7 +305,7 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 		public:
 			socket_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			std::string m_name;
@@ -322,7 +322,7 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 		public:
 			server_socket_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			std::string m_name;
@@ -339,7 +339,7 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 		public:
 			write_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			std::string m_fd;
@@ -359,11 +359,11 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 		public:
 			load_image_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 
-			void workTry(VkHandle handle, std::string optFilename, std::vector<uint8_t> optData);
-			void work(VkHandle handle, std::string optFilename, std::vector<uint8_t> optData);
+			void workTry(device&, VkHandle handle, std::string optFilename, std::vector<uint8_t> optData);
+			void work(device&, VkHandle handle, std::string optFilename, std::vector<uint8_t> optData);
 		private:
 			std::unique_ptr<data> m_target;
 			mode m_mode;
@@ -378,10 +378,10 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 		public:
 			preload_image_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 
-			void work(VkHandle handle, std::string optFilename);
+			void work(device& device, VkHandle handle, std::string optFilename);
 		private:
 			std::unique_ptr<data> m_target;
 			std::unique_ptr<data> m_filename;
@@ -397,7 +397,7 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 					throw std::runtime_error("the \"dumpfb\" action is only supported for draw selectors, but not for "+to_string(type)+" selectors");
 			}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			int m_attachment;
@@ -410,7 +410,7 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 		public:
 			every_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			int m_i = 0;
@@ -419,13 +419,13 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 
 			static action_register<every_action> reg;
 	};
-	
+
 	class buffer_copy_action : public action
 	{
 		public:
 			buffer_copy_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			std::unique_ptr<data> m_src;
@@ -444,7 +444,7 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 		public:
 			set_global_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			data_type m_dtype;
@@ -460,7 +460,7 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 		public:
 			set_local_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			data_type m_dtype;
@@ -476,7 +476,7 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 		public:
 			thread_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			std::unique_ptr<action> m_action;
@@ -484,9 +484,10 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 
 			bool m_done = false;
 			std::jthread m_thread;
-			
-			VkDevice m_device;
-			std::map<std::string, data_value> m_local_variables;
+
+			instance* m_instance;
+			device* m_device;
+			std::remove_cvref_t<decltype(std::declval<local_context>().local_variables)> m_local_variables;
 
 			static action_register<thread_action> reg;
 	};
@@ -496,7 +497,7 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 		public:
 			define_function_action(selector_type type) : action(type) {}
 			virtual void read(std::istream&);
-			virtual void execute(selector_type, VkHandle, local_context&, rule&);
+			virtual void execute(selector_type, VkHandle, global_context&, local_context&, rule&);
 			virtual std::ostream& print(std::ostream&);
 		private:
 			std::string m_name;
@@ -504,8 +505,8 @@ CmdDraw: on device 0xabcdef from command buffer 0xabcdef with pipeline 0xabcdef
 			std::unique_ptr<data> m_function;
 			std::vector<std::unique_ptr<data>> m_default_arguments{};
 
-			void register_function();
-		
+			void register_function(global_context& global);
+
 			static action_register<define_function_action> reg;
 	};
 }

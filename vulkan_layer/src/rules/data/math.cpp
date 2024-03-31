@@ -1,7 +1,6 @@
 #include "rules/data.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
-#include "utils.hpp"
 
 #include <exprtk.hpp>
 #include <iomanip>
@@ -34,7 +33,7 @@ namespace CheekyLayer::rules::datas
 				of << "Variable \"";
 				data->print(of);
 				of << "\" does not support type Number.";
-				throw std::runtime_error(of.str());
+				throw RULE_ERROR(of.str());
 			}
 			m_variables[name] = std::move(data);
 		}
@@ -54,20 +53,20 @@ namespace CheekyLayer::rules::datas
 
 		exprtk::parser<double> parser;
 		if(!parser.compile(m_expression, expr))
-			throw std::runtime_error("Cannot parse expression: "+parser.error());
+			throw RULE_ERROR("Cannot parse expression: "+parser.error());
 	}
 
-	data_value math_data::get(selector_type stype, data_type type, VkHandle handle, local_context& ctx, rule& rule)
+	data_value math_data::get(selector_type stype, data_type type, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
 		if(type != data_type::Number)
-			throw std::runtime_error("cannot return data type "+to_string(type));
+			throw RULE_ERROR("cannot return data type "+to_string(type));
 
 		exprtk::expression<double> expr;
 		exprtk::symbol_table<double> table;
 
 		for(auto& [name, ptr] : m_variables)
 		{
-			double value = std::get<double>(ptr->get(stype, Number, handle, ctx, rule));
+			double value = std::get<double>(ptr->get(stype, Number, handle, global, local, rule));
 			table.add_constant(name, value);
 		}
 		table.add_constants();
@@ -76,7 +75,7 @@ namespace CheekyLayer::rules::datas
 
 		exprtk::parser<double> parser;
 		if(!parser.compile(m_expression, expr))
-			throw std::runtime_error("Cannot parse expression: "+parser.error());
+			throw RULE_ERROR("Cannot parse expression: "+parser.error());
 
 		return expr.value();
 	}

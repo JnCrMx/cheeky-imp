@@ -1,10 +1,9 @@
-#include "descriptors.hpp"
 #include "draw.hpp"
 #include "rules/data.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
-#include "reflection/vkreflection.hpp"
 #include "reflection/reflectionparser.hpp"
+#include "objects.hpp"
 
 namespace CheekyLayer::rules::datas
 {
@@ -24,22 +23,22 @@ namespace CheekyLayer::rules::datas
 				reflection::parse_get_type(m_path, "VkCmdDrawIndexed");
 				break;
 			default:
-				throw std::runtime_error("cannot work with selector type "+to_string(m_type));
+				throw RULE_ERROR("cannot work with selector type "+to_string(m_type));
 		}
 	}
 
-	data_value vkstruct_data::get(selector_type stype, data_type type, VkHandle handle, local_context& ctx, rule& rule)
+	data_value vkstruct_data::get(selector_type stype, data_type type, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
 		const void* structData;
 		std::string structType;
 		switch(stype)
 		{
 			case selector_type::Pipeline:
-				structData = ctx.info->pipeline.info;
+				structData = std::get<pipeline_info>(*local.info).info;
 				structType = "VkGraphicsPipelineCreateInfo";
 				break;
 			case selector_type::Draw: {
-				auto v = ctx.info->draw.info;
+				auto v = std::get<draw_info>(*local.info).info;
 				if(std::holds_alternative<const reflection::VkCmdDrawIndexed*>(v))
 				{
 					structData = std::get<const reflection::VkCmdDrawIndexed*>(v);
@@ -53,7 +52,7 @@ namespace CheekyLayer::rules::datas
 				break;
 			}
 			default:
-				throw std::runtime_error("cannot work with selector type "+to_string(stype));
+				throw RULE_ERROR("cannot work with selector type "+to_string(stype));
 		}
 
 		switch(type)
@@ -68,7 +67,7 @@ namespace CheekyLayer::rules::datas
 				std::copy((uint8_t*)&r, (uint8_t*)(&r+1), v.begin());
 				return v; }
 			default:
-				throw std::runtime_error("cannot return data type "+to_string(type));
+				throw RULE_ERROR("cannot return data type "+to_string(type));
 		}
 	}
 
@@ -100,12 +99,12 @@ namespace CheekyLayer::rules::datas
 		check_stream(in, ')');
 	}
 
-	data_value vkdescriptor_data::get(selector_type, data_type, VkHandle, local_context& ctx, rule &)
+	data_value vkdescriptor_data::get(selector_type, data_type, VkHandle, global_context& global, local_context& local, rule &)
 	{
-		VkDescriptorSet set = ctx.commandBufferState->descriptorSets.at(m_set);
-		const DescriptorState& descriptorState = descriptorStates.at(set);
-		const DescriptorBinding& binding = descriptorState.bindings.at(m_binding);
-		const DescriptorElement& element = binding.arrayElements.at(m_arrayIndex);
+		VkDescriptorSet set = local.commandBufferState->descriptorSets.at(m_set);
+		const descriptor_state& descriptorState = local.device->descriptorStates.at(set);
+		const descriptor_binding& binding = descriptorState.bindings.at(m_binding);
+		const descriptor_element& element = binding.arrayElements.at(m_arrayIndex);
 
 		data_value handle = element.handle;
 
@@ -147,7 +146,7 @@ namespace CheekyLayer::rules::datas
 		check_stream(in, ')');
 	}
 
-	data_value vkhandle_data::get(selector_type, data_type, VkHandle handle, local_context &, rule &)
+	data_value vkhandle_data::get(selector_type, data_type, VkHandle handle, global_context&, local_context &, rule &)
 	{
 		return handle;
 	}

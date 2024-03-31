@@ -1,42 +1,14 @@
 #include "rules/actions.hpp"
-#include "descriptors.hpp"
-#include "dispatch.hpp"
-#include "logger.hpp"
-#include "layer.hpp"
+
+#include "draw.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
+#include "objects.hpp"
 #include "utils.hpp"
-#include "images.hpp"
-#include "draw.hpp"
 
-#include <chrono>
-#include <cstdint>
-#include <cstring>
-#include <exception>
-#include <glm/common.hpp>
-#include <iomanip>
-#include <ios>
-#include <istream>
-#include <iterator>
-#include <memory>
-#include <ostream>
-#include <sstream>
-#include <stdexcept>
-#include <string>
-#include <thread>
+#include <condition_variable>
 #include <experimental/iterator>
-
-#include <iostream>
-
-#include <sys/socket.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <utility>
-#include <vector>
-#include <vulkan/vulkan_core.h>
-#include <vulkan/vulkan.hpp>
-#include <vulkan/vulkan_structs.hpp>
-#include <glm/packing.hpp>
+#include <ranges>
 #include <glm/gtc/packing.hpp>
 
 #ifdef USE_IMAGE_TOOLS
@@ -75,10 +47,10 @@ namespace CheekyLayer::rules::actions
 	action_register<thread_action> thread_action::reg("thread");
 	action_register<define_function_action> define_function_action::reg("function");
 
-	void mark_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule&)
+	void mark_action::execute(selector_type type, VkHandle handle, global_context& global, local_context& local, rule&)
 	{
-		rule_env.marks[(VkHandle)handle].push_back(m_mark);
-		ctx.logger << " Marked " << to_string(type) << " " << handle << " as \"" << m_mark << "\" ";
+		global.marks[(VkHandle)handle].emplace(m_mark);
+		local.logger.info("Marked {} {} as \"{}\"", to_string(type), handle, m_mark);
 	}
 
 	void mark_action::read(std::istream& in)
@@ -92,21 +64,20 @@ namespace CheekyLayer::rules::actions
 		return out;
 	}
 
-	void unmark_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule&)
+	void unmark_action::execute(selector_type type, VkHandle handle, global_context& global, local_context& local, rule&)
 	{
 		if(m_clear)
 		{
-			rule_env.marks[(VkHandle)handle].clear();
-			ctx.logger << " Cleared marks of " << to_string(type) << " " << handle;
+			global.marks[(VkHandle)handle].clear();
+			local.logger.info("Cleared marks of {} {}", to_string(type), handle);
 		}
 		else
 		{
-			auto& marks = rule_env.marks[(VkHandle)handle];
-			auto p = std::find(marks.begin(), marks.end(), m_mark);
-			if(p != marks.end())
+			auto& marks = global.marks[(VkHandle)handle];
+			if(marks.contains(m_mark))
 			{
-				marks.erase(p);
-				ctx.logger << " Unmarked " << to_string(type) << " " << handle << " as \"" << m_mark << "\" ";
+				marks.erase(m_mark);
+				local.logger.info("Unmarked {} {} as \"{}\"", to_string(type), handle, m_mark);
 			}
 		}
 	}
@@ -124,10 +95,10 @@ namespace CheekyLayer::rules::actions
 		return out;
 	}
 
-	void verbose_action::execute(selector_type, VkHandle, local_context& ctx, rule&)
+	void verbose_action::execute(selector_type, VkHandle, global_context&, local_context& local, rule&)
 	{
-		if(ctx.printVerbose.has_value())
-			ctx.printVerbose.value()(ctx.logger);
+		if(local.printVerbose)
+			local.printVerbose(local.logger);
 	}
 
 	void verbose_action::read(std::istream& in)
@@ -141,11 +112,11 @@ namespace CheekyLayer::rules::actions
 		return out;
 	}
 
-	void sequence_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule& rule)
+	void sequence_action::execute(selector_type type, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
 		for(auto& a : m_actions)
 		{
-			a->execute(type, handle, ctx, rule);
+			a->execute(type, handle, global, local, rule);
 		}
 	}
 
@@ -179,22 +150,23 @@ namespace CheekyLayer::rules::actions
 		return out;
 	}
 
-	void each_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule& rule)
+	void each_action::execute(selector_type type, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
 		std::vector<VkHandle> handles;
 		if(type == selector_type::Draw)
 		{
+			auto& info = std::get<draw_info>(*local.info);
 			switch(m_selector->get_type())
 			{
 				case selector_type::Image:
-					std::copy(ctx.info->draw.images.begin(), ctx.info->draw.images.end(), std::back_inserter(handles));
+					std::ranges::copy(info.images, std::back_inserter(handles));
 					break;
 				case selector_type::Shader:
-					std::copy(ctx.info->draw.shaders.begin(), ctx.info->draw.shaders.end(), std::back_inserter(handles));
+					std::ranges::copy(info.shaders, std::back_inserter(handles));
 					break;
 				case selector_type::Buffer:
-					std::copy(ctx.info->draw.vertexBuffers.begin(), ctx.info->draw.vertexBuffers.end(), std::back_inserter(handles));
-					handles.push_back(ctx.info->draw.indexBuffer);
+					std::ranges::copy(info.vertexBuffers, std::back_inserter(handles));
+					handles.push_back(info.indexBuffer);
 					break;
 				default:
 					throw RULE_ERROR("unsupported selector type: "+std::to_string(m_selector->get_type()));
@@ -202,8 +174,8 @@ namespace CheekyLayer::rules::actions
 		}
 		for(auto h : handles)
 		{
-			if(m_selector->test(m_selector->get_type(), h, ctx))
-				m_action->execute(m_selector->get_type(), h, ctx, rule);
+			if(m_selector->test(m_selector->get_type(), h, global, local))
+				m_action->execute(m_selector->get_type(), h, global, local, rule);
 		}
 	}
 
@@ -234,42 +206,39 @@ namespace CheekyLayer::rules::actions
 		return out;
 	}
 
-	void on_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule& rule)
+	void on_action::execute(selector_type type, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
-		if(!ctx.commandBuffer)
+		if(!local.commandBuffer)
 		{
-			ctx.logger << " Cannot schedule action, because CommandBuffer is not known. We will execute it right now instead.";
-			m_action->execute(type, handle, ctx, rule);
+			local.logger.error("Cannot schedule action, because CommandBuffer is not known. We will execute it right now instead.");
+			m_action->execute(type, handle, global, local, rule);
 			return;
 		}
 
-		const auto locals = ctx.local_variables;
-		ctx.logger << " Saving locals: ";
-		std::transform(locals.begin(), locals.end(), std::experimental::make_ostream_joiner(ctx.logger.raw(), ", "), [](const auto& a){
-			return a.first;
-		});
+		const auto locals = local.local_variables;
+		local.logger.debug("Saving locals: {}", fmt::join(locals | std::ranges::views::keys, ", "));
 
 		switch(m_event)
 		{
 			case EndCommandBuffer:
-				rule_env.onEndCommandBuffer(ctx.commandBuffer, [this, type, handle, &rule, locals](local_context& ctx2){
+				global.onEndCommandBuffer(local.commandBuffer, [this, type, handle, &rule, locals, &global](local_context& ctx2){
 					local_context deref = ctx2;
 					deref.local_variables = locals;
-					this->m_action->execute(type, handle, deref, rule);
+					this->m_action->execute(type, handle, global, deref, rule);
 				});
 				break;
 			case QueueSubmit:
-				rule_env.onQueueSubmit(ctx.commandBuffer, [this, type, handle, &rule, locals](local_context& ctx2){
+				global.onQueueSubmit(local.commandBuffer, [this, type, handle, &rule, locals, &global](local_context& ctx2){
 					local_context deref = ctx2;
 					deref.local_variables = locals;
-					this->m_action->execute(type, handle, deref, rule);
+					this->m_action->execute(type, handle, global, deref, rule);
 				});
 				break;
 			case EndRenderPass:
-				rule_env.onEndRenderPass(ctx.commandBuffer, [this, type, handle, &rule, locals](local_context& ctx2){
+				global.onEndRenderPass(local.commandBuffer, [this, type, handle, &rule, locals, &global](local_context& ctx2){
 					local_context deref = ctx2;
 					deref.local_variables = locals;
-					this->m_action->execute(type, handle, deref, rule);
+					this->m_action->execute(type, handle, global, deref, rule);
 				});
 				break;
 		}
@@ -295,7 +264,7 @@ namespace CheekyLayer::rules::actions
 		return out;
 	}
 
-	void disable_action::execute(selector_type, VkHandle, local_context&, rule& rule)
+	void disable_action::execute(selector_type, VkHandle, global_context&, local_context&, rule& rule)
 	{
 		rule.disable();
 	}
@@ -311,9 +280,9 @@ namespace CheekyLayer::rules::actions
 		return out;
 	}
 
-	void cancel_action::execute(selector_type, VkHandle, local_context& ctx, rule&)
+	void cancel_action::execute(selector_type, VkHandle, global_context&, local_context& local, rule&)
 	{
-		ctx.canceled = true;
+		local.canceled = true;
 	}
 
 	void cancel_action::read(std::istream& in)
@@ -327,7 +296,7 @@ namespace CheekyLayer::rules::actions
 		return out;
 	}
 
-	void log_action::execute(selector_type stype, VkHandle handle, local_context& ctx, rule&)
+	void log_action::execute(selector_type stype, VkHandle handle, global_context& global, local_context& local, rule&)
 	{
 		std::string s = m_text;
 		replace(s, "$]", ")");
@@ -342,23 +311,24 @@ namespace CheekyLayer::rules::actions
 		}
 
 		{
-			auto p = rule_env.marks.find(handle);
-			if(p != rule_env.marks.find(handle))
+			auto p = global.marks.find(handle);
+			if(p != global.marks.end())
 			{
 				auto& v = p->second;
 
 				std::stringstream oss;
 				oss << "[";
-				for(int i=0; i<v.size(); i++)
+				auto it = v.cbegin();
+				for(int i=0; it != v.cend(); i++, it++)
 				{
-					replace(s, "$marks["+std::to_string(i)+"]", v[i]);
-					oss << v[i] << (i == v.size()-1 ? "]" : ",");
+					replace(s, "$marks["+std::to_string(i)+"]", *it);
+					oss << *it << (i == v.size()-1 ? "]" : ",");
 				}
 				replace(s, "$marks[*]", oss.str());
 			}
 		}
 
-		ctx.logger << s;
+		local.logger.info("{}", s);
 	}
 
 	void log_action::read(std::istream& in)
@@ -374,9 +344,11 @@ namespace CheekyLayer::rules::actions
 		return out;
 	}
 
-	void log_extended_action::execute(selector_type stype, VkHandle handle, local_context& ctx, rule& rule)
+	void log_extended_action::execute(selector_type stype, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
-		ctx.logger << std::get<std::string>(m_data->get(stype, data_type::String, handle, ctx, rule));
+		local.logger.info("{}",
+			std::get<std::string>(m_data->get(stype, data_type::String, handle, global, local, rule))
+		);
 	}
 
 	void log_extended_action::read(std::istream& in)
@@ -396,9 +368,9 @@ namespace CheekyLayer::rules::actions
 		return out;
 	}
 
-	void override_action::execute(selector_type, VkHandle, local_context& ctx, rule &)
+	void override_action::execute(selector_type, VkHandle, global_context&, local_context& local, rule &)
 	{
-		ctx.overrides.push_back(m_expression);
+		local.overrides.push_back(m_expression);
 	}
 
 	void override_action::read(std::istream& in)
@@ -412,12 +384,11 @@ namespace CheekyLayer::rules::actions
 		return out;
 	}
 
-	void socket_action::execute(selector_type, VkHandle, local_context &, rule &)
+	void socket_action::execute(selector_type, VkHandle, global_context& global, local_context& local, rule &)
 	{
-		if(rule_env.fds.contains(m_name))
+		if(global.fds.contains(m_name))
 		{
-			auto* socket = dynamic_cast<ipc::socket*>(rule_env.fds[m_name].get());
-			if(socket)
+			if(auto* socket = dynamic_cast<ipc::socket*>(global.fds[m_name].get()))
 			{
 				socket->close(); // it is now allowed to reopen sockets, but this doesn't work yet and causes a crash
 			}
@@ -427,8 +398,8 @@ namespace CheekyLayer::rules::actions
 			}
 		}
 
-		rule_env.fds[m_name] = std::make_unique<ipc::socket>(m_socketType, m_host, m_port, m_protocol);
-		rule_env.fds[m_name]->m_name = m_name;
+		global.fds[m_name] = std::make_unique<ipc::socket>(m_socketType, m_host, m_port, m_protocol, local.instance, local.device);
+		global.fds[m_name]->m_name = m_name;
 	}
 
 	void socket_action::read(std::istream& in)
@@ -461,13 +432,13 @@ namespace CheekyLayer::rules::actions
 		return out;
 	}
 
-	void server_socket_action::execute(selector_type, VkHandle, local_context &, rule &)
+	void server_socket_action::execute(selector_type, VkHandle, global_context& global, local_context& local, rule &)
 	{
-		if(rule_env.fds.count(m_name))
+		if(global.fds.contains(m_name))
 			throw RULE_ERROR("file descriptor with name "+m_name+" already exists");
 
-		rule_env.fds[m_name] = std::make_unique<ipc::server_socket>(m_socketType, m_host, m_port, m_protocol);
-		rule_env.fds[m_name]->m_name = m_name;
+		global.fds[m_name] = std::make_unique<ipc::server_socket>(m_socketType, m_host, m_port, m_protocol, local.instance, local.device);
+		global.fds[m_name]->m_name = m_name;
 	}
 
 	void server_socket_action::read(std::istream& in)
@@ -500,29 +471,29 @@ namespace CheekyLayer::rules::actions
 		return out;
 	}
 
-	void write_action::execute(selector_type stype, VkHandle handle, local_context& ctx, rule& rule)
+	void write_action::execute(selector_type stype, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
-		if(!rule_env.fds.count(m_fd))
+		if(!global.fds.contains(m_fd))
 			throw RULE_ERROR("file descriptor with name "+m_fd+" does not exists");
 
-		auto& fd = rule_env.fds[m_fd];
+		auto& fd = global.fds[m_fd];
 
 		int extra = 0;
-		if(stype == Receive || (stype == Custom && ctx.customTag == "connect"))
+		if(stype == Receive || (stype == Custom && local.customTag == "connect"))
 		{
-			extra = ctx.info->receive.extra;
+			extra = std::get<receive_info>(*local.info).extra;
 		}
 
 		if(m_data->supports(stype, data_type::Raw))
 		{
-			data_value val = m_data->get(stype, data_type::Raw, handle, ctx, rule);
+			data_value val = m_data->get(stype, data_type::Raw, handle, global, local, rule);
 			auto& v = std::get<std::vector<uint8_t>>(val);
 			if(fd->write(v, extra) < 0)
 				throw RULE_ERROR("failed to send data to file descriptor \""+m_fd+"\": " + strerror(errno));
 		}
 		else if(m_data->supports(stype, data_type::String))
 		{
-			data_value val = m_data->get(stype, data_type::String, handle, ctx, rule);
+			data_value val = m_data->get(stype, data_type::String, handle, global, local, rule);
 			auto& s = std::get<std::string>(val);
 			std::vector<uint8_t> v(s.begin(), s.end());
 			if(fd->write(v, extra) < 0)
@@ -552,39 +523,39 @@ namespace CheekyLayer::rules::actions
 		return out;
 	}
 
-	void load_image_action::execute(selector_type stype, VkHandle handle, local_context& ctx, rule& rule)
+	void load_image_action::execute(selector_type stype, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
-		VkHandle h = std::get<VkHandle>(m_target->get(stype, data_type::Handle, handle, ctx, rule));
+		VkHandle h = std::get<VkHandle>(m_target->get(stype, data_type::Handle, handle, global, local, rule));
 
 		scoped_lock l(global_lock);
 		if(m_mode == mode::Data)
 		{
-			std::vector<uint8_t> data = std::get<std::vector<uint8_t>>(m_data->get(stype, data_type::Raw, handle, ctx, rule));
-			std::thread t(&load_image_action::workTry, this, h, std::string{}, data);
-			rule_env.threads.push_back(std::move(t));
+			std::vector<uint8_t> data = std::get<std::vector<uint8_t>>(m_data->get(stype, data_type::Raw, handle, global, local, rule));
+			std::thread t(&load_image_action::workTry, this, std::ref(*local.device), h, std::string{}, data);
+			global.threads.push_back(std::move(t));
 		}
 		else if(m_mode == mode::FileFromData)
 		{
-			std::string filename = std::get<std::string>(m_data->get(stype, data_type::String, handle, ctx, rule));
-			std::thread t(&load_image_action::workTry, this, h, filename, std::vector<uint8_t>{});
-			rule_env.threads.push_back(std::move(t));
+			std::string filename = std::get<std::string>(m_data->get(stype, data_type::String, handle, global, local, rule));
+			std::thread t(&load_image_action::workTry, this, std::ref(*local.device), h, filename, std::vector<uint8_t>{});
+			global.threads.push_back(std::move(t));
 		}
 		else
 		{
-			std::thread t(&load_image_action::workTry, this, h, m_filename, std::vector<uint8_t>{});
-			rule_env.threads.push_back(std::move(t));
+			std::thread t(&load_image_action::workTry, this, std::ref(*local.device), h, m_filename, std::vector<uint8_t>{});
+			global.threads.push_back(std::move(t));
 		}
 	}
 
-	void load_image_action::workTry(VkHandle handle, std::string optFilename, std::vector<uint8_t> optData)
+	void load_image_action::workTry(device& device, VkHandle handle, std::string optFilename, std::vector<uint8_t> optData)
 	{
 		try
 		{
-			work(handle, optFilename, std::move(optData));
+			work(device, handle, optFilename, std::move(optData));
 		}
 		catch(const std::exception& ex)
 		{
-			*::logger << logger::begin << logger::error << " overload failed: " << ex.what() << logger::end;
+			device.logger->error("overload image failed: {}", ex.what());
 		}
 	}
 
@@ -601,15 +572,12 @@ namespace CheekyLayer::rules::actions
 		uint32_t width;
 		uint32_t height;
 		uint32_t mipLevels;
-    	bool operator<(const image_key& other) const
-		{
-			return std::tie(filename, format, width, height, mipLevels) < std::tie(other.filename, other.format, other.width, other.height, other.mipLevels);
-		}
+
+		auto operator<=>(const image_key&) const = default;
 	};
 	std::map<image_key, std::pair<std::vector<uint8_t>, std::vector<VkDeviceSize>>> imageFileCache;
-	void load_image_action::work(VkHandle handle, std::string optFilename, std::vector<uint8_t> optData)
+	void load_image_action::work(device& device, VkHandle handle, std::string optFilename, std::vector<uint8_t> optData)
 	{
-		VkDevice device = imageDevices[(VkImage)handle];
 		VkResult result;
 		std::vector<uint8_t> data(16);
 		std::vector<VkDeviceSize> offsets;
@@ -623,7 +591,7 @@ namespace CheekyLayer::rules::actions
 		{
 			if(optFilename.ends_with(".png") && imageTools)
 			{
-				VkImageCreateInfo imgInfo = images[(VkImage)handle];
+				VkImageCreateInfo imgInfo = device.images.at((VkImage)handle).createInfo;
 				decltype(imageFileCache.begin()->first) cacheKey = {optFilename, imgInfo.format, imgInfo.extent.width, imgInfo.extent.height, imgInfo.mipLevels};
 				if(imageFileCache.contains(cacheKey))
 				{
@@ -660,7 +628,7 @@ namespace CheekyLayer::rules::actions
 			}
 			else if(optFilename.find("${mip}") != std::string::npos)
 			{
-				VkImageCreateInfo imgInfo = images[(VkImage)handle];
+				VkImageCreateInfo imgInfo = device.images.at((VkImage)handle).createInfo;
 				data.clear();
 				for(int i=0; i<imgInfo.mipLevels; i++)
 				{
@@ -701,41 +669,41 @@ namespace CheekyLayer::rules::actions
 		bufferInfo.queueFamilyIndexCount = 0;
 		bufferInfo.pQueueFamilyIndices = nullptr;
 		VkBuffer buffer;
-		if((result = device_dispatch[GetKey(device)].CreateBuffer(device, &bufferInfo, nullptr, &buffer)) != VK_SUCCESS)
+		if((result = device.dispatch.CreateBuffer(*device, &bufferInfo, nullptr, &buffer)) != VK_SUCCESS)
 			throw RULE_ERROR("failed to create staging buffer: "+vk::to_string((vk::Result)result));
 
 		VkMemoryRequirements requirements;
-		device_dispatch[GetKey(device)].GetBufferMemoryRequirements(device, buffer, &requirements);
+		device.dispatch.GetBufferMemoryRequirements(*device, buffer, &requirements);
 
 		VkMemoryAllocateInfo allocateInfo;
 		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		allocateInfo.pNext = nullptr;
-		allocateInfo.memoryTypeIndex = findMemoryType(deviceInfos[device].memory, requirements.memoryTypeBits,
+		allocateInfo.memoryTypeIndex = findMemoryType(device.memProperties, requirements.memoryTypeBits,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		allocateInfo.allocationSize = requirements.size;
 		VkDeviceMemory memory;
-		if(device_dispatch[GetKey(device)].AllocateMemory(device, &allocateInfo, nullptr, &memory) != VK_SUCCESS)
+		if(device.dispatch.AllocateMemory(*device, &allocateInfo, nullptr, &memory) != VK_SUCCESS)
 			throw RULE_ERROR("failed to allocate memory for staging buffer");
 
-		if(device_dispatch[GetKey(device)].BindBufferMemory(device, buffer, memory, 0) != VK_SUCCESS)
+		if(device.dispatch.BindBufferMemory(*device, buffer, memory, 0) != VK_SUCCESS)
 			throw RULE_ERROR("failed to bind memory to staging buffer");
 
 		void* bufferPointer;
-		if(device_dispatch[GetKey(device)].MapMemory(device, memory, 0, data.size(), 0, &bufferPointer) != VK_SUCCESS)
+		if(device.dispatch.MapMemory(*device, memory, 0, data.size(), 0, &bufferPointer) != VK_SUCCESS)
 			throw RULE_ERROR("failed to map staging memory");
 		memcpy(bufferPointer, data.data(), data.size());
-		device_dispatch[GetKey(device)].UnmapMemory(device, memory);
+		device.dispatch.UnmapMemory(*device, memory);
 
 		auto tStagingReady = std::chrono::high_resolution_clock::now();
 
 		{
 			scoped_lock l(transfer_lock);
 
-			VkCommandBuffer commandBuffer = transferCommandBuffers[device];
+			VkCommandBuffer commandBuffer = device.transferBuffer;
 			if(commandBuffer == VK_NULL_HANDLE)
 				throw RULE_ERROR("command buffer is NULL");
 
-			if(device_dispatch[GetKey(device)].ResetCommandBuffer(commandBuffer, 0) != VK_SUCCESS)
+			if(device.dispatch.ResetCommandBuffer(commandBuffer, 0) != VK_SUCCESS)
 				throw RULE_ERROR("failed to reset command buffer");
 
 			VkCommandBufferBeginInfo beginInfo;
@@ -743,11 +711,11 @@ namespace CheekyLayer::rules::actions
 			beginInfo.pNext = nullptr;
 			beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 			beginInfo.pInheritanceInfo = nullptr;
-			if(device_dispatch[GetKey(device)].BeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
+			if(device.dispatch.BeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
 				throw RULE_ERROR("failed to begin the command buffer");
 
 			{
-				VkImageCreateInfo imgInfo = images[(VkImage)handle];
+				VkImageCreateInfo imgInfo = device.images.at((VkImage)handle).createInfo;
 
 				VkImageMemoryBarrier memoryBarrier{};
 				memoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -765,7 +733,7 @@ namespace CheekyLayer::rules::actions
 				memoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 				memoryBarrier.pNext = nullptr;
 
-				device_dispatch[GetKey(device)].CmdPipelineBarrier(commandBuffer,
+				device.dispatch.CmdPipelineBarrier(commandBuffer,
 					VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &memoryBarrier);
 
 				std::vector<VkBufferImageCopy> copies(offsets.size());
@@ -781,20 +749,20 @@ namespace CheekyLayer::rules::actions
 
 					copies[i] = copy;
 				}
-				device_dispatch[GetKey(device)].CmdCopyBufferToImage(commandBuffer, buffer, (VkImage)handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				device.dispatch.CmdCopyBufferToImage(commandBuffer, buffer, (VkImage)handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 					copies.size(), copies.data());
 			}
 
-			if(device_dispatch[GetKey(device)].EndCommandBuffer(commandBuffer) != VK_SUCCESS)
+			if(device.dispatch.EndCommandBuffer(commandBuffer) != VK_SUCCESS)
 				throw RULE_ERROR("failed to end command buffer");
 
 			auto tCommandReady = std::chrono::high_resolution_clock::now();
 
-			VkQueue queue = transferQueues[device];
+			VkQueue queue = device.transferQueue;
 			if(queue == VK_NULL_HANDLE)
 				throw RULE_ERROR("command buffer is NULL");
 
-			if(device_dispatch[GetKey(device)].QueueWaitIdle(queue) != VK_SUCCESS)
+			if(device.dispatch.QueueWaitIdle(queue) != VK_SUCCESS)
 				throw RULE_ERROR("cannot wait for queue to be idle before copying");
 			auto tIdle1 = std::chrono::high_resolution_clock::now();
 
@@ -802,23 +770,28 @@ namespace CheekyLayer::rules::actions
 			submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 			submitInfo.commandBufferCount = 1;
 			submitInfo.pCommandBuffers = &commandBuffer;
-			if(device_dispatch[GetKey(device)].QueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS)
+			if(device.dispatch.QueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS)
 				throw RULE_ERROR("failed to submit command buffer");
 
-			if(device_dispatch[GetKey(device)].QueueWaitIdle(queue) != VK_SUCCESS)
+			if(device.dispatch.QueueWaitIdle(queue) != VK_SUCCESS)
 				throw RULE_ERROR("cannot wait for queue to be idle after copying");
 			auto tIdle2 = std::chrono::high_resolution_clock::now();
 
-			device_dispatch[GetKey(device)].DestroyBuffer(device, buffer, nullptr);
-			device_dispatch[GetKey(device)].FreeMemory(device, memory, nullptr);
+			device.dispatch.DestroyBuffer(*device, buffer, nullptr);
+			device.dispatch.FreeMemory(*device, memory, nullptr);
 
-			*::logger << logger::begin << "overload timing:\n"
-				<< "\t" << "image load: " << std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(tDataReady - t0).count()) << "ms\n"
-				<< "\t" << "staging buffer: " << std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(tStagingReady - tDataReady).count()) << "ms\n"
-				<< "\t" << "command buffer: " << std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(tCommandReady - tStagingReady).count()) << "ms\n"
-				<< "\t" << "queue wait: " << std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(tIdle1 - tCommandReady).count()) << "ms\n"
-				<< "\t" << "copy operation: " << std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(tIdle2 - tIdle1).count()) << "ms"
-				<< logger::end;
+			device.logger->debug(
+R"(overload timing:
+	image load: {}
+	staging buffer: {}
+	command buffer: {}
+	queue wait: {}
+	copy operation: {})",
+				std::chrono::duration_cast<std::chrono::milliseconds>(tDataReady - t0).count(),
+				std::chrono::duration_cast<std::chrono::milliseconds>(tStagingReady - tDataReady).count(),
+				std::chrono::duration_cast<std::chrono::milliseconds>(tCommandReady - tStagingReady).count(),
+				std::chrono::duration_cast<std::chrono::milliseconds>(tIdle1 - tCommandReady).count(),
+				std::chrono::duration_cast<std::chrono::milliseconds>(tIdle2 - tIdle1).count());
 		}
 	}
 
@@ -886,21 +859,21 @@ namespace CheekyLayer::rules::actions
 		return out;
 	}
 
-	void preload_image_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule& rule)
+	void preload_image_action::execute(selector_type type, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
-		std::string filename = std::get<std::string>(m_filename->get(type, data_type::String, handle, ctx, rule));
-		VkHandle h = std::get<VkHandle>(m_target->get(type, data_type::Handle, handle, ctx, rule));
-		std::thread t(&preload_image_action::work, this, h, filename);
-		rule_env.threads.push_back(std::move(t));
+		std::string filename = std::get<std::string>(m_filename->get(type, data_type::String, handle, global, local, rule));
+		VkHandle h = std::get<VkHandle>(m_target->get(type, data_type::Handle, handle, global, local, rule));
+		std::thread t(&preload_image_action::work, this, std::ref(*local.device), h, filename);
+		global.threads.push_back(std::move(t));
 	}
 
-	void preload_image_action::work(VkHandle handle, std::string optFilename)
+	void preload_image_action::work(device& device, VkHandle handle, std::string optFilename)
 	{
 		try
 		{
 			if(optFilename.ends_with(".png") && imageTools)
 			{
-				VkImageCreateInfo imgInfo = images[(VkImage)handle];
+				VkImageCreateInfo imgInfo = device.images.at((VkImage)handle).createInfo;
 				decltype(imageFileCache.begin()->first) cacheKey = {optFilename, imgInfo.format, imgInfo.extent.width, imgInfo.extent.height, imgInfo.mipLevels};
 				if(imageFileCache.contains(cacheKey))
 				{
@@ -940,7 +913,7 @@ namespace CheekyLayer::rules::actions
 		}
 		catch(const std::exception& ex)
 		{
-			*::logger << logger::begin << logger::error << " preload failed: " << ex.what() << logger::end;
+			device.logger->error("preload image failed: {}", ex.what());
 		}
 	}
 
@@ -969,21 +942,21 @@ namespace CheekyLayer::rules::actions
 		return out;
 	}
 
-	void dump_framebuffer_action::execute(selector_type, VkHandle, local_context &ctx, rule&)
+	void dump_framebuffer_action::execute(selector_type, VkHandle, global_context& global, local_context &local, rule&)
 	{
-		VkDevice device = ctx.device;
+		auto& device = *local.device;
 
 		VkBuffer buffer;
 		VkDeviceMemory memory;
 		VkEvent event;
 
-		VkFramebuffer fb = ctx.commandBufferState->framebuffer;
-		VkImageView view = framebuffers[fb].attachments[m_attachment];
-		VkImage image = imageViews[view];
-		VkImageCreateInfo imageInfo = images[image];
+		VkFramebuffer fb = local.commandBufferState->framebuffer;
+		VkImageView view = device.framebuffers[fb].attachments.at(m_attachment);
+		VkImage image = device.imageViewToImage[view];
+		VkImageCreateInfo imageInfo = device.images.at(image).createInfo;
 
 		VkMemoryRequirements req;
-		device_dispatch[GetKey(device)].GetImageMemoryRequirements(ctx.device, image, &req);
+		device.dispatch.GetImageMemoryRequirements(*device, image, &req);
 		VkDeviceSize size = req.size;
 
 		VkBufferCreateInfo bufferCreateInfo{};
@@ -991,22 +964,22 @@ namespace CheekyLayer::rules::actions
 		bufferCreateInfo.size = size;
 		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 		bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-		device_dispatch[GetKey(device)].CreateBuffer(ctx.device, &bufferCreateInfo, nullptr, &buffer);
+		device.dispatch.CreateBuffer(*device, &bufferCreateInfo, nullptr, &buffer);
 
-		device_dispatch[GetKey(device)].GetBufferMemoryRequirements(ctx.device, buffer, &req);
+		device.dispatch.GetBufferMemoryRequirements(*device, buffer, &req);
 
 		VkMemoryAllocateInfo allocateInfo{};
 		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		allocateInfo.allocationSize = req.size;
-		allocateInfo.memoryTypeIndex = findMemoryType(deviceInfos[ctx.device].memory,
+		allocateInfo.memoryTypeIndex = findMemoryType(device.memProperties,
 			req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-		device_dispatch[GetKey(device)].AllocateMemory(ctx.device, &allocateInfo, nullptr, &memory);
+		device.dispatch.AllocateMemory(*device, &allocateInfo, nullptr, &memory);
 
-		device_dispatch[GetKey(device)].BindBufferMemory(ctx.device, buffer, memory, 0);
+		device.dispatch.BindBufferMemory(*device, buffer, memory, 0);
 
 		VkEventCreateInfo eventCreateInfo{};
 		eventCreateInfo.sType = VK_STRUCTURE_TYPE_EVENT_CREATE_INFO;
-		device_dispatch[GetKey(device)].CreateEvent(device, &eventCreateInfo, nullptr, &event);
+		device.dispatch.CreateEvent(*device, &eventCreateInfo, nullptr, &event);
 
 		VkBufferImageCopy copy{};
 		copy.imageSubresource = VkImageSubresourceLayers{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
@@ -1020,15 +993,15 @@ namespace CheekyLayer::rules::actions
 		barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 		barrier.subresourceRange = VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
-		device_dispatch[GetKey(device)].CmdPipelineBarrier(ctx.commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+		device.dispatch.CmdPipelineBarrier(local.commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
 			0, nullptr, 0, nullptr, 1, &barrier);
-		device_dispatch[GetKey(device)].CmdCopyImageToBuffer(ctx.commandBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1, &copy);
-		device_dispatch[GetKey(device)].CmdSetEvent(ctx.commandBuffer, event, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+		device.dispatch.CmdCopyImageToBuffer(local.commandBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1, &copy);
+		device.dispatch.CmdSetEvent(local.commandBuffer, event, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 
-		std::thread thread([this, device, imageInfo, size, buffer, memory, event](){
+		std::thread thread([this, &device, imageInfo, size, buffer, memory, event](){
 			for(;;)
 			{
-				if(device_dispatch[GetKey(device)].GetEventStatus(device, event) == VK_EVENT_SET)
+				if(device.dispatch.GetEventStatus(*device, event) == VK_EVENT_SET)
 					break;
 				using std::chrono::operator""ms;
 				std::this_thread::sleep_for(10ms);
@@ -1040,13 +1013,13 @@ namespace CheekyLayer::rules::actions
 				{
 					scoped_lock l(global_lock);
 					char* p;
-					device_dispatch[GetKey(device)].MapMemory(device, memory, 0, size, 0, (void**)&p);
+					device.dispatch.MapMemory(*device, memory, 0, size, 0, (void**)&p);
 					std::copy(p, p+size, data.begin());
-					device_dispatch[GetKey(device)].UnmapMemory(device, memory);
+					device.dispatch.UnmapMemory(*device, memory);
 
-					device_dispatch[GetKey(device)].DestroyBuffer(device, buffer, nullptr);
-					device_dispatch[GetKey(device)].FreeMemory(device, memory, nullptr);
-					device_dispatch[GetKey(device)].DestroyEvent(device, event, nullptr);
+					device.dispatch.DestroyBuffer(*device, buffer, nullptr);
+					device.dispatch.FreeMemory(*device, memory, nullptr);
+					device.dispatch.DestroyEvent(*device, event, nullptr);
 				}
 
 				auto t = std::chrono::high_resolution_clock::now();
@@ -1063,7 +1036,7 @@ namespace CheekyLayer::rules::actions
 					imageInfo.format == VK_FORMAT_R16G16_SFLOAT ||
 					imageInfo.format == VK_FORMAT_R16G16B16A16_UINT)
 				{
-					std::string filename = global_config["dumpDirectory"]+"/images/framebuffers/"+name+".png";
+					std::string filename = device.inst->config.dump_directory / "images/framebuffers" / (name+".png");
 					try
 					{
 						int w = imageInfo.extent.width;
@@ -1100,43 +1073,37 @@ namespace CheekyLayer::rules::actions
 							});
 
 						stbi_write_png(filename.c_str(), w, h, 4, image, w*4);
-						*::logger << logger::begin << std::dec << "Framebuffer #" << m_attachment << " of size "
-							<< imageInfo.extent.width << "x" << imageInfo.extent.height
-							<< " and format " << vk::to_string((vk::Format)imageInfo.format)
-							<< " was encoded and written to PNG file \""
-							<< filename << "\"." << logger::end;
+						device.logger->info("Framebuffer #{} of size {}x{} and format {} was encoded and written to PNG file \"{}\".",
+							m_attachment, imageInfo.extent.width, imageInfo.extent.height, vk::to_string((vk::Format)imageInfo.format), filename);
 					}
 					catch(const std::exception& ex)
 					{
-						*::logger << logger::begin << std::dec << logger::error << "Could not encode and write framebuffer to PNG file \""
-							<< filename << "\": " << ex.what() << logger::end;
+						device.logger->error("Could not encode and write framebuffer to PNG file \"{}\": {}", filename, ex.what());
 					}
 				}
 				else {
 #endif
-				std::string filename = global_config["dumpDirectory"]+"/images/framebuffers/"+name+".image";
+				std::string filename = device.inst->config.dump_directory / "images/framebuffers" / (name+".image");
 				try
 				{
 					std::ofstream of(filename, std::ios::binary);
 					if(!of.good())
 						throw RULE_ERROR("ofstream is not good");
 					of.write(data.data(), data.size());
-					*::logger << logger::begin << std::dec << "Framebuffer #" << m_attachment <<" of size "
-						<< imageInfo.extent.width << "x" << imageInfo.extent.height << " (" << size
-						<< " bytes) and format " << vk::to_string((vk::Format)imageInfo.format)
-						<< " was written to file \"" << filename << "\"." << logger::end;
+					device.logger->info("Framebuffer #{} of size {}x{} and format {} was written to file \"{}\".",
+						m_attachment, imageInfo.extent.width, imageInfo.extent.height, vk::to_string((vk::Format)imageInfo.format), filename);
 				}
 				catch(const std::exception& ex)
 				{
-					*::logger << logger::begin << std::dec << logger::error << "Could not write framebuffer of size "
-						<< size << " to file \"" << filename << "\": " << ex.what() << logger::end;
+					device.logger->error("Could not write framebuffer of size {} to file \"{}\": {}",
+						size, filename, ex.what());
 				}
 #ifdef USE_IMAGE_TOOLS
 				}
 #endif
 			}
 		});
-		rule_env.threads.push_back(std::move(thread));
+		global.threads.push_back(std::move(thread));
 	}
 
 	void dump_framebuffer_action::read(std::istream& in)
@@ -1152,10 +1119,10 @@ namespace CheekyLayer::rules::actions
 		return out;
 	}
 
-	void every_action::execute(selector_type type, VkHandle handle, local_context& ctx, rule& rule)
+	void every_action::execute(selector_type type, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
 		if(m_i == 0)
-			m_action->execute(type, handle, ctx, rule);
+			m_action->execute(type, handle, global, local, rule);
 
 		m_i++;
 		m_i %= m_n;
@@ -1180,41 +1147,41 @@ namespace CheekyLayer::rules::actions
 		return out;
 	}
 
-	void buffer_copy_action::execute(selector_type stype, VkHandle handle, local_context& ctx, rule& rule)
+	void buffer_copy_action::execute(selector_type stype, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
 		VkHandle srcHandle, dstHandle;
 		VkDeviceSize srcOffset = 0, dstOffset = 0;
 		if(m_src->supports(stype, data_type::List))
 		{
-			data_list src = std::get<data_list>(m_src->get(stype, data_type::List, handle, ctx, rule));
+			data_list src = std::get<data_list>(m_src->get(stype, data_type::List, handle, global, local, rule));
 			srcHandle = std::get<VkHandle>(src.values.at(0));
 			srcOffset = std::get<double>(src.values.at(1));
 		}
 		else
 		{
-			srcHandle = std::get<VkHandle>(m_src->get(stype, data_type::Handle, handle, ctx, rule));
+			srcHandle = std::get<VkHandle>(m_src->get(stype, data_type::Handle, handle, global, local, rule));
 		}
 		if(m_dst->supports(stype, data_type::List))
 		{
-			data_list dst = std::get<data_list>(m_dst->get(stype, data_type::List, handle, ctx, rule));
+			data_list dst = std::get<data_list>(m_dst->get(stype, data_type::List, handle, global, local, rule));
 			dstHandle = std::get<VkHandle>(dst.values.at(0));
 			dstOffset = std::get<double>(dst.values.at(1));
 		}
 		else
 		{
-			dstHandle = std::get<VkHandle>(m_dst->get(stype, data_type::Handle, handle, ctx, rule));
+			dstHandle = std::get<VkHandle>(m_dst->get(stype, data_type::Handle, handle, global, local, rule));
 		}
 
 		std::vector<uint8_t> transferBuffer(m_size);
 
-		memoryAccess(ctx.device, (VkBuffer) srcHandle, [&transferBuffer, this, &ctx](void* ptr, VkDeviceSize size){
+		local.device->memory_access((VkBuffer) srcHandle, [&transferBuffer, this, &local, srcHandle](void* ptr, VkDeviceSize size){
 			uint8_t* uptr = (uint8_t*)ptr;
-			ctx.logger << "Reading " << std::min(m_size, size) << " bytes! ";
+			local.logger.debug("Reading {} bytes from buffer {}", std::min(m_size, size), srcHandle);
 			std::copy(uptr, uptr + std::min(m_size, size), transferBuffer.begin());
 		}, srcOffset + m_srcOffset);
-		memoryAccess(ctx.device, (VkBuffer) dstHandle, [&transferBuffer, this, &ctx](void* ptr, VkDeviceSize size){
+		local.device->memory_access((VkBuffer) dstHandle, [&transferBuffer, this, &local, dstHandle](void* ptr, VkDeviceSize size){
 			uint8_t* uptr = (uint8_t*)ptr;
-			ctx.logger << "Writing " << std::min(m_size, size) << " bytes! ";
+			local.logger.debug("Writing {} bytes to buffer {}", std::min(m_size, size), dstHandle);
 			std::copy(transferBuffer.begin(), transferBuffer.begin() + std::min(m_size, size), uptr);
 		}, dstOffset + m_dstOffset);
 	}
@@ -1256,9 +1223,9 @@ namespace CheekyLayer::rules::actions
 		return out;
 	}
 
-	void set_global_action::execute(selector_type stype, VkHandle handle, local_context& ctx, rule& rule)
+	void set_global_action::execute(selector_type stype, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
-		rule_env.global_variables[m_name] = m_data->get(stype, m_dtype, handle, ctx, rule);
+		global.global_variables[m_name] = m_data->get(stype, m_dtype, handle, global, local, rule);
 	}
 
 	void set_global_action::read(std::istream& in)
@@ -1292,9 +1259,9 @@ namespace CheekyLayer::rules::actions
 		return out << ")";
 	}
 
-	void set_local_action::execute(selector_type stype, VkHandle handle, local_context& ctx, rule& rule)
+	void set_local_action::execute(selector_type stype, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
-		ctx.local_variables[m_name] = m_data->get(stype, m_dtype, handle, ctx, rule);
+		local.local_variables[m_name] = m_data->get(stype, m_dtype, handle, global, local, rule);
 	}
 
 	void set_local_action::read(std::istream& in)
@@ -1328,10 +1295,11 @@ namespace CheekyLayer::rules::actions
 		return out << ")";
 	}
 
-	void thread_action::execute(selector_type, VkHandle, local_context& ctx, rule& rule)
+	void thread_action::execute(selector_type, VkHandle, global_context& global, local_context& local, rule& rule)
 	{
-		m_device = ctx.device;
-		m_local_variables = ctx.local_variables;
+		m_instance = local.instance;
+		m_device = local.device;
+		m_local_variables = local.local_variables;
 		if(m_done) return;
 		m_done = true;
 
@@ -1340,18 +1308,16 @@ namespace CheekyLayer::rules::actions
 			std::unique_lock<std::mutex> lock(mutex);
 			do
 			{
-				CheekyLayer::active_logger log = *::logger << logger::begin;
-
-				CheekyLayer::rules::local_context ctx = { .logger = log, .device = m_device, .customTag = "thread", .local_variables = m_local_variables };
-				try
-				{
-					m_action->execute(selector_type::Custom, VK_NULL_HANDLE, ctx, rule);
+				calling_context ctx = {
+					.customTag = "thread",
+					.local_variables = m_local_variables,
+				};
+				if(m_device) {
+					m_device->execute_rules(rules::selector_type::Custom, VK_NULL_HANDLE, ctx);
 				}
-				catch(const std::exception& ex)
-				{
-					ctx.logger << logger::error << "Failed to execute a rule on thread: " << ex.what();
+				else if(m_instance) {
+					m_instance->execute_rules(rules::selector_type::Custom, VK_NULL_HANDLE, ctx);
 				}
-				log << logger::end;
 			}
 			while(!std::condition_variable_any().wait_for(lock, stop_token, std::chrono::milliseconds(m_delay), [&stop_token]{return stop_token.stop_requested();}));
 		});
@@ -1418,11 +1384,6 @@ namespace CheekyLayer::rules::actions
 			if(!m_default_arguments.at(i)->supports(m_type, t)) // TODO: FIX usage of m_type
 				throw RULE_ERROR("default argument "+std::to_string(i)+" does not support type "+to_string(t));
 		}
-
-		if(!rule_env.user_functions.contains(m_name))
-		{
-			register_function();
-		}
 	}
 
 	std::ostream& define_function_action::print(std::ostream& out)
@@ -1442,12 +1403,12 @@ namespace CheekyLayer::rules::actions
 		return out << ")";
 	}
 
-	void define_function_action::execute(selector_type, VkHandle, local_context &, rule &)
+	void define_function_action::execute(selector_type, VkHandle, global_context& global, local_context &, rule &)
 	{
-		register_function();
+		register_function(global);
 	}
 
-	void define_function_action::register_function()
+	void define_function_action::register_function(global_context& global)
 	{
 		user_function fnc = {
 			.data = m_function.get(),
@@ -1455,6 +1416,6 @@ namespace CheekyLayer::rules::actions
 			.default_arguments = std::vector<class data*>(m_default_arguments.size())
 		};
 		std::transform(m_default_arguments.cbegin(), m_default_arguments.cend(), fnc.default_arguments.begin(), std::mem_fn(&std::unique_ptr<data>::get));
-		rule_env.user_functions[m_name] = std::move(fnc);
+		global.user_functions[m_name] = std::move(fnc);
 	}
 }

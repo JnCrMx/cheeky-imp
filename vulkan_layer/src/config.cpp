@@ -19,6 +19,7 @@ namespace CheekyLayer
 		dump_directory = map<std::filesystem::path>("dumpDirectory", [](std::string s) {return std::filesystem::path(s);});
 
 		override = map<bool>("override", to_bool);
+		override_png_flipped = map<bool>("overridePngFlipped", to_bool);
 		override_directory = map<std::filesystem::path>("overrideDirectory", [](std::string s) {return std::filesystem::path(s);});
 	}
 
@@ -64,6 +65,7 @@ namespace CheekyLayer
 		{"dumpPngFlipped", "false"},
 		{"dumpDirectory", "/tmp/vulkan_dump"},
 		{"override", "true"},
+		{"overridePngFlipped", "false"},
 		{"overrideDirectory", "./override"},
 		{"logFile", "cheeky_layer.txt"},
 		{"ruleFile", "rules.txt"},

@@ -6,15 +6,7 @@
 #include <vulkan/generated/vk_layer_dispatch_table.h>
 
 #include <mutex>
-#include <memory>
-#include <map>
-#include <set>
 #include <vulkan/vulkan_core.h>
-
-#include "config.hpp"
-#include "logger.hpp"
-#include "rules/execution_env.hpp"
-#include "rules/rules.hpp"
 
 #undef VK_LAYER_EXPORT
 #if defined(WIN32)
@@ -25,32 +17,7 @@
 
 extern std::mutex global_lock;
 extern std::mutex transfer_lock;
-typedef std::lock_guard<std::mutex> scoped_lock;
-
-extern CheekyLayer::config global_config;
-extern CheekyLayer::logger* logger;
-
-extern std::vector<std::string> overrideCache;
-extern std::vector<std::string> dumpCache;
-
-extern std::vector<std::unique_ptr<CheekyLayer::rules::rule>> rules;
-extern std::map<CheekyLayer::rules::selector_type, bool> has_rules;
-
-extern std::map<VkDevice, VkQueue> graphicsQueues;
-extern std::map<VkDevice, VkQueue> transferQueues;
-extern std::map<VkDevice, VkCommandPool> transferPools;
-extern std::map<VkDevice, VkCommandBuffer> transferCommandBuffers;
-
-extern std::map<VkQueue, VkDevice> queueDevices;
-
-struct VkDeviceInfo {
-    VkPhysicalDeviceProperties general;
-    VkPhysicalDeviceMemoryProperties memory;
-    std::vector<VkQueueFamilyProperties> queueFamilies;
-};
-extern std::map<VkPhysicalDevice, VkInstance> physicalDeviceInstances;
-extern std::map<VkDevice, VkPhysicalDevice> physicalDevices;
-extern std::map<VkDevice, VkDeviceInfo> deviceInfos;
+using scoped_lock = std::lock_guard<std::mutex>;
 
 // layer.cpp
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceCreateInfo*, const VkAllocationCallbacks*, VkInstance*);
@@ -84,7 +51,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_UnmapMemory(VkDevice, VkDeviceMemory
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBuffer(VkCommandBuffer, VkBuffer, VkBuffer, uint32_t, const VkBufferCopy*);
 
 // shaders.cpp
-VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice, VkShaderModuleCreateInfo*, VkAllocationCallbacks*, VkShaderModule*);
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateShaderModule(VkDevice, const VkShaderModuleCreateInfo*, VkAllocationCallbacks*, VkShaderModule*);
 
 // descriptors.cpp
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateDescriptorUpdateTemplate(VkDevice, const VkDescriptorUpdateTemplateCreateInfo*, const VkAllocationCallbacks*, VkDescriptorUpdateTemplate*);

@@ -1,9 +1,9 @@
-cmake_minimum_required (VERSION 3.4)
+cmake_minimum_required (VERSION 3.5)
 include(CMakeDependentOption)
 
 project(vulkan_layer)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Vulkan REQUIRED FATAL_ERROR)

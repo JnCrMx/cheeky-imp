@@ -1,7 +1,6 @@
 #include "rules/data.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
-#include "utils.hpp"
 
 namespace CheekyLayer::rules::datas
 {
@@ -47,6 +46,7 @@ namespace CheekyLayer::rules::datas
 
 			case raw_type::Array: return "Array";
 		}
+		return "Unknown";
 	}
 
 	void unpack_data::read(std::istream& in)
@@ -111,14 +111,15 @@ namespace CheekyLayer::rules::datas
 
 			case raw_type::Array: __builtin_unreachable(); break;
 		}
+		return std::numeric_limits<double>::signaling_NaN();
 	}
 
-	data_value unpack_data::get(selector_type type, data_type dtype, VkHandle handle, local_context& ctx, rule& rule)
+	data_value unpack_data::get(selector_type type, data_type dtype, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
 		if(!supports(type, dtype))
 			throw RULE_ERROR("cannot return data type "+CheekyLayer::rules::to_string(dtype));
 
-		std::vector<uint8_t> v = std::get<std::vector<uint8_t>>(m_src->get(type, data_type::Raw, handle, ctx, rule));
+		std::vector<uint8_t> v = std::get<std::vector<uint8_t>>(m_src->get(type, data_type::Raw, handle, global, local, rule));
 
 		int count = m_count == -1 ? 1 : m_count;
 		size_t theSize;
@@ -205,12 +206,12 @@ namespace CheekyLayer::rules::datas
 		}
 	}
 
-	data_value pack_data::get(selector_type type, data_type dtype, VkHandle handle, local_context& ctx, rule& rule)
+	data_value pack_data::get(selector_type type, data_type dtype, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
 		if(dtype != data_type::Raw)
 			throw RULE_ERROR("cannot return data type "+CheekyLayer::rules::to_string(dtype));
 
-		double d = std::get<double>(m_src->get(type, data_type::Number, handle, ctx, rule));
+		double d = std::get<double>(m_src->get(type, data_type::Number, handle, global, local, rule));
 
 		size_t minSize;
 		switch(m_rawType)

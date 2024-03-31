@@ -1,47 +1,46 @@
 #include "rules/data.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
-#include "utils.hpp"
 
 namespace CheekyLayer::rules::datas
 {
 	data_register<current_element_data> current_element_data::reg("current_element");
 	data_register<current_index_data> current_index_data::reg("current_index");
 	data_register<map_data> map_data::reg("map");
-	
+
 	void current_element_data::read(std::istream& in)
 	{
 		check_stream(in, ')');
 	}
 
-	data_value current_element_data::get(selector_type, data_type type, VkHandle, local_context& ctx, rule &)
+	data_value current_element_data::get(selector_type, data_type type, VkHandle, global_context&, local_context& local, rule &)
 	{
-		if(!ctx.currentElement)
-			throw std::runtime_error("no current element");
+		if(!local.currentElement)
+			throw RULE_ERROR("no current element");
 
 		bool okay = true;
 		switch(type)
 		{
 			case String:
-				okay = std::holds_alternative<std::string>(*ctx.currentElement);
+				okay = std::holds_alternative<std::string>(*local.currentElement);
 				break;
 			case Raw:
-				okay = std::holds_alternative<std::vector<uint8_t>>(*ctx.currentElement);
+				okay = std::holds_alternative<std::vector<uint8_t>>(*local.currentElement);
 				break;
 			case Handle:
-				okay = std::holds_alternative<VkHandle>(*ctx.currentElement);
+				okay = std::holds_alternative<VkHandle>(*local.currentElement);
 				break;
 			case Number:
-				okay = std::holds_alternative<double>(*ctx.currentElement);
+				okay = std::holds_alternative<double>(*local.currentElement);
 				break;
 			case List:
-				okay = std::holds_alternative<data_list>(*ctx.currentElement);
+				okay = std::holds_alternative<data_list>(*local.currentElement);
 				break;
 		}
 		if(!okay)
-			throw std::runtime_error("requested type "+to_string(type)+" does not match type of current element");
+			throw RULE_ERROR("requested type "+to_string(type)+" does not match type of current element");
 
-		return *ctx.currentElement;
+		return *local.currentElement;
 	}
 
 	bool current_element_data::supports(selector_type, data_type)
@@ -59,9 +58,9 @@ namespace CheekyLayer::rules::datas
 		check_stream(in, ')');
 	}
 
-	data_value current_index_data::get(selector_type, data_type type, VkHandle, local_context& ctx, rule &)
+	data_value current_index_data::get(selector_type, data_type type, VkHandle, global_context&, local_context& local, rule &)
 	{
-		return (double)ctx.currentIndex;
+		return static_cast<double>(local.currentIndex);
 	}
 
 	bool current_index_data::supports(selector_type, data_type type)
@@ -85,7 +84,7 @@ namespace CheekyLayer::rules::datas
 			of << "Source \"";
 			m_src->print(of);
 			of << "\" does not support type List.";
-			throw std::runtime_error(of.str());
+			throw RULE_ERROR(of.str());
 		}
 
 		std::string dt;
@@ -101,7 +100,7 @@ namespace CheekyLayer::rules::datas
 			of << "Mapper \"";
 			m_src->print(of);
 			of << "\" does not support requested element type " << to_string(m_elementDstType);
-			throw std::runtime_error(of.str());
+			throw RULE_ERROR(of.str());
 		}
 	}
 
@@ -110,17 +109,17 @@ namespace CheekyLayer::rules::datas
 		return t == data_type::List;
 	}
 
-	data_value map_data::get(selector_type stype, data_type type, VkHandle handle, local_context& ctx, rule& rule)
+	data_value map_data::get(selector_type stype, data_type type, VkHandle handle, global_context& global, local_context& local, rule& rule)
 	{
-		data_list src = std::get<data_list>(m_src->get(stype, data_type::List, handle, ctx, rule));
+		data_list src = std::get<data_list>(m_src->get(stype, data_type::List, handle, global, local, rule));
 
-		auto saved = ctx.currentElement;
+		auto saved = local.currentElement;
 		for(data_value& elem : src.values)
 		{
-			ctx.currentElement = &elem;
-			elem = m_mapper->get(stype, m_elementDstType, handle, ctx, rule);
+			local.currentElement = &elem;
+			elem = m_mapper->get(stype, m_elementDstType, handle, global, local, rule);
 		}
-		ctx.currentElement = saved;
+		local.currentElement = saved;
 
 		return src;
 	}

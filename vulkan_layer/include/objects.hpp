@@ -9,14 +9,111 @@
 #include <unordered_set>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/generated/vk_layer_dispatch_table.h>
+#include <spirv_reflect.h>
+
+#ifdef USE_IMAGE_TOOLS
+#include <image.hpp>
+#endif
 
 namespace CheekyLayer {
 
 struct instance;
 
+using descriptor_element_info = std::variant<VkDescriptorBufferInfo, VkDescriptorImageInfo>;
+struct descriptor_element
+{
+	rules::VkHandle handle;
+	descriptor_element_info info;
+};
+
+struct descriptor_binding
+{
+	CheekyLayer::rules::selector_type type;
+	VkDescriptorType exactType;
+	std::vector<descriptor_element> arrayElements;
+};
+
+struct descriptor_state
+{
+	std::map<int, descriptor_binding> bindings;
+};
+
+struct shader_info
+{
+	VkShaderStageFlagBits stage;
+	VkShaderModule module;
+	rules::VkHandle customHandle;
+	std::string hash;
+	std::string name;
+};
+
+struct pipeline_state
+{
+	std::vector<shader_info> stages;
+	std::vector<VkVertexInputBindingDescription> vertexBindingDescriptions;
+	std::vector<VkVertexInputAttributeDescription> vertexAttributeDescriptions;
+};
+
+struct buffer_binding
+{
+	VkBuffer buffer;
+	VkDeviceSize offset;
+	VkDeviceSize size;
+};
+
+struct command_buffer_state
+{
+	VkDevice device;
+	VkPipeline pipeline;
+	std::vector<VkDescriptorSet> descriptorSets;
+	std::vector<uint32_t> descriptorDynamicOffsets;
+
+	std::vector<VkBuffer> vertexBuffers;
+	std::vector<VkDeviceSize> vertexBufferOffsets;
+
+	VkBuffer indexBuffer;
+	VkDeviceSize indexBufferOffset;
+	VkIndexType indexType;
+
+	std::vector<VkRect2D> scissors;
+
+	VkRenderPass renderpass;
+	VkFramebuffer framebuffer;
+
+	bool transformFeedback;
+	std::vector<buffer_binding> transformFeedbackBuffers;
+};
+
+struct pipeline_layout_info
+{
+	std::vector<VkDescriptorSetLayout> setLayouts;
+	std::vector<VkPushConstantRange> pushConstantRanges;
+};
+
+struct framebuffer
+{
+	std::vector<VkImageView> attachments;
+	uint32_t width;
+	uint32_t height;
+
+	framebuffer() {}
+
+	framebuffer(const VkFramebufferCreateInfo* i)
+	{
+		attachments = std::vector<VkImageView>(i->pAttachments, i->pAttachments + i->attachmentCount);
+		width = i->width;
+		height = i->height;
+	}
+};
+
 struct device {
     device() = default;
     device(instance* inst, PFN_vkGetDeviceProcAddr gdpa, VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo, VkDevice *pDevice);
+
+    device& operator=(const device&) = delete; // no copy
+    device(const device&) = delete; // no copy
+
+    VkDevice operator*() const { return handle; }
 
     instance* inst;
     std::shared_ptr<spdlog::logger> logger;
@@ -56,8 +153,30 @@ struct device {
         VkDeviceMemory memory;
         VkDeviceSize memoryOffset;
         VkImageView view;
+#ifdef USE_IMAGE_TOOLS
+        std::unique_ptr<image_tools::image> topResolution;
+#endif
     };
     std::map<VkImage, image> images;
+    std::map<VkImageView, VkImage> imageViewToImage;
+    std::map<VkFramebuffer, framebuffer> framebuffers;
+
+    uint64_t currentCustomShaderHandle = 0xABC1230000;
+    std::map<rules::VkHandle, rules::VkHandle> customShaderHandles;
+    std::map<rules::VkHandle, spv_reflect::ShaderModule> shaderReflections;
+
+    std::map<VkCommandBuffer, command_buffer_state> commandBufferStates;
+    std::map<VkPipelineLayout, pipeline_layout_info> pipelineLayouts;
+    std::map<VkPipeline, pipeline_state> pipelineStates;
+
+    std::map<VkDescriptorUpdateTemplate, std::vector<VkDescriptorUpdateTemplateEntry>> updateTemplates;
+    std::map<VkDescriptorSet, descriptor_state> descriptorStates;
+
+    void execute_rules(rules::selector_type type, rules::VkHandle handle, rules::calling_context& ctx);
+    void memory_access(VkDeviceMemory memory, std::function<void(void*, VkDeviceSize)> function, VkDeviceSize offset = 0);
+    void memory_access(VkBuffer buffer, std::function<void(void*, VkDeviceSize)> function, VkDeviceSize offset = 0);
+    void put_hash(rules::VkHandle handle, std::string hash);
+    bool has_override(const std::string& hash);
 
     void GetDeviceQueue(uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue *pQueue);
 
@@ -74,7 +193,15 @@ struct device {
     void UnmapMemory(VkDeviceMemory);
     void CmdCopyBuffer(VkCommandBuffer, VkBuffer, VkBuffer, uint32_t, const VkBufferCopy*);
 
+    // shaders.cpp
+    VkResult CreateShaderModule(const VkShaderModuleCreateInfo*, const VkAllocationCallbacks*, VkShaderModule*);
+
     // draw.cpp
+    VkResult AllocateCommandBuffers(const VkCommandBufferAllocateInfo*, VkCommandBuffer*);
+    void FreeCommandBuffers(VkCommandPool, uint32_t, const VkCommandBuffer*);
+    VkResult CreateFramebuffer(const VkFramebufferCreateInfo*, const VkAllocationCallbacks*, VkFramebuffer*);
+    VkResult CreatePipelineLayout(const VkPipelineLayoutCreateInfo*, const VkAllocationCallbacks*, VkPipelineLayout*);
+    VkResult CreateGraphicsPipelines(VkPipelineCache, uint32_t, const VkGraphicsPipelineCreateInfo*, const VkAllocationCallbacks*, VkPipeline*);
     VkResult CreateSwapchainKHR(const VkSwapchainCreateInfoKHR*, const VkAllocationCallbacks*, VkSwapchainKHR*);
 };
 
@@ -89,6 +216,8 @@ struct instance {
 
     instance& operator=(instance&&);
 
+    VkInstance operator*() const { return handle; }
+
     unsigned int id;
     VkInstance handle;
     VkLayerInstanceDispatchTable dispatch;
@@ -97,8 +226,9 @@ struct instance {
     bool enabled = false;
     bool hook_draw_calls = false;
 
-    std::vector<std::unique_ptr<CheekyLayer::rules::rule>> rules;
+    std::vector<std::unique_ptr<rules::rule>> rules;
     std::map<CheekyLayer::rules::selector_type, bool> has_rules;
+    rules::global_context global_context;
 
     std::unordered_set<std::string> overrideCache;
     std::unordered_set<std::string> dumpCache;
@@ -107,6 +237,9 @@ struct instance {
     std::shared_ptr<spdlog::logger> logger;
 
     std::unordered_map<VkDevice, device*> devices;
+
+    void execute_rules(rules::selector_type type, rules::VkHandle handle, rules::calling_context& ctx);
+    void put_hash(rules::VkHandle handle, std::string hash);
 
     VkResult CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkDevice *pDevice);
 };
