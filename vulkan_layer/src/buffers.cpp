@@ -33,7 +33,7 @@ VkResult device::BindBufferMemory(VkBuffer buffer, VkDeviceMemory memory, VkDevi
     buffers[buffer].memory = memory;
     buffers[buffer].memoryOffset = memoryOffset;
 
-    logger->info("BindBufferMemory: buffer={} memory={} offset={:#x}", fmt::ptr(buffer), fmt::ptr(memory), memoryOffset);
+    logger->debug("BindBufferMemory: buffer={} memory={} offset={:#x}", fmt::ptr(buffer), fmt::ptr(memory), memoryOffset);
 
     return dispatch.BindBufferMemory(handle, buffer, memory, memoryOffset);
 }
@@ -41,7 +41,7 @@ VkResult device::BindBufferMemory(VkBuffer buffer, VkDeviceMemory memory, VkDevi
 VkResult device::MapMemory(VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, VkMemoryMapFlags flags, void** ppData)
 {
     VkResult ret = dispatch.MapMemory(handle, memory, offset, size, flags, ppData);
-    logger->info("MapMemory: memory={} offset={:#x} size={:#x} flags={}", fmt::ptr(memory), offset, size, flags);
+    logger->debug("MapMemory: memory={} offset={:#x} size={:#x} flags={}", fmt::ptr(memory), offset, size, flags);
 
     if(ret == VK_SUCCESS)
     {
@@ -53,7 +53,7 @@ VkResult device::MapMemory(VkDeviceMemory memory, VkDeviceSize offset, VkDeviceS
 void device::UnmapMemory(VkDeviceMemory memory)
 {
     dispatch.UnmapMemory(handle, memory);
-    logger->info("UnmapMemory: memory={}", fmt::ptr(memory));
+    logger->debug("UnmapMemory: memory={}", fmt::ptr(memory));
 
     memoryMappings.erase(memory);
 }

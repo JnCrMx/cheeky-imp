@@ -1,6 +1,6 @@
 #include "rules/actions.hpp"
 
-#include "draw.hpp"
+#include "layer.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
 #include "objects.hpp"
@@ -216,7 +216,7 @@ namespace CheekyLayer::rules::actions
 		}
 
 		const auto locals = local.local_variables;
-		local.logger.debug("Saving locals: {}", fmt::join(locals | std::ranges::views::keys, ", "));
+		local.logger.trace("on_action: Saving locals: {}", fmt::join(locals | std::ranges::views::keys, ", "));
 
 		switch(m_event)
 		{
@@ -527,7 +527,7 @@ namespace CheekyLayer::rules::actions
 	{
 		VkHandle h = std::get<VkHandle>(m_target->get(stype, data_type::Handle, handle, global, local, rule));
 
-		scoped_lock l(global_lock);
+		std::scoped_lock l(global_lock);
 		if(m_mode == mode::Data)
 		{
 			std::vector<uint8_t> data = std::get<std::vector<uint8_t>>(m_data->get(stype, data_type::Raw, handle, global, local, rule));
@@ -951,9 +951,19 @@ R"(overload timing:
 		VkEvent event;
 
 		VkFramebuffer fb = local.commandBufferState->framebuffer;
-		VkImageView view = device.framebuffers[fb].attachments.at(m_attachment);
-		VkImage image = device.imageViewToImage[view];
+		if(fb == VK_NULL_HANDLE)
+			throw RULE_ERROR("cannot dump framebuffer, because framebuffer is NULL");
+		if(!device.framebuffers.contains(fb))
+			throw RULE_ERROR("cannot dump framebuffer, because framebuffer is unknown");
+		auto& fb_info = device.framebuffers.at(fb);
+		if(fb_info.attachments.size() <= m_attachment)
+			throw RULE_ERROR("cannot dump framebuffer, because attachment is out of bounds");
+
+		VkImageView view = device.framebuffers.at(fb).attachments.at(m_attachment);
+		VkImage image = device.imageViewToImage.at(view);
 		VkImageCreateInfo imageInfo = device.images.at(image).createInfo;
+		local.logger.debug("Dumping framebuffer attachment {} with format {} and extent {}x{}",
+			m_attachment, vk::to_string(vk::Format(imageInfo.format)), imageInfo.extent.width, imageInfo.extent.height);
 
 		VkMemoryRequirements req;
 		device.dispatch.GetImageMemoryRequirements(*device, image, &req);

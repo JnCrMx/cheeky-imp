@@ -1,17 +1,169 @@
-#include "dispatch.hpp"
+#include "objects.hpp"
 #include "layer.hpp"
-#include "descriptors.hpp"
+
 #include "reflection/reflectionparser.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
-#include "objects.hpp"
 
-#include <iomanip>
-#include <iterator>
 #include <experimental/iterator>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_enums.hpp>
+
+std::string verbose_pipeline_stages(CheekyLayer::pipeline_state& pstate)
+{
+	std::ostringstream log;
+	log << "  pipeline stages:\n";
+	log << "    |    stage |       name | shader\n";
+	for(auto shader : pstate.stages)
+	{
+		log << "    | " << std::setw(8) << vk::to_string((vk::ShaderStageFlagBits)shader.stage) << " | ";
+		log << std::setw(10) << shader.name;
+		log << " | " << shader.hash;
+		log << '\n';
+	}
+	return log.str();
+}
+
+std::string verbose_vertex_bindings(CheekyLayer::device& device, CheekyLayer::command_buffer_state& state, CheekyLayer::pipeline_state& pstate, bool index)
+{
+	std::ostringstream log;
+	log << "  vertex bindings:\n";
+	log << "    | binding | stride |     rate | buffer\n";
+	if(index)
+	{
+		log << "    | " << std::setw(7) << "index" << " | ";
+		log << std::setw(6);
+		switch(state.indexType)
+		{
+			case VK_INDEX_TYPE_UINT16:
+				log << 2;
+				break;
+			case VK_INDEX_TYPE_UINT32:
+				log << 4;
+				break;
+			default:
+				log << vk::to_string((vk::IndexType)state.indexType);
+		}
+		log << " | " << std::setw(8) << "-";
+
+		auto p = device.inst->global_context.hashes.find((CheekyLayer::rules::VkHandle)state.indexBuffer);
+		if(p != device.inst->global_context.hashes.end())
+		{
+			log << " | " << p->second;
+		}
+		else
+		{
+			log << " | " << "unknown buffer " << state.indexBuffer;
+		}
+		log << " + " << std::hex << state.indexBufferOffset << std::dec;
+		log << '\n';
+	}
+	for(auto b : pstate.vertexBindingDescriptions)
+	{
+		log << "    | "
+			<< std::setw(7) << b.binding   << " | "
+			<< std::setw(6) << b.stride    << " | "
+			<< std::setw(8) << vk::to_string((vk::VertexInputRate)b.inputRate);
+
+		if(state.vertexBuffers.size() > b.binding)
+		{
+			VkBuffer buffer = state.vertexBuffers[b.binding];
+			auto p = device.inst->global_context.hashes.find((CheekyLayer::rules::VkHandle)buffer);
+			if(p != device.inst->global_context.hashes.end())
+			{
+				log << " | " << p->second;
+			}
+			else
+			{
+				log << " | " << "unknown buffer " << buffer;
+			}
+			log << " + " << std::hex << state.vertexBufferOffsets[b.binding] << std::dec;
+		}
+		log << '\n';
+	}
+	return log.str();
+}
+
+std::string verbose_vertex_attributes(CheekyLayer::device&, CheekyLayer::pipeline_state& pstate)
+{
+	std::ostringstream log;
+	log << "  vertex attributes:\n";
+	log << "    | binding | location | offset | format\n";
+	for(auto a : pstate.vertexAttributeDescriptions)
+	{
+		log << "    | "
+			<< std::setw(7) << a.binding  << " | "
+			<< std::setw(8) << a.location << " | "
+			<< std::setw(6) << a.offset   << " | "
+			<< std::setw(6) << vk::to_string((vk::Format)a.format)   << '\n';
+	}
+	return log.str();
+}
+
+std::string verbose_descriptors(CheekyLayer::device& device, CheekyLayer::command_buffer_state& state)
+{
+	std::ostringstream log;
+	log << "  descriptors:\n";
+	log << "    | set | binding |   type |                exact type |         offset | elements\n";
+	for(int i=0; i<state.descriptorSets.size(); i++)
+	{
+		VkDescriptorSet set = state.descriptorSets[i];
+		if(device.descriptorStates.contains(set))
+		{
+			auto& descriptorState = device.descriptorStates[set];
+			for(auto& [binding, info] : descriptorState.bindings)
+			{
+				log << "    | "
+					<< std::setw(3) << i << " | "
+					<< std::setw(7) << binding << " | "
+					<< std::setw(6) << to_string(info.type) << " | "
+					<< std::setw(25) << vk::to_string((vk::DescriptorType)info.exactType) << " | ";
+				if(state.descriptorDynamicOffsets.size() > binding)
+					log << std::setw(14) << state.descriptorDynamicOffsets[binding];
+				else
+					log << "unknown offset";
+				log << " | ";
+				std::transform(info.arrayElements.begin(), info.arrayElements.end(), std::experimental::make_ostream_joiner(log, ", "), [](auto a){
+					return a.handle;
+				});
+				log << '\n';
+			}
+		}
+		else
+		{
+			log << "    | " << std::setw(3) << i << " | unrecognized descriptor set " << set << '\n';
+		}
+	}
+	return log.str();
+}
+
+std::string verbose_commandbuffer_state(CheekyLayer::device& device, CheekyLayer::command_buffer_state& state)
+{
+	std::ostringstream log;
+	log << "  command buffer state:\n";
+	log << "    transformFeedback = " << std::boolalpha << state.transformFeedback << '\n';
+	if(state.transformFeedback)
+	{
+		log << "    transformFeedbackBuffers:\n";
+		for(const auto& binding : state.transformFeedbackBuffers)
+		{
+			log << "      ";
+			VkBuffer buffer = binding.buffer;
+			auto p = device.inst->global_context.hashes.find((CheekyLayer::rules::VkHandle)buffer);
+			if(p != device.inst->global_context.hashes.end())
+			{
+				log << p->second;
+			}
+			else
+			{
+				log << "unknown buffer " << buffer;
+			}
+			log << " + " << std::hex << binding.offset << std::dec << " (" << binding.size << " bytes)\n";
+		}
+	}
+	return log.str();
+}
 
 namespace CheekyLayer {
 
@@ -25,7 +177,7 @@ VkResult device::CreateSwapchainKHR(const VkSwapchainCreateInfoKHR* pCreateInfo,
 	rules::calling_context ctx{
 		.info = info
 	};
-	execute_rules(rules::selector_type::SwapchainCreate, (VkHandle)(*pSwapchain), ctx);
+	execute_rules(rules::selector_type::SwapchainCreate, (rules::VkHandle)(*pSwapchain), ctx);
 
 	return result;
 }
@@ -35,7 +187,7 @@ VkResult device::AllocateCommandBuffers(const VkCommandBufferAllocateInfo* pAllo
 	if(result != VK_SUCCESS)
 		return result;
 
-	logger->info("AllocateCommandBuffers: {}", pAllocateInfo->commandBufferCount);
+	logger->debug("AllocateCommandBuffers: {}", pAllocateInfo->commandBufferCount);
 
 	for(int i=0; i<pAllocateInfo->commandBufferCount; i++)
 	{
@@ -49,7 +201,7 @@ VkResult device::AllocateCommandBuffers(const VkCommandBufferAllocateInfo* pAllo
 }
 
 void device::FreeCommandBuffers(VkCommandPool commandPool, uint32_t commandBufferCount, const VkCommandBuffer* pCommandBuffers) {
-	logger->info("FreeCommandBuffers: {}", commandBufferCount);
+	logger->debug("FreeCommandBuffers: {}", commandBufferCount);
 
 	for(int i=0; i<commandBufferCount; i++)
 	{
@@ -88,7 +240,7 @@ VkResult device::CreateGraphicsPipelines(VkPipelineCache pipelineCache, uint32_t
 	for(unsigned int i=0; i<createInfoCount; i++) {
 		VkGraphicsPipelineCreateInfo* info = const_cast<VkGraphicsPipelineCreateInfo*>(&pCreateInfos[i]);
 
-		std::vector<VkHandle> shaderStages;
+		std::vector<rules::VkHandle> shaderStages;
 		std::transform(info->pStages, info->pStages+info->stageCount, std::back_inserter(shaderStages), [this](VkPipelineShaderStageCreateInfo s){
 			return customShaderHandles[s.module];
 		});
@@ -123,7 +275,7 @@ VkResult device::CreateGraphicsPipelines(VkPipelineCache pipelineCache, uint32_t
 		state.stages.resize(info.stageCount);
 		for(unsigned int j=0; j<info.stageCount; j++) {
 			VkPipelineShaderStageCreateInfo shaderInfo = info.pStages[j];
-			VkHandle customHandle = customShaderHandles[shaderInfo.module];
+			rules::VkHandle customHandle = customShaderHandles[shaderInfo.module];
 
 			auto p = inst->global_context.hashes.find(customHandle);
 			std::string hash = "unknown";
@@ -146,7 +298,430 @@ VkResult device::CreateGraphicsPipelines(VkPipelineCache pipelineCache, uint32_t
 	return result;
 }
 
+void device::CmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t firstSet, uint32_t descriptorSetCount, const VkDescriptorSet* pDescriptorSets, uint32_t dynamicOffsetCount, const uint32_t* pDynamicOffsets)
+{
+	auto& state = commandBufferStates[commandBuffer];
+	if(state.descriptorSets.size() < (firstSet + descriptorSetCount))
+		state.descriptorSets.resize(firstSet + descriptorSetCount);
+	std::copy(pDescriptorSets, pDescriptorSets+descriptorSetCount, state.descriptorSets.begin() + firstSet);
+
+	if(dynamicOffsetCount && pDynamicOffsets) {
+		// TODO: support multiple descriptor sets, eeeeeeeh
+		if(state.descriptorDynamicOffsets.size() < dynamicOffsetCount)
+			state.descriptorDynamicOffsets.resize(dynamicOffsetCount);
+		std::copy(pDynamicOffsets, pDynamicOffsets + dynamicOffsetCount, state.descriptorDynamicOffsets.begin());
+	}
+
+	dispatch.CmdBindDescriptorSets(commandBuffer, pipelineBindPoint, layout, firstSet, descriptorSetCount, pDescriptorSets, dynamicOffsetCount, pDynamicOffsets);
 }
+
+void device::CmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline)
+{
+	auto& state = commandBufferStates[commandBuffer];
+	state.pipeline = pipeline;
+	dispatch.CmdBindPipeline(commandBuffer, pipelineBindPoint, pipeline);
+}
+
+void device::CmdBindVertexBuffers(VkCommandBuffer commandBuffer, uint32_t firstBinding, uint32_t bindingCount, const VkBuffer* pBuffers, const VkDeviceSize* pOffsets)
+{
+	auto& state = commandBufferStates[commandBuffer];
+	if(state.vertexBuffers.size() < (firstBinding + bindingCount))
+		state.vertexBuffers.resize(firstBinding + bindingCount);
+	if(state.vertexBufferOffsets.size() < (firstBinding + bindingCount))
+		state.vertexBufferOffsets.resize(firstBinding + bindingCount);
+
+	std::copy(pBuffers, pBuffers+bindingCount, state.vertexBuffers.begin() + firstBinding);
+	std::copy(pOffsets, pOffsets+bindingCount, state.vertexBufferOffsets.begin() + firstBinding);
+
+	dispatch.CmdBindVertexBuffers(commandBuffer, firstBinding, bindingCount, pBuffers, pOffsets);
+}
+
+void device::CmdBindVertexBuffers2EXT(VkCommandBuffer commandBuffer, uint32_t firstBinding, uint32_t bindingCount, const VkBuffer* pBuffers, const VkDeviceSize* pOffsets, const VkDeviceSize* pSizes, const VkDeviceSize* pStrides)
+{
+	auto& state = commandBufferStates[commandBuffer];
+	if(state.vertexBuffers.size() < (firstBinding + bindingCount))
+		state.vertexBuffers.resize(firstBinding + bindingCount);
+	if(state.vertexBufferOffsets.size() < (firstBinding + bindingCount))
+		state.vertexBufferOffsets.resize(firstBinding + bindingCount);
+
+	std::copy(pBuffers, pBuffers+bindingCount, state.vertexBuffers.begin() + firstBinding);
+	std::copy(pOffsets, pOffsets+bindingCount, state.vertexBufferOffsets.begin() + firstBinding);
+
+	dispatch.CmdBindVertexBuffers2EXT(commandBuffer, firstBinding, bindingCount, pBuffers, pOffsets, pSizes, pStrides);
+}
+
+void device::CmdBindIndexBuffer(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, VkIndexType indexType)
+{
+	auto& state = commandBufferStates[commandBuffer];
+	state.indexBuffer = buffer;
+	state.indexBufferOffset = offset;
+	state.indexType = indexType;
+
+	dispatch.CmdBindIndexBuffer(commandBuffer, buffer, offset, indexType);
+}
+
+void device::CmdSetScissor(VkCommandBuffer commandBuffer, uint32_t firstScissor, uint32_t scissorCount, const VkRect2D* pScissors)
+{
+	auto& state = commandBufferStates[commandBuffer];
+	if(state.scissors.size() < (firstScissor + scissorCount))
+		state.scissors.resize(firstScissor + scissorCount);
+	std::copy(pScissors, pScissors+scissorCount, state.scissors.begin() + firstScissor);
+
+	dispatch.CmdSetScissor(commandBuffer, firstScissor, scissorCount, pScissors);
+}
+
+void device::CmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo* pRenderPassBegin, VkSubpassContents contents)
+{
+	logger->trace("CmdBeginRenderPass in commandBuffer {} with renderPass {} and framebuffer {}",
+		fmt::ptr(commandBuffer), fmt::ptr(pRenderPassBegin->renderPass), fmt::ptr(pRenderPassBegin->framebuffer));
+
+	auto& state = commandBufferStates[commandBuffer];
+	state.renderpass = pRenderPassBegin->renderPass;
+	state.framebuffer = pRenderPassBegin->framebuffer;
+
+	dispatch.CmdBeginRenderPass(commandBuffer, pRenderPassBegin, contents);
+}
+
+void device::CmdEndRenderPass(VkCommandBuffer commandBuffer)
+{
+	auto& state = commandBufferStates[commandBuffer];
+
+	logger->trace("CmdEndRenderPass in commandBuffer {} with former renderPass {} and former framebuffer {}",
+		fmt::ptr(commandBuffer), fmt::ptr(state.renderpass), fmt::ptr(state.framebuffer));
+
+	auto& map = inst->global_context.on_EndRenderPass;
+	auto p = map.find(commandBuffer);
+	if(p != map.end() && !p->second.empty()) {
+		bool _1;
+		std::vector<std::string> _2;
+		std::string _3;
+		std::vector<std::function<void(rules::VkHandle)>> _4;
+		std::unordered_map<std::string, rules::data_value> _5;
+		void* _6;
+
+		rules::local_context ctx = {
+			.logger = *logger,
+			.instance = inst,
+			.device = this,
+			.commandBuffer = commandBuffer,
+			.commandBufferState = &state,
+			.canceled = _1,
+			.overrides = _2,
+			.customTag = _3,
+			.creationCallbacks = _4,
+			.local_variables = _5,
+			.customPointer = _6
+		};
+
+		for(auto& f : p->second) {
+			try {
+				f(ctx);
+			} catch(const std::exception& e) {
+				logger->error("Failed to execute callback: {}", e.what());
+			}
+		}
+		p->second.clear();
+	}
+
+	dispatch.CmdEndRenderPass(commandBuffer);
+	state.renderpass = VK_NULL_HANDLE;
+	state.framebuffer = VK_NULL_HANDLE;
+}
+
+void device::CmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance)
+{
+	auto& state = commandBufferStates[commandBuffer];
+
+	std::vector<VkImage> images;
+	std::vector<VkBuffer> buffers;
+	std::vector<rules::VkHandle> shaders;
+	for(const auto& d : state.descriptorSets) {
+		if(!d) {
+			continue;
+		}
+
+		const auto& ds = descriptorStates[d];
+		for(const auto& [_, binding] : ds.bindings) {
+			switch(binding.type) {
+				case rules::selector_type::Image:
+					std::transform(binding.arrayElements.begin(), binding.arrayElements.end(), std::back_inserter(images), [](const auto& h){
+						return (VkImage) h.handle;
+					});
+					break;
+				default:
+					;
+			}
+		}
+	}
+
+	auto& pstate = pipelineStates[state.pipeline];
+	std::transform(pstate.stages.begin(), pstate.stages.end(), std::back_inserter(shaders), [](const auto& s){
+		return s.customHandle;
+	});
+	std::copy(state.vertexBuffers.begin(), state.vertexBuffers.end(), std::back_inserter(buffers));
+
+	reflection::VkCmdDraw drawCall = {
+		.vertexCount = vertexCount,
+		.instanceCount = instanceCount,
+		.firstVertex = firstVertex,
+		.firstInstance = firstInstance,
+		.commandBufferState = {
+			.scissorCount = static_cast<uint32_t>(state.scissors.size()),
+			.pScissors = state.scissors.data(),
+			.transformFeedback = state.transformFeedback
+		}
+	};
+	rules::draw_info info = {images, shaders, buffers, state.indexBuffer, &drawCall};
+
+	auto printVerbose = [&](spdlog::logger& logger){
+		logger.info(
+R"(CmdDraw: on device {} from command buffer {} with pipeline {}
+  draw parameters:
+	vertexCount = {}
+	instanceCount = {}
+	firstVertex = {}
+	firstInstance = {}
+{}
+{}
+{}
+{}
+{}
+		)", fmt::ptr(state.device), fmt::ptr(commandBuffer), fmt::ptr(state.pipeline),
+			vertexCount, instanceCount, firstVertex, firstInstance,
+			verbose_commandbuffer_state(*this, state),
+			verbose_pipeline_stages(pstate),
+			verbose_vertex_bindings(*this, state, pstate, false),
+			verbose_vertex_attributes(*this, pstate),
+			verbose_descriptors(*this, state)
+		);
+	};
+
+	rules::calling_context ctx{
+		.printVerbose = printVerbose,
+		.info = info,
+		.commandBuffer = commandBuffer,
+		.commandBufferState = &state,
+	};
+	execute_rules(rules::selector_type::Draw, VK_NULL_HANDLE, ctx);
+
+	if(!ctx.canceled) {
+		dispatch.CmdDraw(commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
+	}
+}
+
+void device::CmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance)
+{
+	auto& state = commandBufferStates[commandBuffer];
+
+	std::vector<VkImage> images;
+	std::vector<VkBuffer> buffers;
+	std::vector<rules::VkHandle> shaders;
+	for(const auto& d : state.descriptorSets) {
+		if(!d) {
+			continue;
+		}
+
+		const auto& ds = descriptorStates[d];
+		for(const auto& [_, binding] : ds.bindings) {
+			switch(binding.type) {
+				case rules::selector_type::Image:
+					std::transform(binding.arrayElements.begin(), binding.arrayElements.end(), std::back_inserter(images), [](const auto& h){
+						return (VkImage) h.handle;
+					});
+					break;
+				default:
+					;
+			}
+		}
+	}
+
+	auto& pstate = pipelineStates[state.pipeline];
+	std::transform(pstate.stages.begin(), pstate.stages.end(), std::back_inserter(shaders), [](const auto& s){
+		return s.customHandle;
+	});
+	buffers.push_back(state.indexBuffer);
+	std::copy(state.vertexBuffers.begin(), state.vertexBuffers.end(), std::back_inserter(buffers));
+
+	reflection::VkCmdDrawIndexed drawCall = {
+		.indexCount = indexCount,
+		.instanceCount = instanceCount,
+		.firstIndex = firstIndex,
+		.vertexOffset = vertexOffset,
+		.firstInstance = firstInstance,
+		.commandBufferState = {
+			.scissorCount = static_cast<uint32_t>(state.scissors.size()),
+			.pScissors = state.scissors.data(),
+			.transformFeedback = state.transformFeedback
+		}
+	};
+	rules::draw_info info = {images, shaders, buffers, state.indexBuffer, &drawCall};
+
+	auto printVerbose = [&](spdlog::logger& logger){
+		logger.info(
+R"(CmdDrawIndexed: on device {} from command buffer {} with pipeline {}
+  draw parameters:
+	indexCount = {}
+	instanceCount = {}
+	firstIndex = {}
+	vertexOffset = {}
+	firstInstance = {}
+{}
+{}
+{}
+{}
+{}
+		)", fmt::ptr(state.device), fmt::ptr(commandBuffer), fmt::ptr(state.pipeline),
+			indexCount, instanceCount, firstIndex, vertexOffset, firstInstance,
+			verbose_commandbuffer_state(*this, state),
+			verbose_pipeline_stages(pstate),
+			verbose_vertex_bindings(*this, state, pstate, false),
+			verbose_vertex_attributes(*this, pstate),
+			verbose_descriptors(*this, state)
+		);
+	};
+
+	rules::calling_context ctx{
+		.printVerbose = printVerbose,
+		.info = info,
+		.commandBuffer = commandBuffer,
+		.commandBufferState = &state,
+	};
+	execute_rules(rules::selector_type::Draw, VK_NULL_HANDLE, ctx);
+
+	if(!ctx.canceled) {
+		dispatch.CmdDrawIndexed(commandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+	}
+}
+
+void device::CmdBeginTransformFeedbackEXT(VkCommandBuffer commandBuffer, uint32_t firstCounterBuffer, uint32_t counterBufferCount, const VkBuffer* pCounterBuffers, const VkDeviceSize* pCounterBufferOffsets)
+{
+	auto& state = commandBufferStates[commandBuffer];
+	state.transformFeedback = true;
+	dispatch.CmdBeginTransformFeedbackEXT(commandBuffer, firstCounterBuffer, counterBufferCount, pCounterBuffers, pCounterBufferOffsets);
+}
+
+void device::CmdBindTransformFeedbackBuffersEXT(VkCommandBuffer commandBuffer, uint32_t firstBinding, uint32_t bindingCount, const VkBuffer* pBuffers, const VkDeviceSize* pOffsets, const VkDeviceSize* pSizes)
+{
+	auto& state = commandBufferStates[commandBuffer];
+	if(state.transformFeedbackBuffers.size() < (firstBinding + bindingCount))
+		state.transformFeedbackBuffers.resize(firstBinding + bindingCount);
+	for(unsigned int i=0; i<bindingCount; i++) {
+		state.transformFeedbackBuffers[i+firstBinding] = {pBuffers[i], pOffsets[i], pSizes[i]};
+	}
+	dispatch.CmdBindTransformFeedbackBuffersEXT(commandBuffer, firstBinding, bindingCount, pBuffers, pOffsets, pSizes);
+}
+
+void device::CmdEndTransformFeedbackEXT(VkCommandBuffer commandBuffer, uint32_t firstCounterBuffer, uint32_t counterBufferCount, const VkBuffer* pCounterBuffers, const VkDeviceSize* pCounterBufferOffsets)
+{
+	auto& state = commandBufferStates[commandBuffer];
+	state.transformFeedback = false;
+	state.transformFeedbackBuffers.clear();
+	dispatch.CmdEndTransformFeedbackEXT(commandBuffer, firstCounterBuffer, counterBufferCount, pCounterBuffers, pCounterBufferOffsets);
+}
+
+VkResult device::EndCommandBuffer(VkCommandBuffer commandBuffer)
+{
+	auto& state = commandBufferStates[commandBuffer];
+	state.transformFeedback = false;
+
+	auto& map = inst->global_context.on_EndCommandBuffer;
+	auto p = map.find(commandBuffer);
+	if(p != map.end() && !p->second.empty()) {
+		bool _1;
+		std::vector<std::string> _2;
+		std::string _3;
+		std::vector<std::function<void(rules::VkHandle)>> _4;
+		std::unordered_map<std::string, rules::data_value> _5;
+		void* _6;
+
+		rules::local_context ctx = {
+			.logger = *logger,
+			.instance = inst,
+			.device = this,
+			.commandBuffer = commandBuffer,
+			.commandBufferState = &state,
+			.canceled = _1,
+			.overrides = _2,
+			.customTag = _3,
+			.creationCallbacks = _4,
+			.local_variables = _5,
+			.customPointer = _6
+		};
+
+		for(auto& f : p->second) {
+			try {
+				f(ctx);
+			} catch(const std::exception& e) {
+				logger->error("Failed to execute callback: {}", e.what());
+			}
+		}
+		p->second.clear();
+	}
+
+	return dispatch.EndCommandBuffer(commandBuffer);
+}
+
+VkResult device::QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo)
+{
+	rules::present_info info = {pPresentInfo};
+	rules::calling_context ctx{
+		.info = info,
+	};
+	execute_rules(rules::selector_type::Present, VK_NULL_HANDLE, ctx);
+
+	if(ctx.canceled)
+		return VK_SUCCESS;
+	return dispatch.QueuePresentKHR(queue, pPresentInfo);
+}
+
+VkResult device::QueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence)
+{
+	for(unsigned int i=0; i<submitCount; i++) {
+		const VkSubmitInfo& submit = pSubmits[i];
+		for(unsigned int j=0; j<submit.commandBufferCount; j++) {
+			VkCommandBuffer commandBuffer = submit.pCommandBuffers[j];
+			auto& state = commandBufferStates[commandBuffer];
+
+			auto& map = inst->global_context.on_QueueSubmit;
+			auto p = map.find(commandBuffer);
+			if(p != map.end() && !p->second.empty()) {
+				bool _1;
+				std::vector<std::string> _2;
+				std::string _3;
+				std::vector<std::function<void(rules::VkHandle)>> _4;
+				std::unordered_map<std::string, rules::data_value> _5;
+				void* _6;
+
+				rules::local_context ctx = {
+					.logger = *logger,
+					.instance = inst,
+					.device = this,
+					.commandBuffer = commandBuffer,
+					.commandBufferState = &state,
+					.canceled = _1,
+					.overrides = _2,
+					.customTag = _3,
+					.creationCallbacks = _4,
+					.local_variables = _5,
+					.customPointer = _6
+				};
+
+				for(auto& f : p->second) {
+					try {
+						f(ctx);
+					} catch(const std::exception& e) {
+						logger->error("Failed to execute callback: {}", e.what());
+					}
+				}
+				p->second.clear();
+			}
+		}
+	}
+
+	return dispatch.QueueSubmit(queue, submitCount, pSubmits, fence);
+}
+
+} // namespace CheekyLayer
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_AllocateCommandBuffers(
     VkDevice                                    device,
@@ -204,25 +779,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindDescriptorSets(
     uint32_t                                    dynamicOffsetCount,
     const uint32_t*                             pDynamicOffsets)
 {
-	if(evalRulesInDraw)
-	{
-		CommandBufferState& state = commandBufferStates[commandBuffer];
-
-		if(state.descriptorSets.size() < (firstSet + descriptorSetCount))
-			state.descriptorSets.resize(firstSet + descriptorSetCount);
-		std::copy(pDescriptorSets, pDescriptorSets+descriptorSetCount, state.descriptorSets.begin() + firstSet);
-
-		if(dynamicOffsetCount && pDynamicOffsets)
-		{
-			// TODO: support multiple descriptor sets, eeeeeeeh
-			if(state.descriptorDynamicOffsets.size() < dynamicOffsetCount)
-				state.descriptorDynamicOffsets.resize(dynamicOffsetCount);
-			std::copy(pDynamicOffsets, pDynamicOffsets + dynamicOffsetCount, state.descriptorDynamicOffsets.begin());
-		}
-	}
-
-	quick_dispatch.CmdBindDescriptorSets(commandBuffer, pipelineBindPoint, layout, firstSet,
-		descriptorSetCount, pDescriptorSets, dynamicOffsetCount, pDynamicOffsets);
+	return CheekyLayer::get_device(commandBuffer).CmdBindDescriptorSets(commandBuffer, pipelineBindPoint, layout, firstSet, descriptorSetCount, pDescriptorSets, dynamicOffsetCount, pDynamicOffsets);
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindPipeline(
@@ -230,13 +787,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindPipeline(
     VkPipelineBindPoint                         pipelineBindPoint,
     VkPipeline                                  pipeline)
 {
-	if(evalRulesInDraw)
-	{
-		CommandBufferState& state = commandBufferStates[commandBuffer];
-		state.pipeline = pipeline;
-	}
-
-	quick_dispatch.CmdBindPipeline(commandBuffer, pipelineBindPoint, pipeline);
+	return CheekyLayer::get_device(commandBuffer).CmdBindPipeline(commandBuffer, pipelineBindPoint, pipeline);
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindVertexBuffers(
@@ -246,20 +797,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindVertexBuffers(
     const VkBuffer*                             pBuffers,
     const VkDeviceSize*                         pOffsets)
 {
-	if(evalRulesInDraw)
-	{
-		CommandBufferState& state = commandBufferStates[commandBuffer];
-
-		if(state.vertexBuffers.size() < (firstBinding + bindingCount))
-			state.vertexBuffers.resize(firstBinding + bindingCount);
-		if(state.vertexBufferOffsets.size() < (firstBinding + bindingCount))
-			state.vertexBufferOffsets.resize(firstBinding + bindingCount);
-
-		std::copy(pBuffers, pBuffers+bindingCount, state.vertexBuffers.begin() + firstBinding);
-		std::copy(pOffsets, pOffsets+bindingCount, state.vertexBufferOffsets.begin() + firstBinding);
-	}
-
-	quick_dispatch.CmdBindVertexBuffers(commandBuffer, firstBinding, bindingCount, pBuffers, pOffsets);
+	return CheekyLayer::get_device(commandBuffer).CmdBindVertexBuffers(commandBuffer, firstBinding, bindingCount, pBuffers, pOffsets);
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindVertexBuffers2EXT(
@@ -271,20 +809,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindVertexBuffers2EXT(
     const VkDeviceSize*                         pSizes,
     const VkDeviceSize*                         pStrides)
 {
-	if(evalRulesInDraw)
-	{
-		CommandBufferState& state = commandBufferStates[commandBuffer];
-
-		if(state.vertexBuffers.size() < (firstBinding + bindingCount))
-			state.vertexBuffers.resize(firstBinding + bindingCount);
-		if(state.vertexBufferOffsets.size() < (firstBinding + bindingCount))
-			state.vertexBufferOffsets.resize(firstBinding + bindingCount);
-
-		std::copy(pBuffers, pBuffers+bindingCount, state.vertexBuffers.begin() + firstBinding);
-		std::copy(pOffsets, pOffsets+bindingCount, state.vertexBufferOffsets.begin() + firstBinding);
-	}
-
-	quick_dispatch.CmdBindVertexBuffers2EXT(commandBuffer, firstBinding, bindingCount, pBuffers, pOffsets, pSizes, pStrides);
+	return CheekyLayer::get_device(commandBuffer).CmdBindVertexBuffers2EXT(commandBuffer, firstBinding, bindingCount, pBuffers, pOffsets, pSizes, pStrides);
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindIndexBuffer(
@@ -293,16 +818,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindIndexBuffer(
     VkDeviceSize                                offset,
     VkIndexType                                 indexType)
 {
-	if(evalRulesInDraw)
-	{
-		CommandBufferState& state = commandBufferStates[commandBuffer];
-
-		state.indexBuffer = buffer;
-		state.indexBufferOffset = offset;
-		state.indexType = indexType;
-	}
-
-	quick_dispatch.CmdBindIndexBuffer(commandBuffer, buffer, offset, indexType);
+	return CheekyLayer::get_device(commandBuffer).CmdBindIndexBuffer(commandBuffer, buffer, offset, indexType);
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdSetScissor(
@@ -311,13 +827,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdSetScissor(
     uint32_t                                    scissorCount,
     const VkRect2D*                             pScissors)
 {
-	CommandBufferState& state = commandBufferStates[commandBuffer];
-
-	if(state.scissors.size() < (firstScissor + scissorCount))
-		state.scissors.resize(firstScissor + scissorCount);
-	std::copy(pScissors, pScissors+scissorCount, state.scissors.begin() + firstScissor);
-
-	quick_dispatch.CmdSetScissor(commandBuffer, firstScissor, scissorCount, pScissors);
+	return CheekyLayer::get_device(commandBuffer).CmdSetScissor(commandBuffer, firstScissor, scissorCount, pScissors);
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBeginRenderPass(
@@ -325,190 +835,13 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBeginRenderPass(
     const VkRenderPassBeginInfo*                pRenderPassBegin,
     VkSubpassContents                           contents)
 {
-	CommandBufferState& state = commandBufferStates[commandBuffer];
-	state.renderpass = pRenderPassBegin->renderPass;
-	state.framebuffer = pRenderPassBegin->framebuffer;
-
-	quick_dispatch.CmdBeginRenderPass(commandBuffer, pRenderPassBegin, contents);
+	return CheekyLayer::get_device(commandBuffer).CmdBeginRenderPass(commandBuffer, pRenderPassBegin, contents);
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdEndRenderPass(
     VkCommandBuffer                             commandBuffer)
 {
-	if(evalRulesInDraw)
-	{
-		CommandBufferState& state = commandBufferStates[commandBuffer];
-
-		scoped_lock l(global_lock);
-		auto p = CheekyLayer::rules::rule_env.on_EndRenderPass.find(commandBuffer);
-		if(p != CheekyLayer::rules::rule_env.on_EndRenderPass.end() && !p->second.empty())
-		{
-			CheekyLayer::active_logger log = *logger << logger::begin;
-			CheekyLayer::rules::local_context ctx = {.logger = log, .commandBuffer = commandBuffer, .device = state.device, .commandBufferState = &state };
-
-			for(auto& f : p->second)
-			{
-				try
-				{
-					f(ctx);
-				}
-				catch(const std::exception& ex)
-				{
-					ctx.logger << logger::error << "Failed to execute a callback: " << ex.what();
-				}
-			}
-			p->second.clear();
-
-			log << logger::end;
-		}
-	}
-
-	quick_dispatch.CmdEndRenderPass(commandBuffer);
-}
-
-void verbose_pipeline_stages(CheekyLayer::active_logger& log, PipelineState& pstate)
-{
-	log << "  pipeline stages:\n";
-	log << "    |    stage |       name | shader\n";
-	for(auto shader : pstate.stages)
-	{
-		log << "    | " << std::setw(8) << vk::to_string((vk::ShaderStageFlagBits)shader.stage) << " | ";
-		log << std::setw(10) << shader.name;
-		log << " | " << shader.hash;
-		log << '\n';
-	}
-}
-
-void verbose_vertex_bindings(CheekyLayer::active_logger& log, CommandBufferState& state, PipelineState& pstate, bool index)
-{
-	log << "  vertex bindings:\n";
-	log << "    | binding | stride |     rate | buffer\n";
-	if(index)
-	{
-		log << "    | " << std::setw(7) << "index" << " | ";
-		log << std::setw(6);
-		switch(state.indexType)
-		{
-			case VK_INDEX_TYPE_UINT16:
-				log << 2;
-				break;
-			case VK_INDEX_TYPE_UINT32:
-				log << 4;
-				break;
-			default:
-				log << vk::to_string((vk::IndexType)state.indexType);
-		}
-		log << " | " << std::setw(8) << "-";
-
-		auto p = CheekyLayer::rules::rule_env.hashes.find((VkHandle)state.indexBuffer);
-		if(p != CheekyLayer::rules::rule_env.hashes.end())
-		{
-			log << " | " << p->second;
-		}
-		else
-		{
-			log << " | " << "unknown buffer " << state.indexBuffer;
-		}
-		log << " + " << std::hex << state.indexBufferOffset << std::dec;
-		log << '\n';
-	}
-	for(auto b : pstate.vertexBindingDescriptions)
-	{
-		log << "    | "
-			<< std::setw(7) << b.binding   << " | "
-			<< std::setw(6) << b.stride    << " | "
-			<< std::setw(8) << vk::to_string((vk::VertexInputRate)b.inputRate);
-
-		if(state.vertexBuffers.size() > b.binding)
-		{
-			VkBuffer buffer = state.vertexBuffers[b.binding];
-			auto p = CheekyLayer::rules::rule_env.hashes.find((VkHandle)buffer);
-			if(p != CheekyLayer::rules::rule_env.hashes.end())
-			{
-				log << " | " << p->second;
-			}
-			else
-			{
-				log << " | " << "unknown buffer " << buffer;
-			}
-			log << " + " << std::hex << state.vertexBufferOffsets[b.binding] << std::dec;
-		}
-		log << '\n';
-	}
-}
-
-void verbose_vertex_attributes(CheekyLayer::active_logger& log, PipelineState& pstate)
-{
-	log << "  vertex attributes:\n";
-	log << "    | binding | location | offset | format\n";
-	for(auto a : pstate.vertexAttributeDescriptions)
-	{
-		log << "    | "
-			<< std::setw(7) << a.binding  << " | "
-			<< std::setw(8) << a.location << " | "
-			<< std::setw(6) << a.offset   << " | "
-			<< std::setw(6) << vk::to_string((vk::Format)a.format)   << '\n';
-	}
-}
-
-void verbose_descriptors(CheekyLayer::active_logger& log, CommandBufferState& state)
-{
-	log << "  descriptors:\n";
-	log << "    | set | binding |   type |                exact type |         offset | elements\n";
-	for(int i=0; i<state.descriptorSets.size(); i++)
-	{
-		VkDescriptorSet set = state.descriptorSets[i];
-		if(descriptorStates.contains(set))
-		{
-			DescriptorState& descriptorState = descriptorStates[set];
-			for(auto& [binding, info] : descriptorState.bindings)
-			{
-				log << "    | "
-					<< std::setw(3) << i << " | "
-					<< std::setw(7) << binding << " | "
-					<< std::setw(6) << to_string(info.type) << " | "
-					<< std::setw(25) << vk::to_string((vk::DescriptorType)info.exactType) << " | ";
-				if(state.descriptorDynamicOffsets.size() > binding)
-					log << std::setw(14) << state.descriptorDynamicOffsets[binding];
-				else
-					log << "unknown offset";
-				log << " | ";
-				std::transform(info.arrayElements.begin(), info.arrayElements.end(), std::experimental::make_ostream_joiner(log.raw(), ", "), [](auto a){
-					return a.handle;
-				});
-				log << '\n';
-			}
-		}
-		else
-		{
-			log << "    | " << std::setw(3) << i << " | unrecognized descriptor set " << set << '\n';
-		}
-	}
-}
-
-void verbose_commandbuffer_state(CheekyLayer::active_logger& log, CommandBufferState& state)
-{
-	log << "  command buffer state:\n";
-	log << "    transformFeedback = " << std::boolalpha << state.transformFeedback << '\n';
-	if(state.transformFeedback)
-	{
-		log << "    transformFeedbackBuffers:\n";
-		for(const auto& binding : state.transformFeedbackBuffers)
-		{
-			log << "      ";
-			VkBuffer buffer = binding.buffer;
-			auto p = CheekyLayer::rules::rule_env.hashes.find((VkHandle)buffer);
-			if(p != CheekyLayer::rules::rule_env.hashes.end())
-			{
-				log << p->second;
-			}
-			else
-			{
-				log << "unknown buffer " << buffer;
-			}
-			log << " + " << std::hex << binding.offset << std::dec << " (" << binding.size << " bytes)\n";
-		}
-	}
+	return CheekyLayer::get_device(commandBuffer).CmdEndRenderPass(commandBuffer);
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(
@@ -519,83 +852,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDrawIndexed(
     int32_t                                     vertexOffset,
     uint32_t                                    firstInstance)
 {
-	// quick exit to make things faster here
-	if(!evalRulesInDraw)
-	{
-		quick_dispatch.CmdDrawIndexed(commandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
-		return;
-	}
-	CommandBufferState& state = commandBufferStates[commandBuffer];
-
-	std::vector<VkImage> images;
-	std::vector<VkBuffer> buffers;
-	std::vector<VkHandle> shaders;
-	for(auto d : state.descriptorSets)
-	{
-		if(d)
-		{
-			DescriptorState& ds = descriptorStates[d];
-			for(auto it = ds.bindings.begin(); it != ds.bindings.end(); it++)
-			{
-				DescriptorBinding& binding = it->second;
-				if(binding.type == CheekyLayer::rules::selector_type::Image)
-				{
-					std::transform(binding.arrayElements.begin(), binding.arrayElements.end(), std::back_inserter(images), [](auto h){
-						return (VkImage) h.handle;
-					});
-				}
-			}
-		}
-	}
-	PipelineState& pstate = pipelineStates[state.pipeline];
-	std::transform(pstate.stages.begin(), pstate.stages.end(), std::back_inserter(shaders), [](ShaderInfo s){
-		return s.customHandle;
-	});
-	buffers.push_back(state.indexBuffer);
-	std::copy(state.vertexBuffers.begin(), state.vertexBuffers.end(), std::back_inserter(buffers));
-
-	CheekyLayer::reflection::VkCmdDrawIndexed drawCall = {
-		.indexCount = indexCount,
-		.instanceCount = instanceCount,
-		.firstIndex = firstIndex,
-		.vertexOffset = vertexOffset,
-		.firstInstance = firstInstance,
-		.commandBufferState = CheekyLayer::reflection::VkCommandBufferState{
-			.scissorCount = static_cast<uint32_t>(state.scissors.size()),
-			.pScissors = state.scissors.data(),
-			.transformFeedback = state.transformFeedback
-		}
-	};
-	CheekyLayer::rules::draw_info info = {images, shaders, buffers, state.indexBuffer, &drawCall};
-	CheekyLayer::rules::additional_info info2 = {info};
-
-	CheekyLayer::active_logger log = *logger << logger::begin;
-
-	CheekyLayer::rules::local_context ctx = {log, [&state, &commandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance](CheekyLayer::active_logger log){
-		log << "CmdDrawIndexed: on device " << state.device << " from command buffer " << commandBuffer << " with pipeline " << state.pipeline << '\n';
-
-		log << std::dec << std::setfill(' ');
-
-		log << "  draw parameters:\n";
-		log << "    indexCount = " << indexCount << '\n';
-		log << "    instanceCount = " << instanceCount << '\n';
-		log << "    firstIndex = " << firstIndex << '\n';
-		log << "    vertexOffset = " << vertexOffset << '\n';
-		log << "    firstInstance = " << firstInstance << '\n';
-
-		PipelineState& pstate = pipelineStates[state.pipeline];
-		verbose_commandbuffer_state(log, state);
-		verbose_pipeline_stages(log, pstate);
-		verbose_vertex_bindings(log, state, pstate, true);
-		verbose_vertex_attributes(log, pstate);
-		verbose_descriptors(log, state);
-	}, &info2, commandBuffer, state.device, {}, {}, &state};
-	CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::Draw, VK_NULL_HANDLE, ctx);
-
-	log << logger::end;
-
-	if(!ctx.canceled)
-		quick_dispatch.CmdDrawIndexed(commandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+	return CheekyLayer::get_device(commandBuffer).CmdDrawIndexed(commandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDraw(
@@ -605,80 +862,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdDraw(
     uint32_t                                    firstVertex,
     uint32_t                                    firstInstance)
 {
-	// quick exit to make things faster here
-	if(!evalRulesInDraw)
-	{
-		quick_dispatch.CmdDraw(commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
-		return;
-	}
-	CommandBufferState& state = commandBufferStates[commandBuffer];
-
-	std::vector<VkImage> images;
-	std::vector<VkBuffer> buffers;
-	std::vector<VkHandle> shaders;
-	for(auto d : state.descriptorSets)
-	{
-		if(d)
-		{
-			DescriptorState& ds = descriptorStates[d];
-			for(auto it = ds.bindings.begin(); it != ds.bindings.end(); it++)
-			{
-				DescriptorBinding& binding = it->second;
-				if(binding.type == CheekyLayer::rules::selector_type::Image)
-				{
-					std::transform(binding.arrayElements.begin(), binding.arrayElements.end(), std::back_inserter(images), [](auto h){
-						return (VkImage) h.handle;
-					});
-				}
-			}
-		}
-	}
-	PipelineState& pstate = pipelineStates[state.pipeline];
-	std::transform(pstate.stages.begin(), pstate.stages.end(), std::back_inserter(shaders), [](ShaderInfo s){
-		return s.customHandle;
-	});
-	std::copy(state.vertexBuffers.begin(), state.vertexBuffers.end(), std::back_inserter(buffers));
-
-	CheekyLayer::reflection::VkCmdDraw drawCall = {
-		.vertexCount = vertexCount,
-		.instanceCount = instanceCount,
-		.firstVertex = firstVertex,
-		.firstInstance = firstInstance,
-		.commandBufferState = CheekyLayer::reflection::VkCommandBufferState{
-			.scissorCount = static_cast<uint32_t>(state.scissors.size()),
-			.pScissors = state.scissors.data(),
-			.transformFeedback = state.transformFeedback
-		}
-	};
-	CheekyLayer::rules::draw_info info = {images, shaders, buffers, state.indexBuffer, &drawCall};
-	CheekyLayer::rules::additional_info info2 = {info};
-
-	CheekyLayer::active_logger log = *logger << logger::begin;
-
-	CheekyLayer::rules::local_context ctx = {log, [&state, &commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance](CheekyLayer::active_logger log){
-		log << "CmdDraw: on device " << state.device << " from command buffer " << commandBuffer << " with pipeline " << state.pipeline << '\n';
-
-		log << std::dec << std::setfill(' ');
-
-		log << "  draw parameters:\n";
-		log << "    vertexCount = " << vertexCount << '\n';
-		log << "    instanceCount = " << instanceCount << '\n';
-		log << "    firstVertex = " << firstVertex << '\n';
-		log << "    firstInstance = " << firstInstance << '\n';
-
-		PipelineState& pstate = pipelineStates[state.pipeline];
-		verbose_commandbuffer_state(log, state);
-		verbose_pipeline_stages(log, pstate);
-		verbose_vertex_bindings(log, state, pstate, false);
-		verbose_vertex_attributes(log, pstate);
-		verbose_descriptors(log, state);
-	}, &info2, commandBuffer, state.device, {}, {}, &state};
-	CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::Draw, VK_NULL_HANDLE, ctx);
-
-	log << logger::end;
-
-	if(!ctx.canceled)
-		quick_dispatch.CmdDraw(commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
+	return CheekyLayer::get_device(commandBuffer).CmdDraw(commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBeginTransformFeedbackEXT(
@@ -688,9 +872,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBeginTransformFeedbackEXT(
     const VkBuffer*                             pCounterBuffers,
     const VkDeviceSize*                         pCounterBufferOffsets)
 {
-	CommandBufferState& state = commandBufferStates[commandBuffer];
-	state.transformFeedback = true;
-	quick_dispatch.CmdBeginTransformFeedbackEXT(commandBuffer, firstCounterBuffer, counterBufferCount, pCounterBuffers, pCounterBufferOffsets);
+	return CheekyLayer::get_device(commandBuffer).CmdBeginTransformFeedbackEXT(commandBuffer, firstCounterBuffer, counterBufferCount, pCounterBuffers, pCounterBufferOffsets);
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindTransformFeedbackBuffersEXT(
@@ -701,20 +883,7 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindTransformFeedbackBuffersEXT(
     const VkDeviceSize*                         pOffsets,
     const VkDeviceSize*                         pSizes)
 {
-	if(evalRulesInDraw)
-	{
-		CommandBufferState& state = commandBufferStates[commandBuffer];
-
-		if(state.transformFeedbackBuffers.size() < (firstBinding + bindingCount))
-			state.transformFeedbackBuffers.resize(firstBinding + bindingCount);
-
-		for(int i=0; i<bindingCount; i++)
-		{
-			state.transformFeedbackBuffers[i+firstBinding] = {.buffer = pBuffers[i], .offset = pOffsets[i], .size = pSizes[i]};
-		}
-	}
-
-	quick_dispatch.CmdBindTransformFeedbackBuffersEXT(commandBuffer, firstBinding, bindingCount, pBuffers, pOffsets, pSizes);
+	return CheekyLayer::get_device(commandBuffer).CmdBindTransformFeedbackBuffersEXT(commandBuffer, firstBinding, bindingCount, pBuffers, pOffsets, pSizes);
 }
 
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdEndTransformFeedbackEXT(
@@ -724,44 +893,13 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdEndTransformFeedbackEXT(
     const VkBuffer*                             pCounterBuffers,
     const VkDeviceSize*                         pCounterBufferOffsets)
 {
-	CommandBufferState& state = commandBufferStates[commandBuffer];
-	state.transformFeedback = false;
-	state.transformFeedbackBuffers.clear();
-	quick_dispatch.CmdEndTransformFeedbackEXT(commandBuffer, firstCounterBuffer, counterBufferCount, pCounterBuffers, pCounterBufferOffsets);
+	return CheekyLayer::get_device(commandBuffer).CmdEndTransformFeedbackEXT(commandBuffer, firstCounterBuffer, counterBufferCount, pCounterBuffers, pCounterBufferOffsets);
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_EndCommandBuffer(
     VkCommandBuffer                             commandBuffer)
 {
-	if(evalRulesInDraw)
-	{
-		CommandBufferState& state = commandBufferStates[commandBuffer];
-		state.transformFeedback = false;
-
-		auto p = CheekyLayer::rules::rule_env.on_EndCommandBuffer.find(commandBuffer);
-		if(p != CheekyLayer::rules::rule_env.on_EndCommandBuffer.end() && !p->second.empty())
-		{
-			CheekyLayer::active_logger log = *logger << logger::begin;
-				CheekyLayer::rules::local_context ctx = {.logger = log, .device = state.device};
-
-			for(auto& f : p->second)
-			{
-				try
-				{
-					f(ctx);
-				}
-				catch(const std::exception& ex)
-				{
-					ctx.logger << logger::error << "Failed to execute a callback: " << ex.what();
-				}
-			}
-			p->second.clear();
-
-			log << logger::end;
-		}
-	}
-
-	return quick_dispatch.EndCommandBuffer(commandBuffer);
+	return CheekyLayer::get_device(commandBuffer).EndCommandBuffer(commandBuffer);
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateSwapchainKHR(
@@ -777,19 +915,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_QueuePresentKHR(
     VkQueue                                     queue,
     const VkPresentInfoKHR*                     pPresentInfo)
 {
-	VkDevice device = queueDevices[queue];
-
-	CheekyLayer::rules::present_info info = {pPresentInfo};
-	CheekyLayer::rules::additional_info info2 = {.present = info};
-
-	CheekyLayer::active_logger log = *logger << logger::begin;
-	CheekyLayer::rules::local_context ctx = { .logger = log, .info = &info2, .device = device, .canceled = false };
-	CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::Present, (VkHandle) queue, ctx);
-	log << logger::end;
-
-	if(!ctx.canceled)
-		return device_dispatch[GetKey(device)].QueuePresentKHR(queue, pPresentInfo);
-	return VK_SUCCESS;
+	return CheekyLayer::get_device(queue).QueuePresentKHR(queue, pPresentInfo);
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_QueueSubmit(
@@ -798,35 +924,5 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_QueueSubmit(
     const VkSubmitInfo*                         pSubmits,
     VkFence                                     fence)
 {
-	VkDevice device = queueDevices[queue];
-	for(int i=0; i<submitCount; i++)
-	{
-		const auto& submit = pSubmits[i];
-		for(int j=0; j<submit.commandBufferCount; j++)
-		{
-			auto commandBuffer = submit.pCommandBuffers[j];
-			auto p = CheekyLayer::rules::rule_env.on_QueueSubmit.find(commandBuffer);
-			if(p != CheekyLayer::rules::rule_env.on_QueueSubmit.end() && !p->second.empty())
-			{
-				CheekyLayer::active_logger log = *logger << logger::begin;
-				CheekyLayer::rules::local_context ctx = {.logger = log, .device = device};
-
-				for(auto& f : p->second)
-				{
-					try
-					{
-						f(ctx);
-					}
-					catch(const std::exception& ex)
-					{
-						ctx.logger << logger::error << "Failed to execute a callback: " << ex.what();
-					}
-				}
-				p->second.clear();
-
-				log << logger::end;
-			}
-		}
-	}
-	return device_dispatch[GetKey(device)].QueueSubmit(queue, submitCount, pSubmits, fence);
+	return CheekyLayer::get_device(queue).QueueSubmit(queue, submitCount, pSubmits, fence);
 }

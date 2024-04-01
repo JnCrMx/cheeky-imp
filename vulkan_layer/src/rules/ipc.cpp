@@ -1,5 +1,4 @@
 #include "rules/ipc.hpp"
-#include "layer.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
 #include "objects.hpp"
@@ -9,6 +8,7 @@
 #include <fstream>
 #include <ios>
 
+#include <spdlog/spdlog.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -174,7 +174,7 @@ namespace CheekyLayer::rules::ipc
 					}
 					catch(const std::exception& ex)
 					{
-						*::logger << logger::begin << logger::error << "receive failed: " << ex.what() << logger::end;
+						spdlog::error("Receive failed: {}", ex.what());
 					}
 
 					handler(buffer.data(), buffer.size());

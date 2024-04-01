@@ -2,13 +2,12 @@
 #include "reflection/vkreflection.hpp"
 
 #include <any>
+#include <algorithm>
 #include <cstdint>
-#include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <stdint.h>
 #include <string>
-#include "layer.hpp"
 #include <vulkan/vulkan_core.h>
 
 namespace CheekyLayer { namespace reflection {
@@ -111,7 +110,7 @@ namespace CheekyLayer { namespace reflection {
 			if(i >= length)
 				throw std::runtime_error("array index "+std::to_string(i)+" for member \""+info.name+"\" exceeds its length of "
 					+std::to_string(length)+" which can be found in member \""+info.arrayLength+"\"");
-			
+
 			const void* np = *((const void**)op);
 			const void* ap = ((uint8_t*)np) + i * struct_reflection_map[info.type].size;
 			std::string rest = path.substr(e+2);
@@ -214,7 +213,7 @@ namespace CheekyLayer { namespace reflection {
 			if(i >= length)
 				throw std::runtime_error("array index "+std::to_string(i)+" for member \""+info.name+"\" exceeds its length of "
 					+std::to_string(length)+" which can be found in member \""+info.arrayLength+"\"");
-			
+
 			void* np = *((void**)op);
 			void* ap = ((uint8_t*)np) + i * struct_reflection_map[info.type].size;
 			std::string rest = path.substr(e+2);
@@ -268,7 +267,7 @@ namespace CheekyLayer { namespace reflection {
 			uint32_t flag = 0;
 			while(std::getline(iss, elem, '|'))
 			{
-				elem.erase(remove_if(elem.begin(), elem.end(), isspace), elem.end());
+				elem.erase(std::remove_if(elem.begin(), elem.end(), [](char c){return isspace(c);}), elem.end());
 				if(submap.contains(elem))
 				{
 					flag |= submap[elem].value;

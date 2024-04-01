@@ -60,7 +60,7 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa, VkLa
 	DeviceHook(CmdCopyBufferToImage) \
 	DeviceHook(CmdCopyBuffer) \
 	\
-	/*DeviceHook(CreateShaderModule) \
+	DeviceHook(CreateShaderModule) \
 	DeviceHook(CreateGraphicsPipelines) \
 	DeviceHook(CreatePipelineLayout) \
 	\
@@ -68,30 +68,27 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa, VkLa
 	DeviceHook(CreateSwapchainKHR) \
 	DeviceHook(QueuePresentKHR) \
 	\
-	if(hook_draw_calls) \
-	{\
-		DeviceHook(CmdBindDescriptorSets) \
-		DeviceHook(CmdBindPipeline) \
-		DeviceHook(CmdBindVertexBuffers) \
-		DeviceHook(CmdBindVertexBuffers2EXT) \
-		DeviceHook(CmdBindIndexBuffer) \
-		DeviceHook(CmdSetScissor) \
-		DeviceHook(CmdBeginRenderPass) \
-		DeviceHook(CmdEndRenderPass) \
-		DeviceHook(CmdDraw) \
-		DeviceHook(CmdDrawIndexed) \
-		DeviceHook(CmdBeginTransformFeedbackEXT) \
-		DeviceHook(CmdBindTransformFeedbackBuffersEXT) \
-		DeviceHook(CmdEndTransformFeedbackEXT) \
-		\
-		DeviceHook(CreateDescriptorUpdateTemplate) \
-		DeviceHook(UpdateDescriptorSetWithTemplate) \
-		\
-		DeviceHook(AllocateCommandBuffers) \
-		DeviceHook(FreeCommandBuffers) \
-		DeviceHook(EndCommandBuffer) \
-		DeviceHook(QueueSubmit) \
-	}\*/
+	DeviceHook(CmdBindDescriptorSets) \
+	DeviceHook(CmdBindPipeline) \
+	DeviceHook(CmdBindVertexBuffers) \
+	DeviceHook(CmdBindVertexBuffers2EXT) \
+	DeviceHook(CmdBindIndexBuffer) \
+	DeviceHook(CmdSetScissor) \
+	DeviceHook(CmdBeginRenderPass) \
+	DeviceHook(CmdEndRenderPass) \
+	DeviceHook(CmdDraw) \
+	DeviceHook(CmdDrawIndexed) \
+	DeviceHook(CmdBeginTransformFeedbackEXT) \
+	DeviceHook(CmdBindTransformFeedbackBuffersEXT) \
+	DeviceHook(CmdEndTransformFeedbackEXT) \
+	\
+	DeviceHook(CreateDescriptorUpdateTemplate) \
+	DeviceHook(UpdateDescriptorSetWithTemplate) \
+	\
+	DeviceHook(AllocateCommandBuffers) \
+	DeviceHook(FreeCommandBuffers) \
+	DeviceHook(EndCommandBuffer) \
+	DeviceHook(QueueSubmit) \
 
 #define InstanceDispatch(name) \
 	dispatchTable.name = (PFN_vk##name)gpa(instance, "vk"#name);

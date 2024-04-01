@@ -77,7 +77,7 @@ VkResult device::CreateImage(const VkImageCreateInfo* pCreateInfo, const VkAlloc
 	VkMemoryRequirements memRequirements;
 	dispatch.GetImageMemoryRequirements(handle, *pImage, &memRequirements);
 
-	logger->info("CreateImage: {}x{} @ {} samples={} memory={}, image={}", pCreateInfo->extent.width, pCreateInfo->extent.height,
+	logger->debug("CreateImage: {}x{} @ {} samples={} memory={}, image={}", pCreateInfo->extent.width, pCreateInfo->extent.height,
 			pCreateInfo->mipLevels, fmt::underlying(pCreateInfo->samples), memRequirements.size, fmt::ptr(*pImage));
 
 	if(dispatch.SetDebugUtilsObjectNameEXT)
@@ -100,7 +100,7 @@ VkResult device::BindImageMemory(VkImage image, VkDeviceMemory memory, VkDeviceS
 	images[image].memoryOffset = memoryOffset;
 
 	VkResult ret = dispatch.BindImageMemory(handle, image, memory, memoryOffset);
-	logger->info("BindImageMemory: image={} memory={} offset={}", fmt::ptr(image), fmt::ptr(memory), memoryOffset);
+	logger->debug("BindImageMemory: image={} memory={} offset={}", fmt::ptr(image), fmt::ptr(memory), memoryOffset);
 	return ret;
 }
 

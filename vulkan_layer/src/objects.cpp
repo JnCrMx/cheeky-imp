@@ -51,6 +51,7 @@ instance::instance(const VkInstanceCreateInfo *pCreateInfo, VkInstance* pInstanc
 
     logger = spdlog::basic_logger_mt<spdlog::async_factory>(fmt::format("instance #{}: {}", id, fmt::ptr(handle)), logfile);
     logger->flush_on(spdlog::level::warn);
+    logger->set_level(spdlog::level::trace);
 
     logger->info("Hello from {} version {} from {} {} for application {} using engine {}",
 		CheekyLayer::Contants::LAYER_NAME, CheekyLayer::Contants::GIT_VERSION,
@@ -99,7 +100,7 @@ instance::instance(const VkInstanceCreateInfo *pCreateInfo, VkInstance* pInstanc
 	{
 		std::ostringstream oss;
         r->print(oss);
-        logger->info("\n{}", oss.str());
+        logger->info("{}", oss.str());
 	}
     logger->flush();
 }
@@ -118,6 +119,25 @@ instance& instance::operator=(instance&& other) {
     has_rules = std::move(other.has_rules);
     devices = std::move(other.devices);
     return *this;
+}
+
+void instance::execute_rules(rules::selector_type type, rules::VkHandle handle, rules::calling_context& ctx) {
+    rules::local_context local{
+        .logger = *this->logger,
+        .printVerbose = ctx.printVerbose,
+        .info = ctx.info.has_value() ? &ctx.info.value() : nullptr,
+        .instance = this,
+        .device = nullptr,
+        .commandBuffer = ctx.commandBuffer,
+        .commandBufferState = ctx.commandBufferState,
+        .canceled = ctx.canceled,
+        .overrides = ctx.overrides,
+        .customTag = ctx.customTag,
+        .creationCallbacks = ctx.creationCallbacks,
+        .local_variables = ctx.local_variables,
+        .customPointer = ctx.customPointer,
+    };
+    rules::execute_rules(rules, type, handle, global_context, local);
 }
 
 device::device(instance* inst, PFN_vkGetDeviceProcAddr gdpa, VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo, VkDevice *pDevice)
@@ -156,8 +176,48 @@ void device::execute_rules(rules::selector_type type, rules::VkHandle handle, ru
     rules::execute_rules(inst->rules, type, handle, inst->global_context, local);
 }
 
+void device::put_hash(rules::VkHandle handle, std::string hash) {
+    inst->global_context.hashes[handle] = hash;
+}
+
 bool device::has_override(const std::string& name) {
     return inst->overrideCache.contains(name);
+}
+
+void device::memory_access(VkDeviceMemory memory, std::function<void(void*, VkDeviceSize)> function, VkDeviceSize offset) {
+    if(memoryMappings.contains(memory)) {
+        const auto& mapping = memoryMappings[memory];
+        auto ptrOffset = offset - mapping.offset;
+        if(mapping.offset > offset || ptrOffset > mapping.size) {
+            throw std::runtime_error("memory is mapped, but requested region cannot be accessed");
+        }
+        function((uint8_t*)mapping.pointer + ptrOffset, mapping.size - ptrOffset);
+
+        VkMappedMemoryRange range{};
+        range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+        range.memory = memory;
+        range.offset = mapping.offset;
+        range.size = mapping.size;
+        dispatch.FlushMappedMemoryRanges(handle, 1, &range);
+    } else {
+        void* ptr;
+        dispatch.MapMemory(handle, memory, offset, VK_WHOLE_SIZE, 0, &ptr);
+        function(ptr, VK_WHOLE_SIZE);
+
+        VkMappedMemoryRange range{};
+        range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+        range.memory = memory;
+        range.offset = offset;
+        range.size = VK_WHOLE_SIZE;
+        dispatch.FlushMappedMemoryRanges(handle, 1, &range);
+
+        dispatch.UnmapMemory(handle, memory);
+    }
+}
+
+void device::memory_access(VkBuffer buffer, std::function<void(void*, VkDeviceSize)> function, VkDeviceSize offset) {
+	auto& buf = buffers.at(buffer);
+	memory_access(buf.memory, function, buf.memoryOffset + offset);
 }
 
 }

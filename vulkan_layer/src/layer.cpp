@@ -6,63 +6,21 @@
 #include <string>
 #include <vulkan/vulkan_core.h>
 #include <memory>
-#include <filesystem>
 #include <assert.h>
 
 #include <spdlog/spdlog.h>
 #include <spdlog/async.h>
 #include <spdlog/sinks/basic_file_sink.h>
 
-#include "config.hpp"
 #include "dispatch.hpp"
 #include "constants.hpp"
 #include "layer.hpp"
-#include "logger.hpp"
-#include "rules/execution_env.hpp"
-#include "rules/rules.hpp"
-#include "rules/reader.hpp"
-#include "draw.hpp"
 #include "objects.hpp"
-
-using CheekyLayer::logger;
 
 std::mutex global_lock;
 std::mutex transfer_lock;
-CheekyLayer::config global_config;
-CheekyLayer::logger* logger;
-std::vector<std::string> overrideCache;
-std::vector<std::string> dumpCache;
 
-std::vector<std::unique_ptr<CheekyLayer::rules::rule>> rules;
-std::map<CheekyLayer::rules::selector_type, bool> has_rules;
-
-std::map<VkDevice, VkQueue> graphicsQueues;
-std::map<VkDevice, VkQueue> transferQueues;
-std::map<VkDevice, VkCommandPool> transferPools;
-std::map<VkDevice, VkCommandBuffer> transferCommandBuffers;
-
-std::map<VkDevice, VkPhysicalDevice> physicalDevices;
-std::map<VkDevice, VkDeviceInfo> deviceInfos;
-
-std::map<VkQueue, VkDevice> queueDevices;
-
-void update_has_rules()
-{
-	has_rules[CheekyLayer::rules::selector_type::Buffer] = false;
-	has_rules[CheekyLayer::rules::selector_type::Draw] = false;
-	has_rules[CheekyLayer::rules::selector_type::Image] = false;
-	has_rules[CheekyLayer::rules::selector_type::Shader] = false;
-
-	for(auto& r : rules)
-	{
-		if(r->is_enabled())
-			has_rules[r->get_type()] = true;
-	}
-
-	evalRulesInDraw = has_rules[CheekyLayer::rules::selector_type::Draw];
-}
-
-void load_plugin(std::filesystem::path path)
+/*void load_plugin(std::filesystem::path path)
 {
 	void* h = dlopen(path.c_str(), RTLD_LAZY);
 	if(!h)
@@ -87,7 +45,7 @@ void load_plugins()
 	{
 		*logger << logger::begin << logger::error << "Cannot find plugins: " << ex.what() << logger::end;
 	}
-}
+}*/
 
 VkLayerInstanceCreateInfo *get_chain_info(const VkInstanceCreateInfo *pCreateInfo, VkLayerFunction func) {
     VkLayerInstanceCreateInfo *chain_info = (VkLayerInstanceCreateInfo *)pCreateInfo->pNext;
@@ -309,7 +267,7 @@ VkResult instance::CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceC
 	if(ret != VK_SUCCESS)
 		return ret;
 
-	logger->info("CreateDevice results in {} with dispatch key {}", fmt::ptr(*pDevice), GetKey(*pDevice));
+	logger->debug("CreateDevice results in {} with dispatch key {}", fmt::ptr(*pDevice), GetKey(*pDevice));
 
 	auto& dev = ::CheekyLayer::devices[GetKey(*pDevice)] = std::make_unique<device>(this, fpGetDeviceProcAddr, physicalDevice, pCreateInfo, pDevice);
 	devices[*pDevice] = dev.get();
@@ -322,7 +280,7 @@ VkResult instance::CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceC
 
 void device::GetDeviceQueue(uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue *pQueue) {
 	dispatch.GetDeviceQueue(handle, queueFamilyIndex, queueIndex, pQueue);
-	logger->info("GetDeviceQueue: {}, {}, {} -> {}", fmt::ptr(handle), queueFamilyIndex, queueIndex, fmt::ptr(*pQueue));
+	logger->debug("GetDeviceQueue: {}, {}, {} -> {}", fmt::ptr(handle), queueFamilyIndex, queueIndex, fmt::ptr(*pQueue));
 
 	if(!(queueFamilies[queueFamilyIndex].queueFlags & VK_QUEUE_GRAPHICS_BIT))
 		return;
@@ -354,7 +312,7 @@ void device::GetDeviceQueue(uint32_t queueFamilyIndex, uint32_t queueIndex, VkQu
 		}
 		*reinterpret_cast<void**>(transferBuffer) = *reinterpret_cast<void**>(handle);
 
-		logger->info("Created transfer command buffer {} in pool {} for queue family {} on device {}", fmt::ptr(transferBuffer), fmt::ptr(transferPool), queueFamilyIndex, fmt::ptr(handle));
+		logger->debug("Created transfer command buffer {} in pool {} for queue family {} on device {}", fmt::ptr(transferBuffer), fmt::ptr(transferPool), queueFamilyIndex, fmt::ptr(handle));
 
 		/*
 		// now we are "ready"

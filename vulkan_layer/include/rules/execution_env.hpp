@@ -20,6 +20,7 @@
 namespace CheekyLayer {
 	struct instance;
 	struct device;
+	struct command_buffer_state;
 }
 
 struct CommandBufferState;
@@ -123,7 +124,7 @@ namespace CheekyLayer::rules
 		std::optional<additional_info> info;
 
 		VkCommandBuffer commandBuffer;
-		CommandBufferState* commandBufferState;
+		command_buffer_state* commandBufferState;
 
 		bool canceled;
 		std::vector<std::string> overrides;
@@ -146,7 +147,7 @@ namespace CheekyLayer::rules
 		CheekyLayer::device* device;
 
 		VkCommandBuffer commandBuffer;
-		CommandBufferState* commandBufferState;
+		command_buffer_state* commandBufferState;
 
 		bool& canceled;
 		std::vector<std::string>& overrides;

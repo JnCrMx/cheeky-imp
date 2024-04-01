@@ -1,32 +1,7 @@
 #include "layer.hpp"
-#include "dispatch.hpp"
-#include "descriptors.hpp"
-#include "images.hpp"
-#include "draw.hpp"
+#include "objects.hpp"
 #include "rules/rules.hpp"
 #include <vulkan/vulkan_core.h>
-
-#include <stdexcept>
-
-using CheekyLayer::logger;
-
-std::map<VkDescriptorUpdateTemplate, std::vector<VkDescriptorUpdateTemplateEntry>> updateTemplates;
-std::map<VkDescriptorSet, DescriptorState> descriptorStates;
-
-VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateDescriptorUpdateTemplate(
-	VkDevice                                    device,
-	const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo,
-	const VkAllocationCallbacks*                pAllocator,
-	VkDescriptorUpdateTemplate*                 pDescriptorUpdateTemplate)
-{
-	VkResult r = device_dispatch[GetKey(device)].CreateDescriptorUpdateTemplate(device, pCreateInfo, pAllocator, pDescriptorUpdateTemplate);
-
-	*logger << logger::begin << "CreateDescriptorUpdateTemplate: " << pCreateInfo->descriptorUpdateEntryCount << " -> " << *pDescriptorUpdateTemplate << logger::end;
-	updateTemplates[*pDescriptorUpdateTemplate] =
-		std::vector(pCreateInfo->pDescriptorUpdateEntries, pCreateInfo->pDescriptorUpdateEntries+pCreateInfo->descriptorUpdateEntryCount);
-
-	return r;
-}
 
 bool from_descriptorType(VkDescriptorType type, CheekyLayer::rules::selector_type& outType)
 {
@@ -49,27 +24,34 @@ bool from_descriptorType(VkDescriptorType type, CheekyLayer::rules::selector_typ
 	}
 }
 
-VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_UpdateDescriptorSetWithTemplate(
-	VkDevice                                    device,
-	VkDescriptorSet                             descriptorSet,
-	VkDescriptorUpdateTemplate                  descriptorUpdateTemplate,
-	const void*                                 pData)
+namespace CheekyLayer {
+
+VkResult device::CreateDescriptorUpdateTemplate(const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDescriptorUpdateTemplate* pDescriptorUpdateTemplate)
 {
-	device_dispatch[GetKey(device)].UpdateDescriptorSetWithTemplate(device, descriptorSet, descriptorUpdateTemplate, pData);
-	if(!evalRulesInDraw)
-		return;
+	VkResult result = dispatch.CreateDescriptorUpdateTemplate(handle, pCreateInfo, pAllocator, pDescriptorUpdateTemplate);
+	if(result != VK_SUCCESS)
+		return result;
 
-	DescriptorState& state = descriptorStates[descriptorSet];
+	logger->debug("CreateDescriptorUpdateTemplate: {} -> {}", pCreateInfo->descriptorUpdateEntryCount, fmt::ptr(pDescriptorUpdateTemplate));
+	updateTemplates[*pDescriptorUpdateTemplate] =
+		std::vector(pCreateInfo->pDescriptorUpdateEntries, pCreateInfo->pDescriptorUpdateEntries+pCreateInfo->descriptorUpdateEntryCount);
 
+	return result;
+}
+
+void device::UpdateDescriptorSetWithTemplate(VkDescriptorSet descriptorSet, VkDescriptorUpdateTemplate descriptorUpdateTemplate, const void* pData)
+{
+	dispatch.UpdateDescriptorSetWithTemplate(handle, descriptorSet, descriptorUpdateTemplate, pData);
+
+	descriptor_state& state = descriptorStates[descriptorSet];
 	auto& info = updateTemplates[descriptorUpdateTemplate];
 	for(int i=0; i<info.size(); i++)
 	{
 		VkDescriptorUpdateTemplateEntry& entry = info[i];
-		
-		DescriptorBinding& binding = state.bindings[entry.dstBinding];
-		try
-		{
-			CheekyLayer::rules::selector_type type;
+
+		descriptor_binding& binding = state.bindings[entry.dstBinding];
+		try {
+			rules::selector_type type;
 			if(!from_descriptorType(entry.descriptorType, type))
 				continue;
 			binding.type = type;
@@ -77,27 +59,47 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_UpdateDescriptorSetWithTemplate(
 
 			if(binding.arrayElements.size() < entry.dstArrayElement + entry.descriptorCount)
 				binding.arrayElements.resize(entry.dstArrayElement + entry.descriptorCount);
-			
-			for(int j=0; j<entry.descriptorCount; j++)
-			{
+
+			for(int j=0; j<entry.descriptorCount; j++) {
 				const void* newPtr = (static_cast<const uint8_t*>(pData)) + entry.offset + j*entry.stride;
-				if(type == CheekyLayer::rules::selector_type::Image)
-				{
-					const VkDescriptorImageInfo* info = (const VkDescriptorImageInfo*) newPtr;
-
-					binding.arrayElements[entry.dstArrayElement + j] = {imageViews[info->imageView], *info};
-				}
-				else if(type == CheekyLayer::rules::selector_type::Buffer)
-				{
-					const VkDescriptorBufferInfo* info = (const VkDescriptorBufferInfo*) newPtr;
-
-					binding.arrayElements[entry.dstArrayElement + j] = {info->buffer, *info};
+				switch(type) {
+					case rules::Buffer: {
+						const VkDescriptorImageInfo* info = (const VkDescriptorImageInfo*) newPtr;
+						binding.arrayElements[entry.dstArrayElement + j] = {imageViewToImage[info->imageView], *info};
+						break;
+					}
+					case rules::Image: {
+						const VkDescriptorBufferInfo* info = (const VkDescriptorBufferInfo*) newPtr;
+						binding.arrayElements[entry.dstArrayElement + j] = {info->buffer, *info};
+						break;
+					}
+					default:
+						logger->warn("UpdateDescriptorSetWithTemplate: Unknown descriptor type {}", rules::to_string(type));
+						break;
 				}
 			}
-		}
-		catch(std::exception& ex)
-		{
-			*logger << logger::begin << logger::error << "UpdateDescriptorSetWithTemplate: " << ex.what() << logger::end;
+		} catch(const std::exception& ex) {
+			logger->error("UpdateDescriptorSetWithTemplate: {}", ex.what());
 		}
 	}
+}
+
+}
+
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateDescriptorUpdateTemplate(
+	VkDevice                                    device,
+	const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo,
+	const VkAllocationCallbacks*                pAllocator,
+	VkDescriptorUpdateTemplate*                 pDescriptorUpdateTemplate)
+{
+	return CheekyLayer::get_device(device).CreateDescriptorUpdateTemplate(pCreateInfo, pAllocator, pDescriptorUpdateTemplate);
+}
+
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_UpdateDescriptorSetWithTemplate(
+	VkDevice                                    device,
+	VkDescriptorSet                             descriptorSet,
+	VkDescriptorUpdateTemplate                  descriptorUpdateTemplate,
+	const void*                                 pData)
+{
+	return CheekyLayer::get_device(device).UpdateDescriptorSetWithTemplate(descriptorSet, descriptorUpdateTemplate, pData);
 }

@@ -196,6 +196,10 @@ struct device {
     // shaders.cpp
     VkResult CreateShaderModule(const VkShaderModuleCreateInfo*, const VkAllocationCallbacks*, VkShaderModule*);
 
+    // descriptors.cpp
+    VkResult CreateDescriptorUpdateTemplate(const VkDescriptorUpdateTemplateCreateInfo*, const VkAllocationCallbacks*, VkDescriptorUpdateTemplate*);
+    void UpdateDescriptorSetWithTemplate(VkDescriptorSet, VkDescriptorUpdateTemplate, const void*);
+
     // draw.cpp
     VkResult AllocateCommandBuffers(const VkCommandBufferAllocateInfo*, VkCommandBuffer*);
     void FreeCommandBuffers(VkCommandPool, uint32_t, const VkCommandBuffer*);
@@ -203,6 +207,22 @@ struct device {
     VkResult CreatePipelineLayout(const VkPipelineLayoutCreateInfo*, const VkAllocationCallbacks*, VkPipelineLayout*);
     VkResult CreateGraphicsPipelines(VkPipelineCache, uint32_t, const VkGraphicsPipelineCreateInfo*, const VkAllocationCallbacks*, VkPipeline*);
     VkResult CreateSwapchainKHR(const VkSwapchainCreateInfoKHR*, const VkAllocationCallbacks*, VkSwapchainKHR*);
+    void CmdBindDescriptorSets(VkCommandBuffer, VkPipelineBindPoint, VkPipelineLayout, uint32_t, uint32_t, const VkDescriptorSet*, uint32_t, const uint32_t*);
+    void CmdBindPipeline(VkCommandBuffer, VkPipelineBindPoint, VkPipeline);
+    void CmdBindVertexBuffers(VkCommandBuffer, uint32_t, uint32_t, const VkBuffer*, const VkDeviceSize*);
+    void CmdBindVertexBuffers2EXT(VkCommandBuffer, uint32_t, uint32_t, const VkBuffer*, const VkDeviceSize*, const VkDeviceSize*, const VkDeviceSize*);
+    void CmdBindIndexBuffer(VkCommandBuffer, VkBuffer, VkDeviceSize, VkIndexType);
+    void CmdSetScissor(VkCommandBuffer, uint32_t, uint32_t, const VkRect2D*);
+    void CmdBeginRenderPass(VkCommandBuffer, const VkRenderPassBeginInfo*, VkSubpassContents);
+    void CmdEndRenderPass(VkCommandBuffer);
+    void CmdDraw(VkCommandBuffer, uint32_t, uint32_t, uint32_t, uint32_t);
+    void CmdDrawIndexed(VkCommandBuffer, uint32_t, uint32_t, uint32_t, int32_t, uint32_t);
+    void CmdBeginTransformFeedbackEXT(VkCommandBuffer, uint32_t, uint32_t, const VkBuffer*, const VkDeviceSize*);
+    void CmdBindTransformFeedbackBuffersEXT(VkCommandBuffer, uint32_t, uint32_t, const VkBuffer*, const VkDeviceSize*, const VkDeviceSize*);
+    void CmdEndTransformFeedbackEXT(VkCommandBuffer, uint32_t, uint32_t, const VkBuffer*, const VkDeviceSize*);
+    VkResult EndCommandBuffer(VkCommandBuffer);
+    VkResult QueueSubmit(VkQueue, uint32_t, const VkSubmitInfo*, VkFence);
+    VkResult QueuePresentKHR(VkQueue, const VkPresentInfoKHR*);
 };
 
 struct instance {
@@ -257,6 +277,9 @@ inline device& get_device(VkDevice device) {
     return *devices.at(GetKey(device));
 }
 inline device& get_device(VkCommandBuffer commandBuffer) {
+    return *devices.at(GetKey(commandBuffer));
+}
+inline device& get_device(VkQueue commandBuffer) {
     return *devices.at(GetKey(commandBuffer));
 }
 
