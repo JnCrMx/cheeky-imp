@@ -1,32 +1,85 @@
 cmake_minimum_required (VERSION 3.5)
 include(CMakeDependentOption)
+include(FetchContent)
 
 project(vulkan_layer)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Vulkan REQUIRED FATAL_ERROR)
+find_package(Vulkan REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 find_package(spdlog REQUIRED)
+find_package(Backward REQUIRED)
 
-file(GLOB_RECURSE sources src/**.cpp external/Vulkan-ValidationLayers/layers/vk_format_utils.cpp)
+set(sources
+    "src/buffers.cpp"
+    "src/config.cpp"
+    "src/constants.cpp"
+    "src/descriptors.cpp"
+    "src/dispatch.cpp"
+    "src/draw.cpp"
+    "src/images.cpp"
+    "src/layer.cpp"
+    "src/shaders.cpp"
+    "src/utils.cpp"
+    "src/objects.cpp"
+    "src/reflection/reflectionparser.cpp"
+    "src/rules/actions.cpp"
+    "src/rules/conditions.cpp"
+    "src/rules/data.cpp"
+    "src/rules/ipc.cpp"
+    "src/rules/rules.cpp"
+    "src/rules/data/convert.cpp"
+    "src/rules/data/functions.cpp"
+    "src/rules/data/map.cpp"
+    "src/rules/data/math.cpp"
+    "src/rules/data/pack.cpp"
+    "src/rules/data/reduce.cpp"
+    "src/rules/data/variables.cpp"
+    "src/rules/data/vulkan.cpp"
+)
+set(includes
+    "include/config.hpp"
+    "include/constants.hpp"
+    "include/dispatch.hpp"
+    "include/layer.hpp"
+    "include/shaders.hpp"
+    "include/utils.hpp"
+    "include/objects.hpp"
+    "include/reflection/custom_structs.hpp"
+    "include/reflection/reflectionparser.hpp"
+    "include/reflection/vkreflection.hpp"
+    "include/rules/actions.hpp"
+    "include/rules/conditions.hpp"
+    "include/rules/data.hpp"
+    "include/rules/execution_env.hpp"
+    "include/rules/ipc.hpp"
+    "include/rules/reader.hpp"
+    "include/rules/rules.hpp"
+)
 
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/vkreflectionmap.cpp
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/generate_reflection.py
     COMMAND PYTHONPATH=/usr/share/vulkan/registry/ python3 ${CMAKE_CURRENT_SOURCE_DIR}/generate_reflection.py > ${CMAKE_CURRENT_BINARY_DIR}/vkreflectionmap.cpp)
 list(APPEND sources ${CMAKE_CURRENT_BINARY_DIR}/vkreflectionmap.cpp)
 
-add_library(cheeky_layer SHARED ${sources})
+add_library(cheeky_layer SHARED ${sources} ${includes})
+set_target_properties(cheeky_layer PROPERTIES PUBLIC_HEADER "${includes}")
 
-target_include_directories(cheeky_layer PUBLIC include/)
-target_include_directories(cheeky_layer PUBLIC external/Vulkan-ValidationLayers/layers/)
-target_include_directories(cheeky_layer PUBLIC external/exprtk)
-target_include_directories(cheeky_layer PUBLIC ${Vulkan_INCLUDE_DIR} ${OPENSSL_INCLUDE_DIR})
+target_include_directories(cheeky_layer PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/>
+    $<INSTALL_INTERFACE:include/cheeky_layer>
+)
+target_include_directories(cheeky_layer PRIVATE external/Vulkan-ValidationLayers/layers/)
+target_include_directories(cheeky_layer PRIVATE external/exprtk)
 
-target_link_libraries(cheeky_layer PUBLIC ${Vulkan_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
+target_link_libraries(cheeky_layer PUBLIC Vulkan::Vulkan)
+target_link_libraries(cheeky_layer PUBLIC spdlog::spdlog)
+target_link_libraries(cheeky_layer PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 target_link_libraries(cheeky_layer PRIVATE Threads::Threads)
+target_link_libraries(cheeky_layer PRIVATE Backward::Backward)
 
 option(CHEEKY_LAYER_SPIRV_CROSS "Decompile shaders with SPIRV-Cross. (very experimental)"   OFF)
 option(CHEEKY_LAYER_GLSLANG     "Compile shaders with glslang. (experimental)"              ON)
@@ -59,18 +112,8 @@ if(CHEEKY_LAYER_SPIRV_CROSS)
 endif()
 
 if(CHEEKY_LAYER_GLSLANG)
-    set(SKIP_GLSLANG_INSTALL ON CACHE BOOL "Skip installation")
-    set(ENABLE_GLSLANG_BINARIES ON CACHE BOOL "Builds glslangValidator and spirv-remap")
-    set(ENABLE_CTEST OFF CACHE BOOL "Enables testing")
-    set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build Shared Libraries")
-    set(ENABLE_SPVREMAPPER OFF CACHE BOOL "Enables building of SPVRemapper")
-    set(ENABLE_HLSL OFF CACHE BOOL "Enables HLSL input support")
-
-    add_subdirectory(external/glslang)
-
-    target_link_libraries(cheeky_layer PUBLIC glslang SPIRV glslang-default-resource-limits)
-    target_include_directories(cheeky_layer PUBLIC external/glslang/glslang/Public external/glslang/SPIRV external/glslang/StandAlone)
-
+    find_package(glslang REQUIRED)
+    target_link_libraries(cheeky_layer PUBLIC glslang::glslang glslang::glslang-default-resource-limits glslang::SPIRV)
     target_compile_definitions(cheeky_layer PUBLIC USE_GLSLANG)
 endif()
 
@@ -82,7 +125,7 @@ if(CHEEKY_LAYER_IMAGE_TOOLS)
     add_subdirectory(external/image_tools)
     target_compile_options(image_tools PRIVATE "-O3")
 
-    target_link_libraries(cheeky_layer PUBLIC image_tools)
+    target_link_libraries(cheeky_layer PRIVATE image_tools)
 	target_include_directories(cheeky_layer PRIVATE external/stb)
 
     target_compile_definitions(cheeky_layer PUBLIC USE_IMAGE_TOOLS)
@@ -91,10 +134,12 @@ if(CHEEKY_LAYER_IMAGE_TOOLS)
     endif()
 endif()
 
-add_library(spirv-reflect STATIC external/SPIRV-Reflect/spirv_reflect.c)
-target_include_directories(spirv-reflect PUBLIC external/SPIRV-Reflect/)
+add_library(spirv-reflect STATIC external/SPIRV-Reflect/spirv_reflect.c external/SPIRV-Reflect/spirv_reflect.h)
+target_include_directories(spirv-reflect PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/external/SPIRV-Reflect/>
+    $<INSTALL_INTERFACE:include/SPIRV-Reflect>)
+set_target_properties(spirv-reflect PROPERTIES PUBLIC_HEADER external/SPIRV-Reflect/spirv_reflect.h)
 target_link_libraries(cheeky_layer PUBLIC spirv-reflect)
-target_link_libraries(cheeky_layer PUBLIC spdlog::spdlog)
 
 if(CHEEKY_LAYER_DOCS)
     find_package(Doxygen)
@@ -119,11 +164,8 @@ if(CHEEKY_LAYER_DOCS)
     endif(DOXYGEN_FOUND)
 endif(CHEEKY_LAYER_DOCS)
 
-add_subdirectory(external/backward-cpp)
-add_backward(cheeky_layer)
-
-enable_testing()
-add_subdirectory(test)
+# enable_testing()
+# add_subdirectory(test)
 
 FetchContent_Declare(cmake_git_version_tracking
   GIT_REPOSITORY https://github.com/andrew-hardin/cmake-git-version-tracking.git
@@ -131,6 +173,27 @@ FetchContent_Declare(cmake_git_version_tracking
 )
 FetchContent_MakeAvailable(cmake_git_version_tracking)
 target_link_libraries(cheeky_layer PRIVATE cmake_git_version_tracking)
+
+install(TARGETS spirv-reflect
+    EXPORT CheekyLayerTargets
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin
+    PUBLIC_HEADER DESTINATION include/SPIRV-Reflect)
+
+install(TARGETS cheeky_layer
+    EXPORT CheekyLayerTargets
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin
+    PUBLIC_HEADER DESTINATION include/cheeky_layer
+)
+install(EXPORT CheekyLayerTargets
+    FILE CheekyLayerTargets.cmake
+    NAMESPACE CheekyImp::
+    DESTINATION lib/cmake/CheekyImp
+)
+export(TARGETS cheeky_layer spirv-reflect NAMESPACE CheekyImp:: FILE CheekyLayerTargets.cmake)
 
 #target_link_libraries(cheeky_layer PUBLIC -fsanitize=address)
 #target_compile_options(cheeky_layer PUBLIC -fsanitize=address)

@@ -87,148 +87,6 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceC
 	auto& instance = CheekyLayer::instances[GetKey(*pInstance)] = std::make_unique<CheekyLayer::instance>(pCreateInfo, pInstance);
     InitInstanceDispatchTable(*pInstance, fpGetInstanceProcAddr, instance->dispatch);
 
-	/*global_config = CheekyLayer::DEFAULT_CONFIG;
-	try
-	{
-		std::string configFile = std::getenv(CheekyLayer::Contants::CONFIG_ENV.c_str());
-		std::ifstream in(configFile);
-		if(in.good())
-		{
-			in >> global_config;
-		}
-	}
-	catch(std::exception&) {}
-
-	std::string applicationName = "unknown";
-	std::string engineName = "unknown";
-	if(pCreateInfo->pApplicationInfo && pCreateInfo->pApplicationInfo->pApplicationName)
-		applicationName = pCreateInfo->pApplicationInfo->pApplicationName;
-	if(pCreateInfo->pApplicationInfo && pCreateInfo->pApplicationInfo->pEngineName)
-		engineName = pCreateInfo->pApplicationInfo->pEngineName;
-
-	std::string logfile = global_config["logFile"];
-	replace(logfile, "{{pid}}", std::to_string(getpid()));
-	replace(logfile, "{{inst}}", std::to_string((uint64_t)*pInstance));
-	if(!global_config["application"].empty())
-	{
-		if(global_config["application"] != applicationName)
-		{
-			layer_disabled = true;
-			//logfile = "/dev/null";
-		} else {
-			layer_disabled = false;
-		}
-	}
-	hook_draw_calls = global_config.map<bool>("hookDraw", CheekyLayer::config::to_bool);
-
-	std::ofstream out(logfile);
-	logger = new CheekyLayer::logger(out);
-
-	static unsigned int logger_id = 0;
-	auto async_file = spdlog::basic_logger_mt<spdlog::async_factory>("instance #"+std::to_string(logger_id++), logfile+".spdlog");
-	spdlog::set_default_logger(async_file);
-	spdlog::info("Hello from {} version {} from {} {} for application {} using engine {}",
-		CheekyLayer::Contants::LAYER_NAME, CheekyLayer::Contants::GIT_VERSION,
-		__DATE__, __TIME__, applicationName, engineName);
-	spdlog::flush_every(std::chrono::seconds(3));
-
-	*logger << logger::begin << "Hello from " << CheekyLayer::Contants::LAYER_NAME
-		<< " version " << CheekyLayer::Contants::GIT_VERSION
-		<< " from " << __DATE__ << " " << __TIME__
-		<< " for application " << applicationName
-		<< " using engine " << engineName << logger::end;
-	*logger << logger::begin << "CreateInstance: " << *pInstance << " -> " << ret << logger::end;
-
-	for(std::string type : {"images", "buffers", "shaders"})
-	{
-		try
-		{
-			std::filesystem::directory_iterator it(global_config["overrideDirectory"]+"/"+type);
-
-			int count = 0;
-			std::transform(std::filesystem::begin(it), std::filesystem::end(it), std::back_inserter(overrideCache), [&count](auto e){
-				count++;
-				return e.path().stem();
-			});
-			*logger << logger::begin << "Found " << count << " overrides for " << type << logger::end;
-		}
-		catch (std::filesystem::filesystem_error& ex)
-		{
-			*logger << logger::begin << logger::error << "Cannot find overrides for " << type << ": " << ex.what() << logger::end;
-		}
-
-		/*if(global_config.map<bool>("dump", CheekyLayer::config::to_bool))
-		{
-			try
-			{
-				std::filesystem::directory_iterator it(global_config["dumpDirectory"]+"/"+type);
-				int count = 0;
-				std::transform(std::filesystem::begin(it), std::filesystem::end(it), std::back_inserter(dumpCache), [&count](auto e){
-					count++;
-					return e.path().stem();
-				});
-				*logger << logger::begin << "Found " << count << " dumped resources for " << type << logger::end;
-				//dumpCache.reserve(dumpCache.size()*2);
-			}
-			catch (std::filesystem::filesystem_error& ex)
-			{
-				*logger << logger::begin << logger::error << "Cannot find dumped resources for " << type << ": " << ex.what() << logger::end;
-			}
-		}*/
-	/*}
-	load_plugins();
-
-	std::string rulefile = global_config["ruleFile"];
-	rules.clear();
-
-	{
-		std::ifstream rulesIn(rulefile);
-		CheekyLayer::rules::numbered_streambuf numberer{rulesIn};
-		while(rulesIn.good())
-		{
-			try
-			{
-				std::unique_ptr<CheekyLayer::rules::rule> rule = std::make_unique<CheekyLayer::rules::rule>();
-				rulesIn >> *rule;
-
-				rules.push_back(std::move(rule));
-			}
-			catch(const std::exception& ex)
-			{
-				*logger << logger::begin << "Error at " << numberer.line() << ":" << numberer.col() << ":\n\t" << ex.what() << logger::end;
-				break;
-			}
-		}
-	}
-
-	*logger << logger::begin << "Loaded " << rules.size() << " rules:" << logger::end;
-	for(auto& r : rules)
-	{
-		CheekyLayer::active_logger log = *logger << logger::begin;
-		log << '\t';
-		r->print(log.raw());
-		log << logger::end;
-	}
-	CheekyLayer::rules::rule_disable_callback = [](CheekyLayer::rules::rule* rule){
-		update_has_rules();
-	};
-	update_has_rules();
-
-	// close all file descriptors when creating a new instance
-	for(auto& [name, fd] : CheekyLayer::rules::rule_env.fds)
-	{
-		fd->close();
-	}
-	CheekyLayer::rules::rule_env.fds.clear();
-
-	if(!layer_disabled)
-	{
-		CheekyLayer::active_logger log = *logger << logger::begin;
-		CheekyLayer::rules::local_context ctx = { .logger = log };
-		CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::Init, VK_NULL_HANDLE, ctx);
-		log << logger::end;
-	}*/
-
 	return ret;
 }
 
@@ -314,13 +172,8 @@ void device::GetDeviceQueue(uint32_t queueFamilyIndex, uint32_t queueIndex, VkQu
 
 		logger->debug("Created transfer command buffer {} in pool {} for queue family {} on device {}", fmt::ptr(transferBuffer), fmt::ptr(transferPool), queueFamilyIndex, fmt::ptr(handle));
 
-		/*
-		// now we are "ready"
-		CheekyLayer::active_logger log = *logger << logger::begin;
-		CheekyLayer::rules::local_context ctx = { .logger = log, .device = device };
-		CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::DeviceCreate, (VkHandle) device, ctx);
-		log << logger::end;
-		*/
+		rules::calling_context ctx{};
+		execute_rules(rules::selector_type::DeviceCreate, (rules::VkHandle) handle, ctx);
 	}
 }
 
@@ -364,30 +217,6 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_GetDeviceQueue(
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_DestroyDevice(VkDevice device, const VkAllocationCallbacks *pAllocator)
 {
 	CheekyLayer::get_device(device).inst->devices.erase(device);
-
-	/*scoped_lock l(global_lock);
-	if(logger)
-		*logger << logger::begin << "DestroyDevice: " << device << logger::end;
-
-	if(transferQueues.contains(device))
-	{
-		device_dispatch[GetKey(device)].DestroyCommandPool(device, transferPools[device], nullptr);
-		transferCommandBuffers.erase(device);
-		transferPools.erase(device);
-		transferQueues.erase(device);
-	}
-
-	if(!layer_disabled)
-	{
-		CheekyLayer::active_logger log = *logger << logger::begin;
-		CheekyLayer::rules::local_context ctx = { .logger = log };
-		CheekyLayer::rules::execute_rules(rules, CheekyLayer::rules::selector_type::DeviceDestroy, (VkHandle) device, ctx);
-		log << logger::end;
-	}
-
-	device_dispatch[GetKey(device)].DestroyDevice(device, pAllocator);
-
-	device_dispatch.erase(GetKey(device));*/
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_EnumerateInstanceLayerProperties(uint32_t *pPropertyCount, VkLayerProperties *pProperties)

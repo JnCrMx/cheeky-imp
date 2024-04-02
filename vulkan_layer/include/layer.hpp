@@ -78,5 +78,6 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdBindTransformFeedbackBuffersEXT(V
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdEndTransformFeedbackEXT(VkCommandBuffer, uint32_t, uint32_t, const VkBuffer*, const VkDeviceSize*);
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_EndCommandBuffer(VkCommandBuffer);
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateSwapchainKHR(VkDevice, const VkSwapchainCreateInfoKHR*, const VkAllocationCallbacks*, VkSwapchainKHR*);
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_GetSwapchainImagesKHR(VkDevice, VkSwapchainKHR, uint32_t*, VkImage*);
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_QueuePresentKHR(VkQueue, const VkPresentInfoKHR*);
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_QueueSubmit(VkQueue, uint32_t, const VkSubmitInfo*, VkFence);

@@ -52,21 +52,21 @@ namespace CheekyLayer::rules
 			std::map<VkHandle, std::set<std::string>> marks;
 			std::map<VkHandle, std::string> hashes;
 
-			std::map<VkCommandBuffer, std::vector<std::function<void(local_context&)>>> on_EndCommandBuffer;
-			std::map<VkCommandBuffer, std::vector<std::function<void(local_context&)>>> on_QueueSubmit;
-			std::map<VkCommandBuffer, std::vector<std::function<void(local_context&)>>> on_EndRenderPass;
+			std::multimap<VkCommandBuffer, std::function<void(local_context&)>> on_EndCommandBuffer;
+			std::multimap<VkCommandBuffer, std::function<void(local_context&)>> on_QueueSubmit;
+			std::multimap<VkCommandBuffer, std::function<void(local_context&)>> on_EndRenderPass;
 
 			void onEndCommandBuffer(VkCommandBuffer commandBuffer, std::function<void(local_context&)> function)
 			{
-				on_EndCommandBuffer[commandBuffer].push_back(function);
+				on_EndCommandBuffer.emplace(commandBuffer, function);
 			}
 			void onQueueSubmit(VkCommandBuffer commandBuffer, std::function<void(local_context&)> function)
 			{
-				on_QueueSubmit[commandBuffer].push_back(function);
+				on_QueueSubmit.emplace(commandBuffer, function);
 			}
 			void onEndRenderPass(VkCommandBuffer commandBuffer, std::function<void(local_context&)> function)
 			{
-				on_EndRenderPass[commandBuffer].push_back(function);
+				on_EndRenderPass.emplace(commandBuffer, function);
 			}
 
 			std::unordered_map<std::string, std::unique_ptr<ipc::file_descriptor>> fds;

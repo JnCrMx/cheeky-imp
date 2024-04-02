@@ -13,9 +13,9 @@
 #endif
 
 #ifdef USE_GLSLANG
-#include <ShaderLang.h>
-#include <ResourceLimits.h>
-#include <GlslangToSpv.h>
+#include <glslang/Public/ShaderLang.h>
+#include <glslang/Public/ResourceLimits.h>
+#include <glslang/SPIRV/GlslangToSpv.h>
 #endif
 
 #ifdef USE_SPIRV
@@ -69,7 +69,7 @@ std::tuple<bool, std::string> compileShader(EShLanguage stage, std::string glslC
 	shader.setSourceEntryPoint("main");
 
 	EShMessages messages = (EShMessages)(EShMsgSpvRules | EShMsgVulkanRules);
-	if(!shader.parse(&glslang::DefaultTBuiltInResource, 100, false, messages))
+	if(!shader.parse(GetDefaultResources(), 100, false, messages))
 	{
 		return {false, std::string(shader.getInfoLog())};
 	}

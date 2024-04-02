@@ -160,6 +160,7 @@ struct device {
     std::map<VkImage, image> images;
     std::map<VkImageView, VkImage> imageViewToImage;
     std::map<VkFramebuffer, framebuffer> framebuffers;
+    std::map<VkSwapchainKHR, VkSwapchainCreateInfoKHR> swapchains;
 
     uint64_t currentCustomShaderHandle = 0xABC1230000;
     std::map<rules::VkHandle, rules::VkHandle> customShaderHandles;
@@ -207,6 +208,7 @@ struct device {
     VkResult CreatePipelineLayout(const VkPipelineLayoutCreateInfo*, const VkAllocationCallbacks*, VkPipelineLayout*);
     VkResult CreateGraphicsPipelines(VkPipelineCache, uint32_t, const VkGraphicsPipelineCreateInfo*, const VkAllocationCallbacks*, VkPipeline*);
     VkResult CreateSwapchainKHR(const VkSwapchainCreateInfoKHR*, const VkAllocationCallbacks*, VkSwapchainKHR*);
+    VkResult GetSwapchainImagesKHR(VkSwapchainKHR, uint32_t*, VkImage*);
     void CmdBindDescriptorSets(VkCommandBuffer, VkPipelineBindPoint, VkPipelineLayout, uint32_t, uint32_t, const VkDescriptorSet*, uint32_t, const uint32_t*);
     void CmdBindPipeline(VkCommandBuffer, VkPipelineBindPoint, VkPipeline);
     void CmdBindVertexBuffers(VkCommandBuffer, uint32_t, uint32_t, const VkBuffer*, const VkDeviceSize*);

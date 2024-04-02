@@ -172,12 +172,50 @@ VkResult device::CreateSwapchainKHR(const VkSwapchainCreateInfoKHR* pCreateInfo,
 	VkResult result = dispatch.CreateSwapchainKHR(handle, pCreateInfo, pAllocator, pSwapchain);
 	if(result != VK_SUCCESS)
 		return result;
+	swapchains[*pSwapchain] = *pCreateInfo;
 
 	rules::swapchain_info info = {pCreateInfo};
 	rules::calling_context ctx{
 		.info = info
 	};
 	execute_rules(rules::selector_type::SwapchainCreate, (rules::VkHandle)(*pSwapchain), ctx);
+
+	return result;
+}
+
+VkResult device::GetSwapchainImagesKHR(VkSwapchainKHR swapchain, uint32_t* pSwapchainImageCount, VkImage* pSwapchainImages)
+{
+	bool get_images = pSwapchainImageCount && *pSwapchainImageCount && pSwapchainImages;
+
+	VkResult result = dispatch.GetSwapchainImagesKHR(handle, swapchain, pSwapchainImageCount, pSwapchainImages);
+	if(result != VK_SUCCESS)
+		return result;
+	if(!get_images)
+		return result;
+
+	auto& swap = swapchains[swapchain];
+	for(unsigned int i=0; i<*pSwapchainImageCount; i++)
+	{
+		auto& image = images[pSwapchainImages[i]];
+		image.image = pSwapchainImages[i];
+		image.createInfo = VkImageCreateInfo{
+			.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+			.pNext = nullptr,
+			.flags = 0,
+			.imageType = VK_IMAGE_TYPE_2D,
+			.format = swap.imageFormat,
+			.extent = VkExtent3D{swap.imageExtent.width, swap.imageExtent.height, 1},
+			.mipLevels = 1,
+			.arrayLayers = swap.imageArrayLayers,
+			.samples = VK_SAMPLE_COUNT_1_BIT,
+			.tiling = VK_IMAGE_TILING_OPTIMAL,
+			.usage = swap.imageUsage,
+			.sharingMode = swap.imageSharingMode,
+			.queueFamilyIndexCount = swap.queueFamilyIndexCount,
+			.pQueueFamilyIndices = nullptr,
+			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+		};
+	}
 
 	return result;
 }
@@ -192,9 +230,6 @@ VkResult device::AllocateCommandBuffers(const VkCommandBufferAllocateInfo* pAllo
 	for(int i=0; i<pAllocateInfo->commandBufferCount; i++)
 	{
 		commandBufferStates[pCommandBuffers[i]] = {handle};
-
-		inst->global_context.on_EndCommandBuffer[pCommandBuffers[i]] = {};
-		inst->global_context.on_QueueSubmit[pCommandBuffers[i]] = {};
 	}
 
 	return result;
@@ -384,14 +419,15 @@ void device::CmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPas
 
 void device::CmdEndRenderPass(VkCommandBuffer commandBuffer)
 {
+	dispatch.CmdEndRenderPass(commandBuffer);
+
 	auto& state = commandBufferStates[commandBuffer];
 
 	logger->trace("CmdEndRenderPass in commandBuffer {} with former renderPass {} and former framebuffer {}",
 		fmt::ptr(commandBuffer), fmt::ptr(state.renderpass), fmt::ptr(state.framebuffer));
 
 	auto& map = inst->global_context.on_EndRenderPass;
-	auto p = map.find(commandBuffer);
-	if(p != map.end() && !p->second.empty()) {
+	if(map.contains(commandBuffer)) {
 		bool _1;
 		std::vector<std::string> _2;
 		std::string _3;
@@ -413,17 +449,14 @@ void device::CmdEndRenderPass(VkCommandBuffer commandBuffer)
 			.customPointer = _6
 		};
 
-		for(auto& f : p->second) {
+		while(auto p = map.extract(commandBuffer)) {
 			try {
-				f(ctx);
+				p.mapped()(ctx);
 			} catch(const std::exception& e) {
 				logger->error("Failed to execute callback: {}", e.what());
 			}
 		}
-		p->second.clear();
 	}
-
-	dispatch.CmdEndRenderPass(commandBuffer);
 	state.renderpass = VK_NULL_HANDLE;
 	state.framebuffer = VK_NULL_HANDLE;
 }
@@ -625,8 +658,7 @@ VkResult device::EndCommandBuffer(VkCommandBuffer commandBuffer)
 	state.transformFeedback = false;
 
 	auto& map = inst->global_context.on_EndCommandBuffer;
-	auto p = map.find(commandBuffer);
-	if(p != map.end() && !p->second.empty()) {
+	if(map.contains(commandBuffer)) {
 		bool _1;
 		std::vector<std::string> _2;
 		std::string _3;
@@ -648,14 +680,13 @@ VkResult device::EndCommandBuffer(VkCommandBuffer commandBuffer)
 			.customPointer = _6
 		};
 
-		for(auto& f : p->second) {
+		while(auto p = map.extract(commandBuffer)) {
 			try {
-				f(ctx);
+				p.mapped()(ctx);
 			} catch(const std::exception& e) {
 				logger->error("Failed to execute callback: {}", e.what());
 			}
 		}
-		p->second.clear();
 	}
 
 	return dispatch.EndCommandBuffer(commandBuffer);
@@ -683,8 +714,7 @@ VkResult device::QueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmit
 			auto& state = commandBufferStates[commandBuffer];
 
 			auto& map = inst->global_context.on_QueueSubmit;
-			auto p = map.find(commandBuffer);
-			if(p != map.end() && !p->second.empty()) {
+			if(map.contains(commandBuffer)) {
 				bool _1;
 				std::vector<std::string> _2;
 				std::string _3;
@@ -706,14 +736,13 @@ VkResult device::QueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmit
 					.customPointer = _6
 				};
 
-				for(auto& f : p->second) {
+				while(auto p = map.extract(commandBuffer)) {
 					try {
-						f(ctx);
+						p.mapped()(ctx);
 					} catch(const std::exception& e) {
 						logger->error("Failed to execute callback: {}", e.what());
 					}
 				}
-				p->second.clear();
 			}
 		}
 	}
@@ -925,4 +954,13 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_QueueSubmit(
     VkFence                                     fence)
 {
 	return CheekyLayer::get_device(queue).QueueSubmit(queue, submitCount, pSubmits, fence);
+}
+
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_GetSwapchainImagesKHR(
+	VkDevice                                    device,
+	VkSwapchainKHR                              swapchain,
+	uint32_t*                                   pSwapchainImageCount,
+	VkImage*                                    pSwapchainImages)
+{
+	return CheekyLayer::get_device(device).GetSwapchainImagesKHR(swapchain, pSwapchainImageCount, pSwapchainImages);
 }

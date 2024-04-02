@@ -66,6 +66,7 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa, VkLa
 	\
 	DeviceHook(CreateFramebuffer) \
 	DeviceHook(CreateSwapchainKHR) \
+	DeviceHook(GetSwapchainImagesKHR) \
 	DeviceHook(QueuePresentKHR) \
 	\
 	DeviceHook(CmdBindDescriptorSets) \

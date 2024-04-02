@@ -1,6 +1,5 @@
 #pragma once
 
-#include "reflection/vkreflection.hpp"
 #include <stdint.h>
 #include <vulkan/vulkan_core.h>
 
