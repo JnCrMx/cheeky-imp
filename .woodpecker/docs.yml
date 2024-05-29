@@ -4,15 +4,17 @@ steps:
     directory: vulkan_layer
     commands:
       - apk add --no-cache curl
-      - curl -L --create-dirs --output build/cppreference-doxygen-web.tag.xml https://upload.cppreference.com/mwiki/images/f/f8/cppreference-doxygen-web.tag.xml
+      - mkdir -p build
+      - curl -L --output build/cppreference-doxygen-web.tag.xml https://upload.cppreference.com/mwiki/images/f/f8/cppreference-doxygen-web.tag.xml
   doxygen:
     image: greenbone/doxygen
     directory: vulkan_layer
     commands:
-      - mkdir -p build
       - cd build
       - sed -e 's/@CMAKE_CURRENT_BINARY_DIR@/./' -e 's/@CMAKE_CURRENT_SOURCE_DIR@/../' ../docs/Doxyfile.in > Doxyfile
       - doxygen
+      - realpath ./docs
+      - find ./docs
   upload:
     image: appleboy/drone-scp
     settings:
