@@ -11,6 +11,7 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/async.h>
 #include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/cfg/env.h>
 
 #include "dispatch.hpp"
 #include "constants.hpp"
@@ -19,6 +20,13 @@
 
 std::mutex global_lock;
 std::mutex transfer_lock;
+
+static class spdlog_init {
+	public:
+		spdlog_init() {
+			spdlog::cfg::load_env_levels();
+		}
+} init;
 
 /*void load_plugin(std::filesystem::path path)
 {

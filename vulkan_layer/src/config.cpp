@@ -9,6 +9,8 @@ namespace CheekyLayer
 	config::config(const std::unordered_map<std::string, std::string>& v) : values(v)
 	{
 		log_file = map<std::filesystem::path>("logFile", [](std::string s) {return std::filesystem::path(s);});
+		log_level = map<std::string>("logLevel", [](std::string s) {return s;});
+
 		application = map<std::string>("application", [](std::string s) {return s;});
 		hook_draw_calls = map<bool>("hookDraw", to_bool);
 		rule_file = map<std::filesystem::path>("ruleFile", [](std::string s) {return std::filesystem::path(s);});
@@ -68,6 +70,7 @@ namespace CheekyLayer
 		{"overridePngFlipped", "false"},
 		{"overrideDirectory", "./override"},
 		{"logFile", "cheeky_layer.txt"},
+		{"logLevel", "debug"},
 		{"ruleFile", "rules.txt"},
 		{"hookDraw", "false"},
 		{"application", ""},

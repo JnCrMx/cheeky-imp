@@ -24,6 +24,8 @@ namespace CheekyLayer
 			const std::string& operator[](const std::string& key) const;
 
 			std::filesystem::path log_file;
+			std::string log_level;
+
 			std::string application;
 			bool hook_draw_calls;
 			std::filesystem::path rule_file;

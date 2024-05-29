@@ -8,6 +8,7 @@
 #include <spdlog/async.h>
 #include <spdlog/common.h>
 #include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/cfg/helpers.h>
 #include <sstream>
 #include <string>
 #include <vulkan/vulkan_core.h>
@@ -51,14 +52,15 @@ instance::instance(const VkInstanceCreateInfo *pCreateInfo, VkInstance* pInstanc
 
     logger = spdlog::basic_logger_mt<spdlog::async_factory>(fmt::format("instance #{}: {}", id, fmt::ptr(handle)), logfile);
     logger->flush_on(spdlog::level::warn);
-    logger->set_level(spdlog::level::trace);
+    if(!config.log_level.empty())
+        logger->set_level(spdlog::level::from_str(config.log_level));
 
     logger->info("Hello from {} version {} from {} {} for application {} using engine {}",
 		CheekyLayer::Contants::LAYER_NAME, CheekyLayer::Contants::GIT_VERSION,
 		__DATE__, __TIME__, applicationName, engineName);
     logger->flush();
 
-    for(std::string type : {"images", "buffers", "shaders"})
+    for(auto type : {"images", "buffers", "shaders"})
 	{
 		try
 		{
