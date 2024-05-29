@@ -1,9 +1,9 @@
 steps:
-  download-tag-file:
-    image: curlimages/curl:8.8.0
-    directory: vulkan_layer
-    commands:
-      - curl -L --create-dirs --output build/cppreference-doxygen-web.tag.xml https://upload.cppreference.com/mwiki/images/f/f8/cppreference-doxygen-web.tag.xml
+  # download-tag-file:
+  #   image: curlimages/curl:8.8.0
+  #   directory: vulkan_layer
+  #   commands:
+  #     - curl -L --create-dirs --output build/cppreference-doxygen-web.tag.xml https://upload.cppreference.com/mwiki/images/f/f8/cppreference-doxygen-web.tag.xml
   doxygen:
     image: greenbone/doxygen
     directory: vulkan_layer
