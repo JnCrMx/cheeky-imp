@@ -1,0 +1,14 @@
+include(CMakeFindDependencyMacro)
+
+find_package(Vulkan REQUIRED)
+find_package(OpenSSL REQUIRED)
+find_package(Threads REQUIRED)
+find_package(spdlog REQUIRED)
+find_package(Backward REQUIRED)
+
+set(CHEEKY_LAYER_GLSLANG @CHEEKY_LAYER_GLSLANG@)
+if(CHEEKY_LAYER_GLSLANG)
+    find_package(glslang REQUIRED)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/CheekyLayerTargets.cmake")

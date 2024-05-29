@@ -2,7 +2,7 @@ cmake_minimum_required (VERSION 3.5)
 include(CMakeDependentOption)
 include(FetchContent)
 
-project(vulkan_layer)
+project(vulkan_layer VERSION 1.0.0)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -39,6 +39,8 @@ set(sources
     "src/rules/data/reduce.cpp"
     "src/rules/data/variables.cpp"
     "src/rules/data/vulkan.cpp"
+
+    "external/Vulkan-ValidationLayers/layers/vk_format_utils.cpp"
 )
 set(includes
     "include/config.hpp"
@@ -77,9 +79,9 @@ target_include_directories(cheeky_layer PRIVATE external/exprtk)
 
 target_link_libraries(cheeky_layer PUBLIC Vulkan::Vulkan)
 target_link_libraries(cheeky_layer PUBLIC spdlog::spdlog)
+target_link_libraries(cheeky_layer PUBLIC Backward::Backward)
 target_link_libraries(cheeky_layer PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 target_link_libraries(cheeky_layer PRIVATE Threads::Threads)
-target_link_libraries(cheeky_layer PRIVATE Backward::Backward)
 
 option(CHEEKY_LAYER_SPIRV_CROSS "Decompile shaders with SPIRV-Cross. (very experimental)"   OFF)
 option(CHEEKY_LAYER_GLSLANG     "Compile shaders with glslang. (experimental)"              ON)
@@ -125,7 +127,7 @@ if(CHEEKY_LAYER_IMAGE_TOOLS)
     add_subdirectory(external/image_tools)
     target_compile_options(image_tools PRIVATE "-O3")
 
-    target_link_libraries(cheeky_layer PRIVATE image_tools)
+    target_link_libraries(cheeky_layer PUBLIC image_tools)
 	target_include_directories(cheeky_layer PRIVATE external/stb)
 
     target_compile_definitions(cheeky_layer PUBLIC USE_IMAGE_TOOLS)
@@ -174,12 +176,27 @@ FetchContent_Declare(cmake_git_version_tracking
 FetchContent_MakeAvailable(cmake_git_version_tracking)
 target_link_libraries(cheeky_layer PRIVATE cmake_git_version_tracking)
 
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file(
+    CheekyLayerConfigVersion.cmake
+    VERSION ${PACKAGE_VERSION}
+    COMPATIBILITY AnyNewerVersion
+)
+
 install(TARGETS spirv-reflect
     EXPORT CheekyLayerTargets
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
     RUNTIME DESTINATION bin
     PUBLIC_HEADER DESTINATION include/SPIRV-Reflect)
+
+
+install(TARGETS image_tools
+    EXPORT CheekyLayerTargets
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin
+    PUBLIC_HEADER DESTINATION include/image_tools)
 
 install(TARGETS cheeky_layer
     EXPORT CheekyLayerTargets
@@ -193,7 +210,14 @@ install(EXPORT CheekyLayerTargets
     NAMESPACE CheekyImp::
     DESTINATION lib/cmake/CheekyImp
 )
-export(TARGETS cheeky_layer spirv-reflect NAMESPACE CheekyImp:: FILE CheekyLayerTargets.cmake)
+
+configure_file(CheekyLayerConfig.cmake.in CheekyLayerConfig.cmake @ONLY)
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/CheekyLayerConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/CheekyLayerConfigVersion.cmake"
+    DESTINATION lib/cmake/CheekyImp)
+
+export(TARGETS cheeky_layer spirv-reflect image_tools NAMESPACE CheekyImp:: FILE CheekyLayerTargets.cmake)
 
 #target_link_libraries(cheeky_layer PUBLIC -fsanitize=address)
 #target_compile_options(cheeky_layer PUBLIC -fsanitize=address)
