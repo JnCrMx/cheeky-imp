@@ -1,19 +1,17 @@
 #include <vulkan/vulkan_raii.hpp>
 #include <iostream>
 #include <iomanip>
-#include <span>
-#include <ranges>
 #include <fstream>
 #include <filesystem>
 #include <chrono>
 #include <glslang/Public/ShaderLang.h>
-#include <glslang/Include/Types.h>
 #include <glslang/Public/ResourceLimits.h>
 #include <glslang/SPIRV/GlslangToSpv.h>
 #include <cxxopts.hpp>
 #include <nlohmann/json.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtx/string_cast.hpp>
+#include <GLES3/gl3.h>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
@@ -47,7 +45,7 @@ std::string read_file(std::string path)
     return buffer.str();
 }
 
-std::tuple<std::unique_ptr<glslang::TShader>, std::unique_ptr<glslang::TProgram>> compile_shader(std::string shaderCode, EShLanguage stage)
+std::tuple<std::unique_ptr<glslang::TShader>, std::unique_ptr<glslang::TProgram>> compile_shader(std::string shaderCode, EShLanguage stage, const char* entrypoint = "main")
 {
     const char* shaderStrings[1];
     shaderStrings[0] = shaderCode.data();
@@ -56,8 +54,8 @@ std::tuple<std::unique_ptr<glslang::TShader>, std::unique_ptr<glslang::TProgram>
     shader->setEnvInput(glslang::EShSourceGlsl, stage, glslang::EShClientVulkan, 100);
     shader->setEnvClient(glslang::EShClientVulkan, glslang::EShTargetClientVersion::EShTargetVulkan_1_1);
     shader->setEnvTarget(glslang::EShTargetLanguage::EShTargetSpv, glslang::EShTargetLanguageVersion::EShTargetSpv_1_3);
-    shader->setEntryPoint("main");
-    shader->setSourceEntryPoint("main");
+    shader->setEntryPoint(entrypoint);
+    shader->setSourceEntryPoint(entrypoint);
 
     EShMessages messages = (EShMessages)(EShMsgSpvRules | EShMsgVulkanRules);
     if(!shader->parse(GetDefaultResources(), 100, false, messages))
@@ -265,7 +263,19 @@ int main(int argc, char** argv)
 
     glslang::InitializeProcess();
 
-    auto [_fragmentShader, fragmentProgram] = compile_shader(shaderCode, EShLanguage::EShLangFragment);
+    auto [_fragmentShader_tmp, fragmentProgram_tmp] = compile_shader(shaderCode, EShLanguage::EShLangFragment);
+    fragmentProgram_tmp->buildReflection(EShReflectionIntermediateIO | EShReflectionSeparateBuffers |
+        EShReflectionAllBlockVariables | EShReflectionUnwrapIOBlocks | EShReflectionAllIOVariables);
+    std::string proxy = "void proxy_main() {\nmain();\n";
+    for(int i=0; i<fragmentProgram_tmp->getNumPipeOutputs(); i++) {
+        const auto& o = fragmentProgram_tmp->getPipeOutput(i);
+        if(o.glDefineType == GL_FLOAT_VEC4)
+            proxy += o.name+".a = 1.0;\n";
+    }
+    proxy += "}";
+
+    auto [_fragmentShader, fragmentProgram] = compile_shader(shaderCode+proxy, EShLanguage::EShLangFragment, "proxy_main");
+
     std::vector<unsigned int> fragmentSpv{};
     glslang::GlslangToSpv(*fragmentProgram->getIntermediate(EShLanguage::EShLangFragment), fragmentSpv);
 
@@ -286,10 +296,14 @@ int main(int argc, char** argv)
         if(input.name.starts_with("gl_"))
             continue;
 
-        const auto* type = input.getType();
-        uint32_t location = type->getQualifier().layoutLocation;
+        uint32_t location = input.layoutLocation();
         uint32_t inputLocation = location + 1;
-        int components = type->computeNumComponents();
+        int components = 1;
+        switch(input.glDefineType) {
+            case GL_FLOAT_VEC2: components = 2; break;
+            case GL_FLOAT_VEC3: components = 3; break;
+            case GL_FLOAT_VEC4: components = 4; break;
+        }
         std::string typeString = components == 1 ? "float" : "vec"+std::to_string(components);
         vertexCode << "layout(location = " << inputLocation << ") in " << typeString << " input" << location << ";\n";
         vertexCode << "layout(location = " << location << ") out " << typeString << " output" << location << ";\n";
@@ -312,8 +326,7 @@ int main(int argc, char** argv)
         if(input.name.starts_with("gl_"))
             continue;
 
-        const auto* type = input.getType();
-        uint32_t location = type->getQualifier().layoutLocation;
+        uint32_t location = input.layoutLocation();
         vertexCode << "    output" << location << " = input" << location << ";\n";
     }
     vertexCode << "}\n";
@@ -468,6 +481,9 @@ int main(int argc, char** argv)
                 float u, v;
                 iss >> u >> v;
                 vertexUVs.push_back({u, v});
+                if(verbose) {
+                    std::cout << "UV: " << u << ", " << v << '\n';
+                }
             }
         }
 
@@ -756,7 +772,7 @@ int main(int argc, char** argv)
             {}, vk::ShaderStageFlagBits::eVertex, *vertexShader, "main"
         },
         vk::PipelineShaderStageCreateInfo{
-            {}, vk::ShaderStageFlagBits::eFragment, *fragmentShader, "main"
+            {}, vk::ShaderStageFlagBits::eFragment, *fragmentShader, "proxy_main"
         }
     };
     vk::VertexInputBindingDescription pipelineInputBinding{0, totalInputStride, vk::VertexInputRate::eVertex};
@@ -774,8 +790,10 @@ int main(int argc, char** argv)
     vk::PipelineDepthStencilStateCreateInfo pipelineDepthStencilState{{}, false};
     std::vector<vk::PipelineColorBlendAttachmentState> blendAttachments(framebufferCount);
     std::fill(blendAttachments.begin(), blendAttachments.end(), vk::PipelineColorBlendAttachmentState{
-        false, {}, {}, {}, {}, {}, {},
-        vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB
+        true,
+        vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eOneMinusSrcAlpha, vk::BlendOp::eAdd,
+        vk::BlendFactor::eOne, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
+        vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
     });
     vk::PipelineColorBlendStateCreateInfo pipelineColorBlendState{{}, false, vk::LogicOp::eClear, blendAttachments, {}};
     vk::PipelineDynamicStateCreateInfo pipelineDynamicState{};
@@ -793,7 +811,7 @@ int main(int argc, char** argv)
     vk::raii::CommandBuffer commandBuffer{std::move(buffers[0])};
     commandBuffer.begin(vk::CommandBufferBeginInfo{});
     std::vector<vk::ClearValue> clearValues(framebufferCount);
-    std::fill(clearValues.begin(), clearValues.end(), vk::ClearValue{vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f}});
+    std::fill(clearValues.begin(), clearValues.end(), vk::ClearValue{vk::ClearColorValue{0.0f, 0.0f, 0.0f, 0.0f}});
     commandBuffer.beginRenderPass(vk::RenderPassBeginInfo{*renderPass, *framebuffer, scissors, clearValues}, vk::SubpassContents::eInline);
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0, descriptorSetRefs, {});
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
