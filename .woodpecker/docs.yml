@@ -26,6 +26,6 @@ steps:
         from_secret: ssh_key
       port:
         from_secret: ssh_port
-      target: /config/data/docs/cheeky-imp/vulkan_layer
+      target: /config/data/docs/${CI_REPO}/${CI_COMMIT_BRANCH}/vulkan_layer
       source: vulkan_layer/build/docs/html/
       strip_components: 4
