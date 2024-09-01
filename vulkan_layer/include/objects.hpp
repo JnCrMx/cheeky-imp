@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vulkan/vulkan_core.h>
-#include <vulkan/generated/vk_layer_dispatch_table.h>
+#include <vulkan/utility/vk_dispatch_table.h>
 #include <spirv_reflect.h>
 
 #ifdef USE_IMAGE_TOOLS
@@ -120,7 +120,7 @@ struct device {
 
     VkDevice handle;
     PFN_vkGetDeviceProcAddr gdpa;
-    VkLayerDispatchTable dispatch;
+    VkuDeviceDispatchTable dispatch;
 
     bool has_debug = false;
 
@@ -242,7 +242,7 @@ struct instance {
 
     unsigned int id;
     VkInstance handle;
-    VkLayerInstanceDispatchTable dispatch;
+    VkuInstanceDispatchTable dispatch;
 
     CheekyLayer::config config;
     bool enabled = false;

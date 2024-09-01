@@ -1,7 +1,7 @@
 #include <vulkan/vk_platform.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vk_layer.h>
-#include <vulkan/generated/vk_layer_dispatch_table.h>
+#include <vulkan/utility/vk_dispatch_table.h>
 #include <vulkan/vulkan_core.h>
 #include <spdlog/spdlog.h>
 
@@ -11,8 +11,8 @@
 #include "layer.hpp"
 #include "objects.hpp"
 
-std::map<void*, VkLayerInstanceDispatchTable> instance_dispatch;
-std::map<void*, VkLayerDispatchTable> device_dispatch;
+std::map<void*, VkuInstanceDispatchTable> instance_dispatch;
+std::map<void*, VkuDeviceDispatchTable> device_dispatch;
 
 VK_LAYER_EXPORT PFN_vkVoidFunction VKAPI_CALL CheekyLayer_GetDeviceProcAddr(VkDevice device, const char *pName)
 {
@@ -46,12 +46,12 @@ VK_LAYER_EXPORT PFN_vkVoidFunction VKAPI_CALL CheekyLayer_GetInstanceProcAddr(Vk
 	}
 }
 
-void InitInstanceDispatchTable(VkInstance instance, PFN_vkGetInstanceProcAddr gpa, VkLayerInstanceDispatchTable& dispatchTable)
+void InitInstanceDispatchTable(VkInstance instance, PFN_vkGetInstanceProcAddr gpa, VkuInstanceDispatchTable& dispatchTable)
 {
 	InitInstanceDispatch();
 }
 
-void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa, VkLayerDispatchTable& dispatchTable)
+void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa, VkuDeviceDispatchTable_& dispatchTable)
 {
 	InitDeviceDispatch();
 }

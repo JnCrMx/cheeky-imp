@@ -3,7 +3,7 @@
 #include <vulkan/vk_platform.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vk_layer.h>
-#include <vulkan/generated/vk_layer_dispatch_table.h>
+#include <vulkan/utility/vk_dispatch_table.h>
 
 #include <map>
 
@@ -13,20 +13,20 @@ void* GetKey(DispatchableType inst)
 	return *(void**) inst;
 }
 
-extern std::map<void*, VkLayerInstanceDispatchTable> instance_dispatch;
-extern std::map<void*, VkLayerDispatchTable> device_dispatch;
+extern std::map<void*, VkuInstanceDispatchTable> instance_dispatch;
+extern std::map<void*, VkuDeviceDispatchTable> device_dispatch;
 
 inline bool layer_disabled = false;
 inline bool hook_draw_calls = false;
 
-void InitInstanceDispatchTable(VkInstance instance, PFN_vkGetInstanceProcAddr gpa, VkLayerInstanceDispatchTable& dispatchTable);
-void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa, VkLayerDispatchTable& dispatchTable);
+void InitInstanceDispatchTable(VkInstance instance, PFN_vkGetInstanceProcAddr gpa, VkuInstanceDispatchTable& dispatchTable);
+void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa, VkuDeviceDispatchTable& dispatchTable);
 
 #define InstanceHook(func) \
-	(void)((VkLayerInstanceDispatchTable*)0)->func; \
+	(void)((VkuInstanceDispatchTable*)0)->func; \
 	if(!strcmp(pName, "vk" #func)) return (PFN_vkVoidFunction)&CheekyLayer_##func;
 #define DeviceHook(func) \
-	(void)((VkLayerDispatchTable*)0)->func; \
+	(void)((VkuDeviceDispatchTable*)0)->func; \
 	if(!strcmp(pName, "vk" #func)) return (PFN_vkVoidFunction)&CheekyLayer_##func;
 
 #define InstanceHooks() \
