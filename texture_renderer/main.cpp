@@ -8,7 +8,7 @@
 #include <glslang/Public/ResourceLimits.h>
 #include <glslang/SPIRV/GlslangToSpv.h>
 #include <cxxopts.hpp>
-#include <nlohmann/json.hpp>
+#include <glaze/glaze.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtx/string_cast.hpp>
 #include <GLES3/gl3.h>
@@ -39,7 +39,7 @@ uint32_t findMemoryType(vk::PhysicalDeviceMemoryProperties const& memoryProperti
 std::string read_file(std::string path)
 {
     std::ifstream in{path};
-    if(!in) throw std::runtime_error("file not found");
+    if(!in) throw std::runtime_error("file not found: "+path);
     std::stringstream buffer;
     buffer << in.rdbuf();
     return buffer.str();
@@ -106,40 +106,117 @@ namespace glm {
     }
 }
 
-std::tuple<vk::raii::Image, vk::raii::DeviceMemory, vk::raii::ImageView> uploadImage(vk::raii::Device& device, vk::PhysicalDeviceMemoryProperties memoryProperties, std::filesystem::path path)
+std::tuple<vk::raii::Image, vk::raii::DeviceMemory, vk::raii::ImageView> uploadImageWithStaging(
+    vk::raii::Device& device,
+    vk::PhysicalDeviceMemoryProperties memoryProperties,
+    vk::raii::CommandPool& commandPool,
+    vk::raii::Queue& graphicsQueue,
+    std::filesystem::path path)
 {
-    int w, h, comp;
+    int w{}, h{}, comp{};
     uint8_t* buf = stbi_load(path.c_str(), &w, &h, &comp, STBI_rgb_alpha);
+    if (!buf) throw std::runtime_error("Failed to load image!");
 
-    vk::raii::Image image{device, vk::ImageCreateInfo{
-        {}, vk::ImageType::e2D, vk::Format::eR8G8B8A8Srgb,
-        vk::Extent3D{static_cast<uint32_t>(w), static_cast<uint32_t>(h), 1},
-        1, 1, vk::SampleCountFlagBits::e1, vk::ImageTiling::eLinear,
-        vk::ImageUsageFlagBits::eSampled, vk::SharingMode::eExclusive
+    vk::DeviceSize imageSize = w * h * 4;
+
+    // === Create staging buffer ===
+    vk::raii::Buffer stagingBuffer{device, vk::BufferCreateInfo{
+        {}, imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::SharingMode::eExclusive
     }};
 
-    auto memoryRequirements = image.getMemoryRequirements();
-    vk::raii::DeviceMemory memory{device, vk::MemoryAllocateInfo{
-        memoryRequirements.size,
-        findMemoryType(memoryProperties, memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
+    auto stagingMemReqs = stagingBuffer.getMemoryRequirements();
+    vk::raii::DeviceMemory stagingMemory{device, vk::MemoryAllocateInfo{
+        stagingMemReqs.size,
+        findMemoryType(memoryProperties, stagingMemReqs.memoryTypeBits,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
     }};
-    image.bindMemory(*memory, 0);
+    stagingBuffer.bindMemory(*stagingMemory, 0);
 
-    vk::raii::ImageView imageView{device, vk::ImageViewCreateInfo{
-        {}, *image, vk::ImageViewType::e2D, vk::Format::eR8G8B8A8Srgb,
-        vk::ComponentMapping{},
-        vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
-    }};
-
-    {
-        char* ptr = reinterpret_cast<char*>(memory.mapMemory(0, VK_WHOLE_SIZE));
-        std::copy(buf, buf + w*h*comp, ptr);
-        memory.unmapMemory();
-    }
-
+    // Copy image data to staging buffer
+    void* data = stagingMemory.mapMemory(0, imageSize);
+    memcpy(data, buf, static_cast<size_t>(imageSize));
+    stagingMemory.unmapMemory();
     STBI_FREE(buf);
 
-    return {std::move(image), std::move(memory), std::move(imageView)};
+    // === Create optimal-tiled image ===
+    vk::Extent3D extent{static_cast<uint32_t>(w), static_cast<uint32_t>(h), 1};
+
+    vk::raii::Image image{device, vk::ImageCreateInfo{
+        {}, vk::ImageType::e2D, vk::Format::eR8G8B8A8Srgb, extent,
+        1, 1, vk::SampleCountFlagBits::e1, vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+        vk::SharingMode::eExclusive, {}, {}, vk::ImageLayout::eUndefined
+    }};
+
+    auto imageMemReqs = image.getMemoryRequirements();
+    vk::raii::DeviceMemory imageMemory{device, vk::MemoryAllocateInfo{
+        imageMemReqs.size,
+        findMemoryType(memoryProperties, imageMemReqs.memoryTypeBits,
+            vk::MemoryPropertyFlagBits::eDeviceLocal)
+    }};
+    image.bindMemory(*imageMemory, 0);
+
+    // === Begin command buffer ===
+    vk::raii::CommandBuffer cmdBuffer = std::move(
+        device.allocateCommandBuffers(vk::CommandBufferAllocateInfo{
+            *commandPool, vk::CommandBufferLevel::ePrimary, 1
+        }).front()
+    );
+
+    cmdBuffer.begin(vk::CommandBufferBeginInfo{vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+
+    // Transition image to TRANSFER_DST_OPTIMAL
+    vk::ImageMemoryBarrier barrier1{
+        {}, vk::AccessFlagBits::eTransferWrite,
+        vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+        VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+        *image,
+        {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
+    };
+    cmdBuffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTopOfPipe,
+        vk::PipelineStageFlagBits::eTransfer,
+        {}, nullptr, nullptr, barrier1
+    );
+
+    // Copy buffer to image
+    vk::BufferImageCopy region{
+        0, 0, 0,
+        {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+        {0, 0, 0}, extent
+    };
+    cmdBuffer.copyBufferToImage(*stagingBuffer, *image, vk::ImageLayout::eTransferDstOptimal, region);
+
+    // Transition image to SHADER_READ_ONLY_OPTIMAL
+    vk::ImageMemoryBarrier barrier2{
+        vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eShaderRead,
+        vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+        VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+        *image,
+        {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
+    };
+    cmdBuffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTransfer,
+        vk::PipelineStageFlagBits::eFragmentShader,
+        {}, nullptr, nullptr, barrier2
+    );
+
+    cmdBuffer.end();
+
+    // === Submit and wait ===
+    vk::SubmitInfo submitInfo{
+        {}, {}, *cmdBuffer
+    };
+    graphicsQueue.submit(submitInfo);
+    graphicsQueue.waitIdle();
+
+    // === Create image view ===
+    vk::raii::ImageView imageView{device, vk::ImageViewCreateInfo{
+        {}, *image, vk::ImageViewType::e2D, vk::Format::eR8G8B8A8Srgb,
+        {}, {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
+    }};
+
+    return {std::move(image), std::move(imageMemory), std::move(imageView)};
 }
 std::tuple<vk::raii::Buffer, vk::raii::DeviceMemory> uploadBuffer(vk::raii::Device& device, vk::PhysicalDeviceMemoryProperties memoryProperties, std::filesystem::path path)
 {
@@ -173,6 +250,25 @@ std::tuple<vk::raii::Buffer, vk::raii::DeviceMemory> uploadBuffer(vk::raii::Devi
     return {std::move(buffer), std::move(memory)};
 }
 
+struct pipeline_set_binding {
+    unsigned int binding;
+    unsigned int count;
+    vk::DescriptorType type;
+    std::vector<std::string> data;
+};
+
+struct pipeline_set_layout {
+    std::vector<pipeline_set_binding> bindings;
+};
+
+struct pipeline_layout {
+    std::vector<pipeline_set_layout> setLayouts;
+};
+
+struct pipeline_info {
+    pipeline_layout pipelineLayout;
+};
+
 int main(int argc, char** argv)
 {
     cxxopts::Options options("texture_renderer", "Create trivial UVs and create a texture based on a fragment shader");
@@ -188,7 +284,7 @@ int main(int argc, char** argv)
         //("matrix", "Perspective matrix to use for undoing transformations", cxxopts::value<glm::mat4>()->default_value("{1, 0, 0, 0}{0, 1, 0, 0}{0, 0, 1, 0}{0, 0, 0, 1}"), "matrix")
         //("no-invert", "Do not invert the matrix")
         ("obj", "Wavefront OBJ file to read the UVs from", cxxopts::value<std::filesystem::path>(), "path")
-        ("uv-scale", "Scale the individual UV triangles by this factor", cxxopts::value<float>()->default_value("1.0"), "scale")
+        ("uv-grow", "Grow the individual UV triangles by this amount", cxxopts::value<float>()->default_value("0.0"), "scale")
         ("d,device", "Name of PhysicalDevice to use", cxxopts::value<std::string>()->default_value("auto"), "name")
         ("help", "Print this help message")
         ("v,verbose", "Verbose output")
@@ -218,22 +314,6 @@ int main(int argc, char** argv)
     }
     bool verbose = optionResult.count("verbose");
 
-    RENDERDOC_API_1_1_2 *rdoc_api = NULL;
-    if(optionResult.count("debug-renderdoc"))
-    {
-        auto path = optionResult["debug-renderdoc"].as<std::filesystem::path>();
-        if(void *mod = dlopen(path.c_str(), RTLD_NOW))
-        {
-            pRENDERDOC_GetAPI RENDERDOC_GetAPI = (pRENDERDOC_GetAPI)dlsym(mod, "RENDERDOC_GetAPI");
-            int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_1_2, (void **)&rdoc_api);
-            assert(ret == 1);
-        }
-        else
-        {
-            std::cerr << "Failed to load RenderDoc: " << dlerror() << '\n';
-        }
-    }
-
     uint32_t width = optionResult["width"].as<uint32_t>();
     uint32_t height = optionResult["height"].as<uint32_t>();
     uint32_t framebufferIndex = optionResult["attachment"].as<uint32_t>();
@@ -243,14 +323,15 @@ int main(int argc, char** argv)
     auto shaderFile = optionResult["shader"].as<std::filesystem::path>();
     auto pipelineDescriptionFile = optionResult["pipeline"].as<std::filesystem::path>();
     auto objFile = optionResult["obj"].as<std::filesystem::path>();
-    auto uvScale = optionResult["uv-scale"].as<float>();
+    auto uvGrow = optionResult["uv-grow"].as<float>();
 
     std::string shaderCode = read_file(shaderFile);
-    nlohmann::json pipelineDescription;
-    {
-        std::ifstream in{pipelineDescriptionFile};
-        in >> pipelineDescription;
+    pipeline_info pipelineDescription;
+    if(auto e = glz::read_file_json(pipelineDescription, pipelineDescriptionFile.string(), std::string{})) {
+        std::cout << "Failed to read pipeline description from " << pipelineDescriptionFile << ": " << glz::format_error(e) << '\n';
+        return 2;
     }
+
     /*glm::mat4 matrix = optionResult["matrix"].as<glm::mat4>();
     if(!optionResult.count("no-invert"))
     {
@@ -315,7 +396,7 @@ int main(int argc, char** argv)
             vk::Format::eR32G32B32A32Sfloat
         }[components-1];
 
-        vertexInputAttributes.push_back(vk::VertexInputAttributeDescription{inputLocation, 0, format, static_cast<uint32_t>(inputLocation*sizeof(glm::vec4))});
+        vertexInputAttributes.push_back(vk::VertexInputAttributeDescription{inputLocation, 0, format, static_cast<uint32_t>((inputLocation+1)*sizeof(glm::vec4))});
         componentCounts.push_back(components);
     }
     vertexCode << "void main() {\n";
@@ -339,7 +420,7 @@ int main(int argc, char** argv)
     glslang::GlslangToSpv(*vertexProgram->getIntermediate(EShLanguage::EShLangVertex), vertexSpv);
 
     vk::raii::Context context;
-    vk::ApplicationInfo appInfo{"texture_renderer", 1, "texture_renderer", 1, VK_API_VERSION_1_1};
+    vk::ApplicationInfo appInfo{"texture_renderer", 1, "texture_renderer", 1, VK_API_VERSION_1_3};
     vk::raii::Instance instance{context, vk::InstanceCreateInfo{{}, &appInfo}};
 
     vk::raii::PhysicalDevice physicalDevice{std::nullptr_t()};
@@ -387,8 +468,31 @@ int main(int argc, char** argv)
     std::array<vk::DeviceQueueCreateInfo, 1> queueCreateInfos = {
         vk::DeviceQueueCreateInfo{{}, queueFamilyIndex, 1, &priority}
     };
-    vk::raii::Device device(physicalDevice, vk::DeviceCreateInfo{{}, queueCreateInfos});
+    vk::StructureChain<vk::DeviceCreateInfo, vk::PhysicalDeviceVulkan13Features> deviceCreateInfo{};
+    deviceCreateInfo.get<vk::DeviceCreateInfo>()
+        .setQueueCreateInfos(queueCreateInfos);
+    deviceCreateInfo.get<vk::PhysicalDeviceVulkan13Features>()
+        .setShaderDemoteToHelperInvocation(true);
+    vk::raii::Device device(physicalDevice, deviceCreateInfo.get<vk::DeviceCreateInfo>());
     vk::raii::Queue queue{device, queueFamilyIndex, 0};
+
+    RENDERDOC_API_1_1_2 *rdoc_api = NULL;
+    if(void* handle = dlopen("librenderdoc.so", RTLD_NOW | RTLD_NOLOAD)) {
+        if(pRENDERDOC_GetAPI RENDERDOC_GetAPI = (pRENDERDOC_GetAPI)dlsym(handle, "RENDERDOC_GetAPI"))
+        {
+            int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_1_2, (void **)&rdoc_api);
+            assert(ret == 1);
+            if(!rdoc_api) {
+                std::cerr << "Failed to create RenderDoc API: " << ret << '\n';
+            } else {
+                int major{}, minor{}, patch{};
+                rdoc_api->GetAPIVersion(&major, &minor, &patch);
+                std::cout << "Using RenderDoc API version " << major << '.' << minor << '.' << patch << '\n';
+            }
+        } else {
+            std::cerr << "Failed to load RenderDoc API: " << dlerror() << '\n';
+        }
+    }
 
     vk::raii::CommandPool pool{device, vk::CommandPoolCreateInfo{{}, queueFamilyIndex}};
     vk::raii::CommandBuffers buffers{device, vk::CommandBufferAllocateInfo{*pool, vk::CommandBufferLevel::ePrimary, 1}};
@@ -481,13 +585,10 @@ int main(int argc, char** argv)
                 float u, v;
                 iss >> u >> v;
                 vertexUVs.push_back({u, v});
-                if(verbose) {
-                    std::cout << "UV: " << u << ", " << v << '\n';
-                }
             }
         }
 
-        if(uvScale != 1.0f)
+        if(uvGrow != 0.0f)
         {
             for(std::size_t i = 0; i<vertexUVs.size(); i+=3)
             {
@@ -496,9 +597,9 @@ int main(int argc, char** argv)
                 glm::vec2& c = vertexUVs[i+2];
 
                 glm::vec2 center = (a+b+c)/3.0f;
-                a = (a-center)*uvScale + center;
-                b = (b-center)*uvScale + center;
-                c = (c-center)*uvScale + center;
+                a += glm::normalize(a - b) * uvGrow + glm::normalize(a - c) * uvGrow;
+                b += glm::normalize(b - a) * uvGrow + glm::normalize(b - c) * uvGrow;
+                c += glm::normalize(c - a) * uvGrow + glm::normalize(c - b) * uvGrow;
             }
         }
     }
@@ -526,16 +627,23 @@ int main(int argc, char** argv)
                     currentGroup = left;
                 if(currentGroup != left)
                 {
+                    if(verbose) std::cout << "Found group " << currentGroup << " with " << currentGroupSize << " components.\n";
                     groupsComponents.push_back(currentGroupSize);
                     currentGroup = left;
                     currentGroupSize = 0;
                 }
                 currentGroupSize++;
             }
+            if(verbose) std::cout << "Found group " << currentGroup << " with " << currentGroupSize << " components. (final)\n";
             groupsComponents.push_back(currentGroupSize);
         }
         if(verbose) std::cout << "Found " << groupsComponents.size() << " attributes in vertex data.\n";
         totalInputStride = (groupsComponents.size()+1) * sizeof(glm::vec4);
+
+        int i=0;
+        for(auto a : groupsComponents) {
+            if(verbose) std::cout << "Attribute " << i++ << " with " << a << " components.\n";
+        }
 
         std::string line;
         for(; std::getline(in, line); vertexCount++)
@@ -641,13 +749,13 @@ int main(int argc, char** argv)
     }};
 
     std::vector<vk::raii::DescriptorSetLayout> descriptorSetLayouts{};
-    for(const auto& layout : pipelineDescription["pipelineLayout"]["setLayouts"])
+    for(const auto& layout : pipelineDescription.pipelineLayout.setLayouts)
     {
         std::vector<vk::DescriptorSetLayoutBinding> bindings{};
-        for(const auto& binding : layout["bindings"])
+        for(const auto& binding : layout.bindings)
         {
             bindings.push_back(vk::DescriptorSetLayoutBinding{
-                binding["binding"], binding["type"], binding["count"],
+                binding.binding, binding.type, binding.count,
                 vk::ShaderStageFlagBits::eFragment
             });
         }
@@ -690,14 +798,13 @@ int main(int argc, char** argv)
         std::vector<std::unique_ptr<std::vector<vk::DescriptorBufferInfo>>> descriptorBufferInfos;
 
         int currentSet = 0;
-        for(const auto& layout : pipelineDescription["pipelineLayout"]["setLayouts"])
+        for(const auto& layout : pipelineDescription.pipelineLayout.setLayouts)
         {
-            for(const auto& binding : layout["bindings"])
+            for(const auto& binding : layout.bindings)
             {
-                uint32_t count = binding["count"];
-                vk::DescriptorType type = binding["type"];
-                vk::WriteDescriptorSet write{descriptorSetRefs[currentSet], binding["binding"],
-                    0, count, type};
+                uint32_t count = binding.count;
+                vk::DescriptorType type = binding.type;
+                vk::WriteDescriptorSet write{descriptorSetRefs[currentSet], binding.binding, 0, count, type};
                 if(type == vk::DescriptorType::eSampler)
                 {
                     auto& images = descriptorImageInfos.emplace_back(std::make_unique<std::vector<vk::DescriptorImageInfo>>());
@@ -709,10 +816,10 @@ int main(int argc, char** argv)
                     auto& images = descriptorImageInfos.emplace_back(std::make_unique<std::vector<vk::DescriptorImageInfo>>());
                     for(int i=0; i<count; i++)
                     {
-                        std::filesystem::path p = binding["data"][i];
-                        auto [img, memory, imgView] = uploadImage(device, memoryProperties, pipelineDescriptionFile.parent_path() / p);
+                        std::filesystem::path p = binding.data[i];
+                        auto [img, memory, imgView] = uploadImageWithStaging(device, memoryProperties, pool, queue, pipelineDescriptionFile.parent_path() / p);
                         images->push_back(vk::DescriptorImageInfo{
-                            *sampler, *imgView, vk::ImageLayout::eGeneral
+                            *sampler, *imgView, vk::ImageLayout::eShaderReadOnlyOptimal
                         });
                         descriptorImages.push_back(std::move(img));
                         descriptorMemories.push_back(std::move(memory));
@@ -725,10 +832,10 @@ int main(int argc, char** argv)
                     auto& images = descriptorImageInfos.emplace_back(std::make_unique<std::vector<vk::DescriptorImageInfo>>());
                     for(int i=0; i<count; i++)
                     {
-                        std::filesystem::path p = binding["data"][i];
-                        auto [img, memory, imgView] = uploadImage(device, memoryProperties, pipelineDescriptionFile.parent_path() / p);
+                        std::filesystem::path p = binding.data[i];
+                        auto [img, memory, imgView] = uploadImageWithStaging(device, memoryProperties, pool, queue, pipelineDescriptionFile.parent_path() / p);
                         images->push_back(vk::DescriptorImageInfo{
-                            {}, *imgView, vk::ImageLayout::eGeneral
+                            {}, *imgView, vk::ImageLayout::eShaderReadOnlyOptimal
                         });
                         descriptorImages.push_back(std::move(img));
                         descriptorMemories.push_back(std::move(memory));
@@ -741,7 +848,7 @@ int main(int argc, char** argv)
                     auto& buffers = descriptorBufferInfos.emplace_back(std::make_unique<std::vector<vk::DescriptorBufferInfo>>());
                     for(int i=0; i<count; i++)
                     {
-                        std::filesystem::path p = binding["data"][i];
+                        std::filesystem::path p = binding.data[i];
                         auto [buffer, memory] = uploadBuffer(device, memoryProperties, pipelineDescriptionFile.parent_path() / p);
                         buffers->push_back(vk::DescriptorBufferInfo{*buffer, 0, VK_WHOLE_SIZE});
                         descriptorBuffers.push_back(std::move(buffer));
@@ -806,10 +913,14 @@ int main(int argc, char** argv)
     };
     vk::raii::Pipeline graphicsPipeline{device, std::nullptr_t(), pipelineCreateInfo};
 
-    if(rdoc_api) rdoc_api->StartFrameCapture(NULL, NULL);
+    if(rdoc_api) {
+        rdoc_api->StartFrameCapture(NULL, NULL);
+        std::cout << "Started RenderDoc frame capture.\n";
+    }
 
     vk::raii::CommandBuffer commandBuffer{std::move(buffers[0])};
     commandBuffer.begin(vk::CommandBufferBeginInfo{});
+
     std::vector<vk::ClearValue> clearValues(framebufferCount);
     std::fill(clearValues.begin(), clearValues.end(), vk::ClearValue{vk::ClearColorValue{0.0f, 0.0f, 0.0f, 0.0f}});
     commandBuffer.beginRenderPass(vk::RenderPassBeginInfo{*renderPass, *framebuffer, scissors, clearValues}, vk::SubpassContents::eInline);
@@ -835,7 +946,9 @@ int main(int argc, char** argv)
     auto endTime = std::chrono::high_resolution_clock::now();
     std::cout << "Finished rendering in " << std::chrono::duration<double, std::milli>{endTime - startTime}.count() << " ms." << std::endl;
 
-    if(rdoc_api) rdoc_api->EndFrameCapture(NULL, NULL);
+    if(rdoc_api) {
+        rdoc_api->EndFrameCapture(NULL, NULL);
+    }
 
     {
         auto size = width*height*4;

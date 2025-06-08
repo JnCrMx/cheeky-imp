@@ -1,9 +1,6 @@
 #!/bin/bash
 
-SCRIPT=$(realpath "$0")
-SCRIPTPATH=$(dirname "$SCRIPT")
-
-N=16
+N=$(nproc)
 
 if [ -z "$1" ]
 then
@@ -13,8 +10,8 @@ fi
 
 dir=$1
 
-for d in $dir/*/; do
-    event=$(basename ${d%/})
+for d in "$dir"/*/; do
+    event="$(basename ${d%/})"
     echo $event
     if [ ! -z $FORCE ] || [ ! -f "$dir/$event/texture_solid.png" ]; then
         ((i=i%N)); ((i++==0)) && wait

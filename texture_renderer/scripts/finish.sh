@@ -1,18 +1,18 @@
 #!/bin/sh
 
-workdir=$1
-eventdir=$2
-out=${3-"./final"}
-mkdir -p $out
+workdir="$1"
+objdir="$2"
+out="${3-"./final"}"
+mkdir -p "$out"
 
-if [ -z "$workdir" ] || [ -z "$eventdir" ] || [ -z "$out" ]
+if [ -z "$workdir" ] || [ -z "$objdir" ] || [ -z "$out" ]
 then
     echo "Usage: $0 WORK-DIR OBJ-DIR FINAL-DIR"
     exit 1
 fi
 
-for d in $workdir/*/; do
-    event=$(basename ${d%/})
+for d in "$workdir"/*/; do
+    event="$(basename "${d%/}")"
     echo $event
     if [ -f "$workdir/$event/texture_solid.png" ]; then
         cp "$workdir/$event/texture_solid.png" "$out/$event.png"
@@ -30,7 +30,7 @@ d 1.000000
 illum 2
 map_Kd $event.png
 EOF
-    for f in "$eventdir"/$event-*.obj; do
+    for f in "$objdir"/$event-*.obj; do
         if ! [ -f "$f" ]; then continue; fi
         filename="$(basename "$f")"
         objectname="${filename%.obj}"

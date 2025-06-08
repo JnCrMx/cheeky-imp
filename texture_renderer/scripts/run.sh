@@ -1,15 +1,15 @@
 #!/bin/bash
 
-SCRIPT=$(realpath "$0")
-SCRIPTPATH=$(dirname "$SCRIPT")
+SCRIPT="$(realpath "$0")"
+SCRIPTPATH="$(dirname "$SCRIPT")"
 
-N=16
+N=$(nproc)
 
 attachment=1
 samples=4
 width=2048
 height=2048
-uvscale=1.0
+uvgrow=0.001
 
 if [ -z "$1" ]
 then
@@ -17,18 +17,18 @@ then
     exit 1
 fi
 
-dir=$1
+dir="$1"
 
-for d in $dir/*/; do
-    event=$(basename ${d%/})
-    echo $event
+for d in "$dir"/*/; do
+    event="$(basename "${d%/}")"
+    echo "$event"
     if [ ! -z $FORCE ] || [ ! -f "$dir/$event/texture.png" ]; then
         ((i=i%N)); ((i++==0)) && wait
-        $SCRIPTPATH/../build/texture_renderer --output $dir/$event/texture.png \
+        "$SCRIPTPATH/../build/texture_renderer" --output "$dir/$event/texture.png" \
             --attachment $attachment --samples $samples --width $width --height $height \
-            --shader $dir/$event/shader.frag --vertices $dir/$event/vertices.csv \
-            --pipeline $dir/$event/pipeline.json --obj $dir/$event/model-uv.obj \
-            --uv-scale $uvscale &
+            --shader "$dir/$event/shader.frag" --vertices "$dir/$event/vertices.csv" \
+            --pipeline "$dir/$event/pipeline.json" --obj "$dir/$event/model-uv.obj" \
+            --uv-grow $uvgrow &
     fi
 done
 wait

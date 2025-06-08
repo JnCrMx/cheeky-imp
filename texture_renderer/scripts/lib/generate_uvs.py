@@ -20,7 +20,8 @@ obj.select_set(True)
 
 bpy.ops.object.editmode_toggle()
 bpy.ops.mesh.select_all(action='SELECT')
-bpy.ops.uv.unwrap(method='ANGLE_BASED', margin=0.0002)
+# bpy.ops.uv.unwrap(method='ANGLE_BASED', margin=0.0002)
+bpy.ops.uv.lightmap_pack(PREF_CONTEXT='ALL_FACES', PREF_BOX_DIV=64, PREF_MARGIN_DIV=0.1)
 bpy.ops.object.editmode_toggle()
 
 bpy.ops.wm.obj_export(filepath=argv[1],

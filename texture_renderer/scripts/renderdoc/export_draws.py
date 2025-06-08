@@ -103,13 +103,18 @@ def getMeshOutputs(controller, postvs):
     accumOffset = 0
 
     for i in range(0, len(meshOutputs)):
-        meshOutputs[i].vertexByteOffset += accumOffset
-
         # Note that some APIs such as Vulkan will pad the size of the attribute here
         # while others will tightly pack
         fmt = meshOutputs[i].format
 
-        accumOffset += (8 if fmt.compByteWidth > 4 else 4) * fmt.compCount
+        size = (8 if fmt.compByteWidth > 4 else 4) * fmt.compCount
+        alignment = 2**(size - 1).bit_length()
+        if accumOffset % alignment != 0:
+            accumOffset += alignment - accumOffset % alignment
+
+        meshOutputs[i].vertexByteOffset += accumOffset
+
+        accumOffset += size
 
     return meshOutputs
 
