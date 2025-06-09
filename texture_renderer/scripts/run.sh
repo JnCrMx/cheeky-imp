@@ -3,7 +3,7 @@
 SCRIPT="$(realpath "$0")"
 SCRIPTPATH="$(dirname "$SCRIPT")"
 
-N=$(nproc)
+N=6
 
 attachment=1
 samples=4
@@ -28,7 +28,7 @@ for d in "$dir"/*/; do
             --attachment $attachment --samples $samples --width $width --height $height \
             --shader "$dir/$event/shader.frag" --vertices "$dir/$event/vertices.csv" \
             --pipeline "$dir/$event/pipeline.json" --obj "$dir/$event/model-uv.obj" \
-            --uv-grow $uvgrow &
+            --uv-grow $uvgrow --auto-size &
     fi
 done
 wait

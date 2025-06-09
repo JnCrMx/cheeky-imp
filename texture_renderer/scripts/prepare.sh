@@ -13,14 +13,17 @@ then
     exit 1
 fi
 
+N=$(nproc)
+
 for d in "$workdir"/*/; do
+    ((i=i%N)); ((i++==0)) && wait
     event="$(basename "${d%/}")"
     echo "$event"
     if [ -f "$event_csv_dir/$event-0.csv" ]; then
         cp "$event_csv_dir/$event-0.csv" "$workdir/$event/vertices.csv"
         cp "$event_obj_dir/$event-0.obj" "$workdir/$event/model.obj"
         if [ ! -z $FORCE ] || [ ! -f "$workdir/$event/model-uv.obj" ]; then
-            blender --background --python "$SCRIPTPATH/lib/generate_uvs.py" -- "$workdir/$event/model.obj" "$workdir/$event/model-uv.obj" #>/dev/null 2>/dev/null
+            blender --background --python "$SCRIPTPATH/lib/generate_uvs.py" -- "$workdir/$event/model.obj" "$workdir/$event/model-uv.obj" & #>/dev/null 2>/dev/null
         fi
     else
         echo "No input data found for draw event $event, skipping..."

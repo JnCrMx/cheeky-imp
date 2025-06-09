@@ -275,9 +275,11 @@ int main(int argc, char** argv)
     options.add_options()
         ("w,width", "Width of the texture to generate", cxxopts::value<uint32_t>()->default_value("4096"), "number")
         ("h,height", "Height of the texture to generate", cxxopts::value<uint32_t>()->default_value("4096"), "number")
+        ("auto-size", "Automatically determine the size based on the largest input image")
         ("samples", "Samples to use for multisampling (must be power of two)", cxxopts::value<int>()->default_value("4"), "number (power of 2)")
         ("o,output", "File to write the generated texture to", cxxopts::value<std::filesystem::path>()->default_value("texture.png"), "path")
         ("attachment", "Index of color attachment to output", cxxopts::value<uint32_t>()->default_value("0"), "number")
+        ("alpha", "Don't discard alpha information")
         ("shader", "File containing fragment shader to use for generating texture", cxxopts::value<std::filesystem::path>(), "path")
         ("vertices", "CSV file containing the output of a vertex shader (e.g. export from RenderDoc)", cxxopts::value<std::filesystem::path>(), "path")
         ("pipeline", "JSON file describing the pipeline layout and used uniforms", cxxopts::value<std::filesystem::path>(), "path")
@@ -314,8 +316,9 @@ int main(int argc, char** argv)
     }
     bool verbose = optionResult.count("verbose");
 
-    uint32_t width = optionResult["width"].as<uint32_t>();
-    uint32_t height = optionResult["height"].as<uint32_t>();
+    bool autoSize = optionResult.count("auto-size");
+    uint32_t width = autoSize ? 0 : optionResult["width"].as<uint32_t>();
+    uint32_t height = autoSize ? 0 :  optionResult["height"].as<uint32_t>();
     uint32_t framebufferIndex = optionResult["attachment"].as<uint32_t>();
     vk::SampleCountFlagBits samples = static_cast<vk::SampleCountFlagBits>(optionResult["samples"].as<int>());
 
@@ -325,11 +328,63 @@ int main(int argc, char** argv)
     auto objFile = optionResult["obj"].as<std::filesystem::path>();
     auto uvGrow = optionResult["uv-grow"].as<float>();
 
+    if(!std::filesystem::exists(vertexDataFile)) {
+        std::cerr << "Vertex data file does not exist: " << vertexDataFile << '\n';
+        return 2;
+    }
+    if(!std::filesystem::exists(shaderFile)) {
+        std::cerr << "Shader file does not exist: " << shaderFile << '\n';
+        return 2;
+    }
+    if(!std::filesystem::exists(pipelineDescriptionFile)) {
+        std::cerr << "Pipeline description file does not exist: " << pipelineDescriptionFile << '\n';
+        return 2;
+    }
+    if(!std::filesystem::exists(objFile)) {
+        std::cerr << "OBJ file does not exist: " << objFile << '\n';
+        return 2;
+    }
+
     std::string shaderCode = read_file(shaderFile);
     pipeline_info pipelineDescription;
     if(auto e = glz::read_file_json(pipelineDescription, pipelineDescriptionFile.string(), std::string{})) {
         std::cout << "Failed to read pipeline description from " << pipelineDescriptionFile << ": " << glz::format_error(e) << '\n';
         return 2;
+    }
+
+    if(autoSize) {
+        if(verbose) std::cout << "Automatically determining size based on input images.\n";
+
+        for(const auto& sl : pipelineDescription.pipelineLayout.setLayouts) {
+            for(const auto& b : sl.bindings) {
+                if(b.type != vk::DescriptorType::eCombinedImageSampler &&
+                   b.type != vk::DescriptorType::eStorageImage &&
+                   b.type != vk::DescriptorType::eSampledImage)
+                    continue;
+
+                for(const auto& d : b.data)
+                {
+                    auto p = pipelineDescriptionFile.parent_path() / d;
+                    if(!std::filesystem::exists(p)) {
+                        std::cerr << "File " << d << " does not exist.\n";
+                        return 2;
+                    }
+                    if(verbose) std::cout << "Reading image size from " << d << ".\n";
+                    int w{}, h{}, comp{};
+                    uint8_t* buf = stbi_load(p.c_str(), &w, &h, &comp, STBI_rgb_alpha);
+                    if(!buf) {
+                        std::cerr << "Failed to load image: " << d << '\n';
+                        return 2;
+                    }
+                    stbi_image_free(buf);
+                    if(w > width) width = w;
+                    if(h > height) height = h;
+                }
+            }
+        }
+        width = height = std::max(width, height);
+        width = height = std::max(width, 64u); // minimum size
+        if(verbose) std::cout << "Determined size: " << width << 'x' << height << '\n';
     }
 
     /*glm::mat4 matrix = optionResult["matrix"].as<glm::mat4>();
@@ -348,10 +403,13 @@ int main(int argc, char** argv)
     fragmentProgram_tmp->buildReflection(EShReflectionIntermediateIO | EShReflectionSeparateBuffers |
         EShReflectionAllBlockVariables | EShReflectionUnwrapIOBlocks | EShReflectionAllIOVariables);
     std::string proxy = "void proxy_main() {\nmain();\n";
-    for(int i=0; i<fragmentProgram_tmp->getNumPipeOutputs(); i++) {
-        const auto& o = fragmentProgram_tmp->getPipeOutput(i);
-        if(o.glDefineType == GL_FLOAT_VEC4)
-            proxy += o.name+".a = 1.0;\n";
+    if(!optionResult.contains("alpha"))
+    {
+        for(int i=0; i<fragmentProgram_tmp->getNumPipeOutputs(); i++) {
+            const auto& o = fragmentProgram_tmp->getPipeOutput(i);
+            if(o.glDefineType == GL_FLOAT_VEC4)
+                proxy += o.name+".a = 1.0;\n";
+        }
     }
     proxy += "}";
 
@@ -687,7 +745,7 @@ int main(int argc, char** argv)
     vk::raii::Buffer vertexBuffer{device, vk::BufferCreateInfo{
         {}, totalInputStride*vertexCount, vk::BufferUsageFlagBits::eVertexBuffer, vk::SharingMode::eExclusive
     }};
-    memoryRequirements = transferBuffer.getMemoryRequirements();
+    memoryRequirements = vertexBuffer.getMemoryRequirements();
     vk::raii::DeviceMemory vertexMemory{device, vk::MemoryAllocateInfo{
         memoryRequirements.size,
         findMemoryType(memoryProperties, memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)

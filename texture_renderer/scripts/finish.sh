@@ -14,6 +14,24 @@ fi
 for d in "$workdir"/*/; do
     event="$(basename "${d%/}")"
     echo $event
+    if [ ! -d "$workdir/$event" ]; then
+        echo "No data found for draw event $event, skipping..."
+        continue
+    fi
+    if [ ! -f "$workdir/$event/texture.png" ]; then
+        echo "No texture found for draw event $event, skipping..."
+        continue
+    fi
+    if [ ! -f "$workdir/$event/model-uv.obj" ]; then
+        echo "No UV model found for draw event $event, skipping..."
+        continue
+    fi
+
+    if [ "$(identify -format '%[min] %[max]' "$workdir/$event/texture.png")" = "0 0" ]; then
+        echo "Texture for draw event $event is empty, skipping..."
+        continue
+    fi
+
     if [ -f "$workdir/$event/texture_solid.png" ]; then
         cp "$workdir/$event/texture_solid.png" "$out/$event.png"
     else
@@ -26,9 +44,9 @@ Ka 1.000000 1.000000 1.000000
 Ks 0.500000 0.500000 0.500000
 Ke 0.000000 0.000000 0.000000
 Ni 1.450000
-d 1.000000
 illum 2
 map_Kd $event.png
+map_d $event.png
 EOF
     for f in "$objdir"/$event-*.obj; do
         if ! [ -f "$f" ]; then continue; fi
