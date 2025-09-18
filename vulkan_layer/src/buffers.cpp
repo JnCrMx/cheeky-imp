@@ -38,6 +38,18 @@ VkResult device::BindBufferMemory(VkBuffer buffer, VkDeviceMemory memory, VkDevi
     return dispatch.BindBufferMemory(handle, buffer, memory, memoryOffset);
 }
 
+VkResult device::AllocateMemory(const VkMemoryAllocateInfo* pAllocateInfo, const VkAllocationCallbacks* pAllocator, VkDeviceMemory* pMemory)
+{
+    VkResult ret = dispatch.AllocateMemory(handle, pAllocateInfo, pAllocator, pMemory);
+
+    if(ret == VK_SUCCESS) {
+        scoped_lock l(lock);
+        memoryAllocations[*pMemory] = *pAllocateInfo;
+        logger->trace("AllocateMemory: memory={} size={:#x} memoryTypeIndex={}", fmt::ptr(*pMemory), pAllocateInfo->allocationSize, pAllocateInfo->memoryTypeIndex);
+    }
+    return ret;
+}
+
 VkResult device::MapMemory(VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, VkMemoryMapFlags flags, void** ppData)
 {
     VkResult ret = dispatch.MapMemory(handle, memory, offset, size, flags, ppData);
@@ -45,6 +57,11 @@ VkResult device::MapMemory(VkDeviceMemory memory, VkDeviceSize offset, VkDeviceS
 
     if(ret == VK_SUCCESS)
     {
+        if(size == VK_WHOLE_SIZE) {
+            size = memoryAllocations.at(memory).allocationSize - offset;
+        }
+
+        scoped_lock l(lock);
         memoryMappings[memory] = {.pointer = *ppData, .offset = offset, .size = size};
     }
     return ret;
@@ -52,6 +69,8 @@ VkResult device::MapMemory(VkDeviceMemory memory, VkDeviceSize offset, VkDeviceS
 
 void device::UnmapMemory(VkDeviceMemory memory)
 {
+    scoped_lock l(lock);
+
     dispatch.UnmapMemory(handle, memory);
     logger->trace("UnmapMemory: memory={}", fmt::ptr(memory));
 
@@ -141,6 +160,15 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_BindBufferMemory(
         VkDeviceSize                                memoryOffset)
 {
     return CheekyLayer::get_device(device).BindBufferMemory(buffer, memory, memoryOffset);
+}
+
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_AllocateMemory(
+    VkDevice                                    device,
+    const VkMemoryAllocateInfo*                 pAllocateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkDeviceMemory*                             pMemory)
+{
+    return CheekyLayer::get_device(device).AllocateMemory(pAllocateInfo, pAllocator, pMemory);
 }
 
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_MapMemory(

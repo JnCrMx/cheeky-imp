@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 199309L
 #include <cstdint>
 #include <cstring>
 #include <dlfcn.h>
@@ -76,6 +77,78 @@ VkLayerDeviceCreateInfo *get_chain_info(const VkDeviceCreateInfo *pCreateInfo, V
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator,
 		VkInstance *pInstance)
 {
+	static std::once_flag initial_setup_flag;
+	std::call_once(initial_setup_flag, [](){
+		std::set_terminate([](){
+			spdlog::critical("std::terminate called!");
+
+			backward::StackTrace st;
+			st.load_here();
+			std::ostringstream oss;
+			backward::Printer p;
+			p.color_mode = backward::ColorMode::never;
+			p.object = true;
+			p.address = true;
+			p.snippet = true;
+			p.print(st, oss);
+
+			spdlog::critical("Stack trace:\n{}", oss.str());
+			spdlog::default_logger()->flush();
+
+			std::this_thread::sleep_for(std::chrono::seconds(1));
+
+			std::abort();
+		});
+
+		stack_t ss;
+		ss.ss_flags = 0;
+		ss.ss_size = 1024 * 1024;
+		ss.ss_sp = new char[ss.ss_size];
+		if(sigaltstack(&ss, nullptr) < 0) {
+			spdlog::error("Failed to set signal stack: {}", strerror(errno));
+			delete[] (char*)ss.ss_sp;
+			return;
+		}
+
+		auto handler = [](int signal, siginfo_t* info, void* ctx){
+			spdlog::critical("Caught signal {} ({})", strsignal(signal), signal);
+
+			ucontext_t* uctx = static_cast<ucontext_t*>(ctx);
+			backward::StackTrace st;
+			void* error_addr = reinterpret_cast<void*>(uctx->uc_mcontext.gregs[REG_RIP]);
+			if(error_addr) {
+				st.load_from(error_addr, 32, reinterpret_cast<void*>(uctx), info->si_addr);
+			} else {
+				st.load_here(32, reinterpret_cast<void*>(uctx), info->si_addr);
+			}
+			std::ostringstream oss;
+			backward::Printer p;
+			p.color_mode = backward::ColorMode::never;
+			p.object = true;
+			p.address = true;
+			p.snippet = true;
+			p.print(st, oss);
+
+			spdlog::critical("Stack trace:\n{}", oss.str());
+			spdlog::default_logger()->flush();
+
+			std::this_thread::sleep_for(std::chrono::seconds(1));
+
+			raise(info->si_signo);
+			std::abort();
+		};
+		for(auto signal : {SIGSEGV, SIGILL, SIGABRT, SIGFPE, SIGBUS}) {
+			struct sigaction action{};
+			action.sa_flags = static_cast<int>(SA_SIGINFO | SA_ONSTACK | SA_NODEFER | SA_RESETHAND);
+			// sigfillset(&action.sa_mask);
+			// sigdelset(&action.sa_mask, signal);
+			action.sa_sigaction = handler;
+			if(sigaction(signal, &action, nullptr) < 0) {
+				spdlog::error("Failed to set signal handler for {}: {}", strsignal(signal), strerror(errno));
+			}
+		}
+	});
+
     VkLayerInstanceCreateInfo* chain_info = get_chain_info(pCreateInfo, VK_LAYER_LINK_INFO);
 
     assert(chain_info->u.pLayerInfo);

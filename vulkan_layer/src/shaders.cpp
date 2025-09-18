@@ -34,11 +34,7 @@ std::string stage_to_string(spv::ExecutionModel stage)
 #endif
 
 #ifdef USE_GLSLANG
-struct ShaderCacheEntry
-{
-	uint32_t* pointer;
-	size_t size;
-};
+using ShaderCacheEntry = std::vector<uint32_t>;
 std::map<std::string, ShaderCacheEntry> shaderCache;
 
 EShLanguage string_to_stage(std::string string)
@@ -93,9 +89,14 @@ std::tuple<bool, std::string> compileShader(EShLanguage stage, std::string glslC
 
 namespace CheekyLayer {
 
-VkResult device::CreateShaderModule(const VkShaderModuleCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkShaderModule *pShaderModule)
-{
-	VkShaderModuleCreateInfo createInfo = *pCreateInfo;
+struct pre_shader_create_result {
+	std::string hash_string;
+	std::vector<uint32_t> temp_buffer;
+};
+
+pre_shader_create_result* device::pre_shader_create(VkShaderModuleCreateInfo *pCreateInfo) {
+	VkShaderModuleCreateInfo& createInfo = *pCreateInfo; // we are allowed to modify *pCreateInfo
+	pre_shader_create_result* res = new pre_shader_create_result{};
 
 #ifdef USE_GLSLANG
 	std::map<std::string, ShaderCacheEntry>::iterator it;
@@ -123,18 +124,18 @@ VkResult device::CreateShaderModule(const VkShaderModuleCreateInfo *pCreateInfo,
 			options.vulkan_semantics = true;
 			glsl.set_common_options(options);
 
-			glsl.build_combined_image_samplers();
-			for (auto &remap : glsl.get_combined_image_samplers())
-			{
-				glsl.set_name(remap.combined_id, "SPIRV_Cross_Combined"+glsl.get_name(remap.image_id)+glsl.get_name(remap.sampler_id));
-			}
-
 			uint32_t dummySampler = glsl.build_dummy_sampler_for_combined_images();
 			if(dummySampler != 0)
 			{
 				// Set some defaults to make validation happy.
 				glsl.set_decoration(dummySampler, spv::DecorationDescriptorSet, 0);
 				glsl.set_decoration(dummySampler, spv::DecorationBinding, 0);
+			}
+
+			//glsl.build_combined_image_samplers();
+			for (auto &remap : glsl.get_combined_image_samplers())
+			{
+				glsl.set_name(remap.combined_id, "SPIRV_Cross_Combined"+glsl.get_name(remap.image_id)+glsl.get_name(remap.sampler_id));
 			}
 
 			std::string code = glsl.compile();
@@ -161,19 +162,25 @@ VkResult device::CreateShaderModule(const VkShaderModuleCreateInfo *pCreateInfo,
 				size_t length = in.tellg();
 				in.seekg(0, std::ios::beg);
 
+				if(length % sizeof(uint32_t) != 0) {
+					logger->error("Shader override size is not a multiple of 4! size={}", length);
+					throw std::runtime_error("Shader override size is not a multiple of 4!");
+				}
+				length /= sizeof(uint32_t);
+
 				logger->info("Found shader override! size={}", length);
 
-				uint8_t *buffer = (uint8_t*) malloc(length);
-				in.read((char*) buffer, length);
+				res->temp_buffer.resize(length);
+				in.read((char*) res->temp_buffer.data(), length*sizeof(uint32_t));
 
-				createInfo.pCode = (uint32_t*) buffer;
+				createInfo.pCode = res->temp_buffer.data();
 				createInfo.codeSize = length;
 			}
 #ifdef USE_GLSLANG
 			else if((it = shaderCache.find(hash_string)) != shaderCache.end()) {
-				createInfo.pCode = it->second.pointer;
-				createInfo.codeSize = it->second.size;
-				logger->info("Found cached shader override! size={}", it->second.size);
+				createInfo.pCode = it->second.data();
+				createInfo.codeSize = it->second.size();
+				logger->info("Found cached shader override! size={}", it->second.size());
 			}
 			else {
 				EShLanguage stage;
@@ -197,13 +204,12 @@ VkResult device::CreateShaderModule(const VkShaderModuleCreateInfo *pCreateInfo,
 						size_t length = spv.size() * sizeof(uint32_t);
 						logger->info("Found and compiled shader override! size={}", length);
 
-						uint32_t *buffer = (uint32_t*) malloc(length);
-						std::copy(spv.begin(), spv.end(), buffer);
+						res->temp_buffer = spv;
 
-						createInfo.pCode = buffer;
+						createInfo.pCode = res->temp_buffer.data();
 						createInfo.codeSize = length;
 
-						shaderCache[hash_string] = {buffer, length};
+						shaderCache[hash_string] = spv;
 					} else {
 						logger->error("Compilation failed: {}", message);
 					}
@@ -213,6 +219,30 @@ VkResult device::CreateShaderModule(const VkShaderModuleCreateInfo *pCreateInfo,
 		}
 	}
 
+	res->hash_string = std::move(hash_string);
+	return res;
+}
+
+void device::post_shader_create(const VkShaderModuleCreateInfo* pCreateInfo, rules::VkHandle handle, pre_shader_create_result* res) {
+	spv_reflect::ShaderModule reflection(pCreateInfo->codeSize, pCreateInfo->pCode);
+	if(reflection.GetResult() == SPV_REFLECT_RESULT_SUCCESS) {
+		shaderReflections[handle] = std::move(reflection);
+	} else {
+		logger->error("shader reflection failed: {}!", fmt::underlying(reflection.GetResult()));
+	}
+
+	put_hash(handle, res->hash_string);
+	rules::calling_context ctx{};
+	execute_rules(rules::selector_type::Shader, handle, ctx);
+
+	delete res;
+}
+
+VkResult device::CreateShaderModule(const VkShaderModuleCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkShaderModule *pShaderModule)
+{
+	VkShaderModuleCreateInfo createInfo = *pCreateInfo;
+	auto res = pre_shader_create(&createInfo);
+
 	VkResult result = dispatch.CreateShaderModule(handle, &createInfo, pAllocator, pShaderModule);
 	if(result != VK_SUCCESS)
 		return result;
@@ -220,15 +250,8 @@ VkResult device::CreateShaderModule(const VkShaderModuleCreateInfo *pCreateInfo,
 	rules::VkHandle handle = (rules::VkHandle)*pShaderModule;
 	rules::VkHandle customHandle = customShaderHandles[handle] = (rules::VkHandle) currentCustomShaderHandle++;
 
-	spv_reflect::ShaderModule reflection(createInfo.codeSize, createInfo.pCode);
-	if(reflection.GetResult() == SPV_REFLECT_RESULT_SUCCESS) {
-		shaderReflections[customHandle] = std::move(reflection);
-	} else {
-		logger->error("shader reflection failed: {}!", fmt::underlying(reflection.GetResult()));
-	}
-
 	if(has_debug) {
-		std::string name = "Shader "+hash_string;
+		std::string name = "Shader "+res->hash_string;
 
 		VkDebugUtilsObjectNameInfoEXT info{};
 		info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
@@ -238,9 +261,7 @@ VkResult device::CreateShaderModule(const VkShaderModuleCreateInfo *pCreateInfo,
 		dispatch.SetDebugUtilsObjectNameEXT(this->handle, &info);
 	}
 
-	put_hash(customHandle, hash_string);
-	rules::calling_context ctx{};
-	execute_rules(rules::selector_type::Shader, customHandle, ctx);
+	post_shader_create(pCreateInfo, customHandle, res);
 
 	return result;
 }

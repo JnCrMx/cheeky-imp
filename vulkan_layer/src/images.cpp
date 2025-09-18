@@ -80,7 +80,7 @@ VkResult device::CreateImage(const VkImageCreateInfo* pCreateInfo, const VkAlloc
 	logger->debug("CreateImage: {}x{} @ {} samples={} memory={}, image={}", pCreateInfo->extent.width, pCreateInfo->extent.height,
 			pCreateInfo->mipLevels, fmt::underlying(pCreateInfo->samples), memRequirements.size, fmt::ptr(*pImage));
 
-	if(dispatch.SetDebugUtilsObjectNameEXT)
+	if(has_debug)
 	{
 		std::string name = fmt::format("Image {:#x}", reinterpret_cast<uint64_t>(*pImage));
 
@@ -100,7 +100,7 @@ VkResult device::BindImageMemory(VkImage image, VkDeviceMemory memory, VkDeviceS
 	images[image].memoryOffset = memoryOffset;
 
 	VkResult ret = dispatch.BindImageMemory(handle, image, memory, memoryOffset);
-	logger->debug("BindImageMemory: image={} memory={} offset={}", fmt::ptr(image), fmt::ptr(memory), memoryOffset);
+	logger->debug("BindImageMemory: image={} memory={} offset={:#x}", fmt::ptr(image), fmt::ptr(memory), memoryOffset);
 	return ret;
 }
 
@@ -114,165 +114,196 @@ VkResult device::CreateImageView(const VkImageViewCreateInfo* pCreateInfo, const
 	return ret;
 }
 
-void device::CmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkImage dstImage, VkImageLayout dstImageLayout, uint32_t regionCount, const VkBufferImageCopy* pRegions)
-{
-	auto width = pRegions[0].imageExtent.width;
-	auto height = pRegions[0].imageExtent.height;
+void device::handle_buffer_image_copy(std::string_view command, unsigned int regionIndex, VkCommandBuffer commandBuffer, VkBuffer src, VkImage dst, VkBufferImageCopy region) {
+	auto width = region.imageExtent.width;
+	auto height = region.imageExtent.height;
 
-	auto& image = images[dstImage];
-	auto& buffer = buffers[srcBuffer];
+	if(!buffers.contains(src)) {
+		logger->error("handle_buffer_image_copy: src buffer {} not found!", fmt::ptr(src));
+	}
+	if(!images.contains(dst)) {
+		logger->error("handle_buffer_image_copy: dst image {} not found!", fmt::ptr(dst));
+	}
+	auto& image = images[dst];
 
 	auto format = image.createInfo.format;
-	auto offset = buffer.memoryOffset + pRegions[0].bufferOffset;
-	auto size = GetBufferSizeFromCopyImage(pRegions[0], format);
+	auto size = GetBufferSizeFromCopyImage(region, format);
 
-	void* data;
-	VkResult ret = dispatch.MapMemory(handle, buffer.memory, offset, size, 0, &data);
-	if(ret == VK_SUCCESS) {
-		std::string hash_string = sha256_string((uint8_t*)data, (size_t)size);
-
-		logger->info("CmdCopyBufferToImage: src={} @ {:#x} ({}x{} # {}) dst={} @ {}x{}#{}, format={}, size={}, hash={}", fmt::ptr(srcBuffer), pRegions[0].bufferOffset,
-			pRegions[0].bufferRowLength, pRegions[0].bufferImageHeight, pRegions[0].imageSubresource.mipLevel, fmt::ptr(dstImage),
-			width, height, pRegions[0].imageExtent.depth, fmt::underlying(format), size, hash_string);
-
-		bool is_high_res = pRegions[0].imageSubresource.mipLevel == 0;
-		if(is_high_res) {
-			put_hash((rules::VkHandle)dstImage, hash_string);
-			{
-				rules::calling_context ctx{
-					.local_variables = {
-						{"image:hash", hash_string},
-						{"image:width", static_cast<double>(width)},
-						{"image:height", static_cast<double>(height)},
-						{"image:format", vk::to_string(vk::Format(format))},
-						{"image:format_raw", static_cast<double>(fmt::underlying(format))},
-						{"image:size", static_cast<double>(size)},
-					}
-				};
-				execute_rules(rules::selector_type::Image, (rules::VkHandle)dstImage, ctx);
+	try {
+		memory_access(src, [&](void* data, VkDeviceSize mapped_size){
+			if(mapped_size < size) {
+				throw std::runtime_error("mapped memory size is smaller than expected");
 			}
 
-			if(has_debug) {
-				std::string name = "Image "+hash_string;
+			std::string hash_string = sha256_string((uint8_t*)data, (size_t)size);
+			logger->info("{}[{}]: src={} @ {:#x} ({}x{} # {}) dst={} @ {}x{}#{}, format={}, size={}, hash={}", command, regionIndex, fmt::ptr(src), region.bufferOffset,
+				region.bufferRowLength, region.bufferImageHeight, region.imageSubresource.mipLevel, fmt::ptr(dst),
+				width, height, region.imageExtent.depth, fmt::underlying(format), size, hash_string);
+			bool is_high_res = region.imageSubresource.mipLevel == 0;
 
-				VkDebugUtilsObjectNameInfoEXT info{};
-				info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
-				info.objectType = VK_OBJECT_TYPE_IMAGE;
-				info.objectHandle = (uint64_t) dstImage;
-				info.pObjectName = name.c_str();
-				dispatch.SetDebugUtilsObjectNameEXT(handle, &info);
-			}
-		}
-
-		if(inst->config.dump) {
-			{
-				auto outputPath = inst->config.dump_directory / "images" / (hash_string+".image");
-				std::ofstream out(outputPath, std::ios_base::binary);
-				if(out.good())
-					out.write((char*)data, (size_t)size);
-			}
-#ifdef USE_IMAGE_TOOLS
-			if(is_high_res && inst->config.dump_png) {
-				if(image_tools::is_decompression_supported(image.createInfo.format)) {
-					auto outputPath = inst->config.dump_directory / "images" / "png" /
-						fmt::format("{}x{}", width, height) / (hash_string+".png");
-					if(!std::filesystem::exists(outputPath)) {
-						try {
-							image_tools::image img(width, height);
-							image_tools::decompress(image.createInfo.format, (uint8_t*)data, img, width, height);
-							if(inst->config.dump_png_flipped) {
-								image_tools::image flipped(width, height);
-								for(int y = 0; y < height; y++) {
-									for(int x = 0; x < width; x++) {
-										flipped.at(x, height-y-1) = img.at(x, y);
-									}
-								}
-								img = std::move(flipped);
-							}
-							std::filesystem::create_directories(outputPath.parent_path());
-							stbi_write_png(outputPath.c_str(), width, height, 4, img, width*4);
-						} catch(std::exception& ex) {
-							logger->error("Something went wrong: {}", ex.what());
-						} catch(...) {
-							logger->error("Something went really wrong");
+			if(is_high_res) {
+				put_hash((rules::VkHandle)dst, hash_string);
+				{
+					rules::calling_context ctx{
+						.local_variables = {
+							{"image:hash", hash_string},
+							{"image:width", static_cast<double>(width)},
+							{"image:height", static_cast<double>(height)},
+							{"image:format", vk::to_string(vk::Format(format))},
+							{"image:format_raw", static_cast<double>(fmt::underlying(format))},
+							{"image:size", static_cast<double>(size)},
 						}
+					};
+					execute_rules(rules::selector_type::Image, (rules::VkHandle)dst, ctx);
+				}
+
+				if(has_debug) {
+					std::string name = "Image "+hash_string;
+
+					VkDebugUtilsObjectNameInfoEXT info{};
+					info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+					info.objectType = VK_OBJECT_TYPE_IMAGE;
+					info.objectHandle = (uint64_t) dst;
+					info.pObjectName = name.c_str();
+					if(dispatch.SetDebugUtilsObjectNameEXT(handle, &info) != VK_SUCCESS) {
+						logger->warn("Failed to set debug name on image {}", fmt::ptr(dst));
 					}
-				} else {
-					logger->warn("Cannot export PNG for format {}", fmt::underlying(image.createInfo.format));
 				}
 			}
-#endif
-		}
 
-		if(inst->config.override) {
-			if(has_override(hash_string)) {
-				auto rawPath = inst->config.override_directory / "images" / (hash_string+".image");
-				auto pngPath = inst->config.override_directory / "images" / (hash_string+".png");
-				if(std::filesystem::exists(rawPath)) {
-					logger->info("Found image override at {}!", rawPath.string());
-					std::ifstream in(rawPath, std::ios_base::binary);
-					in.read((char*)data, size);
+			if(inst->config.dump) {
+				{
+					auto outputPath = inst->config.dump_directory / "images" / (hash_string+".image");
+					std::ofstream out(outputPath, std::ios_base::binary);
+					if(out.good())
+						out.write((char*)data, (size_t)size);
 				}
 #ifdef USE_IMAGE_TOOLS
-				else if(std::filesystem::exists(pngPath)) {
-					if(image_tools::is_compression_supported(image.createInfo.format)) {
-						try {
-							int w, h, comp;
-							uint8_t* buf = stbi_load(pngPath.c_str(), &w, &h, &comp, STBI_rgb_alpha);
-							image_tools::image img(w, h, buf);
-							if(inst->config.override_png_flipped) {
-								image_tools::image flipped(w, h);
-								for(int y = 0; y < h; y++) {
-									for(int x = 0; x < w; x++) {
-										flipped.at(x, h-y-1) = img.at(x, y);
+				if(is_high_res && inst->config.dump_png && size >= 256) {
+					if(image_tools::is_decompression_supported(image.createInfo.format)) {
+						auto outputPath = inst->config.dump_directory / "images" / "png" /
+							fmt::format("{}x{}", width, height) / (hash_string+".png");
+						if(!std::filesystem::exists(outputPath)) {
+							try {
+								image_tools::image img(width, height);
+								image_tools::decompress(image.createInfo.format, (uint8_t*)data, img, width, height);
+								if(inst->config.dump_png_flipped) {
+									image_tools::image flipped(width, height);
+									for(int y = 0; y < height; y++) {
+										for(int x = 0; x < width; x++) {
+											flipped.at(x, height-y-1) = img.at(x, y);
+										}
 									}
+									img = std::move(flipped);
 								}
-								img = std::move(flipped);
+								std::filesystem::create_directories(outputPath.parent_path());
+								stbi_write_png(outputPath.c_str(), width, height, 4, img, width*4);
+							} catch(std::exception& ex) {
+								logger->error("Something went wrong: {}", ex.what());
+							} catch(...) {
+								logger->error("Something went really wrong");
 							}
-							std::vector<uint8_t> out;
-							image_tools::compress(image.createInfo.format, img, out, width, height);
-							std::copy(out.begin(), out.end(), (uint8_t*)data);
-							if(is_high_res) {
-								image.topResolution = std::make_unique<image_tools::image>(std::move(img));
-							}
-							free(buf);
-							logger->info("Found and converted image override to format {}", fmt::underlying(image.createInfo.format));
-						} catch(std::exception& ex) {
-							logger->error("Something went wrong: {}", ex.what());
-						} catch(...) {
-							logger->error("Something went really wrong");
 						}
 					} else {
-						logger->warn("Cannot import PNG for format {}", fmt::underlying(image.createInfo.format));
+						logger->warn("Cannot export PNG for format {}", fmt::underlying(image.createInfo.format));
 					}
 				}
 #endif
 			}
+
+			if(inst->config.override) {
+				if(has_override(hash_string)) {
+					auto rawPath = inst->config.override_directory / "images" / (hash_string+".image");
+					auto pngPath = inst->config.override_directory / "images" / (hash_string+".png");
+					if(std::filesystem::exists(rawPath)) {
+						logger->info("Found image override at {}!", rawPath.string());
+						std::ifstream in(rawPath, std::ios_base::binary);
+						in.read((char*)data, size);
+					}
 #ifdef USE_IMAGE_TOOLS
-			else if(image.topResolution) {
-				try {
-					std::vector<uint8_t> out;
-					image_tools::compress(image.createInfo.format, *image.topResolution.get(), out, width, height);
-					std::copy(out.begin(), out.end(), (uint8_t*)data);
-					logger->info("Found and converted image override of top resolution to format {}", fmt::underlying(image.createInfo.format));
-				} catch(std::exception& ex) {
-					logger->error("Something went wrong: {}", ex.what());
-				} catch(...) {
-					logger->error("Something went really wrong");
-				}
-			}
+					else if(std::filesystem::exists(pngPath)) {
+						if(image_tools::is_compression_supported(image.createInfo.format)) {
+							try {
+								int w, h, comp;
+								uint8_t* buf = stbi_load(pngPath.c_str(), &w, &h, &comp, STBI_rgb_alpha);
+								image_tools::image img(w, h, buf);
+								if(inst->config.override_png_flipped) {
+									image_tools::image flipped(w, h);
+									for(int y = 0; y < h; y++) {
+										for(int x = 0; x < w; x++) {
+											flipped.at(x, h-y-1) = img.at(x, y);
+										}
+									}
+									img = std::move(flipped);
+								}
+								std::vector<uint8_t> out;
+								image_tools::compress(image.createInfo.format, img, out, width, height);
+								std::copy(out.begin(), out.end(), (uint8_t*)data);
+								if(is_high_res) {
+									image.topResolution = std::make_unique<image_tools::image>(std::move(img));
+								}
+								free(buf);
+								logger->info("Found and converted image override to format {}", fmt::underlying(image.createInfo.format));
+							} catch(std::exception& ex) {
+								logger->error("Something went wrong: {}", ex.what());
+							} catch(...) {
+								logger->error("Something went really wrong");
+							}
+						} else {
+							logger->warn("Cannot import PNG for format {}", fmt::underlying(image.createInfo.format));
+						}
+					}
 #endif
-		}
-
-		dispatch.UnmapMemory(handle, buffer.memory);
-	} else {
-		logger->info("CmdCopyBufferToImage: src={} @ {:#x} ({}x{} # {}) dst={} @ {}x{}#{}, format={}, size={}", fmt::ptr(srcBuffer), pRegions[0].bufferOffset,
-			pRegions[0].bufferRowLength, pRegions[0].bufferImageHeight, pRegions[0].imageSubresource.mipLevel, fmt::ptr(dstImage),
-			width, height, pRegions[0].imageExtent.depth, fmt::underlying(format), size);
-		logger->warn("Cannot map memory {}", fmt::underlying(ret));
+				}
+#ifdef USE_IMAGE_TOOLS
+				else if(image.topResolution) {
+					try {
+						std::vector<uint8_t> out;
+						image_tools::compress(image.createInfo.format, *image.topResolution.get(), out, width, height);
+						std::copy(out.begin(), out.end(), (uint8_t*)data);
+						logger->info("Found and converted image override of top resolution to format {}", fmt::underlying(image.createInfo.format));
+					} catch(std::exception& ex) {
+						logger->error("Something went wrong: {}", ex.what());
+					} catch(...) {
+						logger->error("Something went really wrong");
+					}
+				}
+#endif
+			}
+		}, region.bufferOffset);
+	} catch (const std::exception& e) {
+		logger->info("{}[{}]: src={} @ {:#x} ({}x{} # {}) dst={} @ {}x{}#{}, format={}, size={}", command, regionIndex, fmt::ptr(src), region.bufferOffset,
+			region.bufferRowLength, region.bufferImageHeight, region.imageSubresource.mipLevel, fmt::ptr(dst),
+			width, height, region.imageExtent.depth, fmt::underlying(format), size);
+		logger->warn("Cannot access memory: {}", e.what());
 	}
+}
 
+void device::CmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkImage dstImage, VkImageLayout dstImageLayout, uint32_t regionCount, const VkBufferImageCopy* pRegions)
+{
+	for(uint32_t i = 0; i < regionCount; i++) {
+		handle_buffer_image_copy("CmdCopyBufferToImage", i, commandBuffer, srcBuffer, dstImage, pRegions[i]);
+	}
 	dispatch.CmdCopyBufferToImage(commandBuffer, srcBuffer, dstImage, dstImageLayout, regionCount, pRegions);
+}
+
+void device::CmdCopyBufferToImage2(VkCommandBuffer commandBuffer, const VkCopyBufferToImageInfo2* pCopyBufferToImageInfo)
+{
+	for(uint32_t i = 0; i < pCopyBufferToImageInfo->regionCount; i++) {
+		if(pCopyBufferToImageInfo->pRegions[i].pNext) {
+			logger->warn("CmdCopyBufferToImage2: pRegions[{}].pNext is not null!", i);
+		}
+		VkBufferImageCopy region{
+			.bufferOffset = pCopyBufferToImageInfo->pRegions[i].bufferOffset,
+			.bufferRowLength = pCopyBufferToImageInfo->pRegions[i].bufferRowLength,
+			.bufferImageHeight = pCopyBufferToImageInfo->pRegions[i].bufferImageHeight,
+			.imageSubresource = pCopyBufferToImageInfo->pRegions[i].imageSubresource,
+			.imageOffset = pCopyBufferToImageInfo->pRegions[i].imageOffset,
+			.imageExtent = pCopyBufferToImageInfo->pRegions[i].imageExtent,
+		};
+		handle_buffer_image_copy("CmdCopyBufferToImage2", i, commandBuffer, pCopyBufferToImageInfo->srcBuffer, pCopyBufferToImageInfo->dstImage, region);
+	}
+	dispatch.CmdCopyBufferToImage2(commandBuffer, pCopyBufferToImageInfo);
 }
 
 }
@@ -314,4 +345,11 @@ VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBufferToImage(
 {
 	return CheekyLayer::get_device(commandBuffer).CmdCopyBufferToImage(commandBuffer,
 		srcBuffer, dstImage, dstImageLayout, regionCount, pRegions);
+}
+
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBufferToImage2(
+	VkCommandBuffer                             commandBuffer,
+	const VkCopyBufferToImageInfo2*             pCopyBufferToImageInfo)
+{
+	return CheekyLayer::get_device(commandBuffer).CmdCopyBufferToImage2(commandBuffer, pCopyBufferToImageInfo);
 }

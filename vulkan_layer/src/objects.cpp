@@ -1,5 +1,6 @@
 #include "objects.hpp"
 #include "constants.hpp"
+#include "layer.hpp"
 #include "rules/reader.hpp"
 #include "utils.hpp"
 
@@ -12,6 +13,7 @@
 #include <sstream>
 #include <string>
 #include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.hpp>
 
 namespace CheekyLayer {
 
@@ -21,14 +23,13 @@ instance::instance(const VkInstanceCreateInfo *pCreateInfo, VkInstance* pInstanc
  : id(instance_id++), handle(*pInstance) {
     std::fill(reinterpret_cast<char*>(&dispatch), reinterpret_cast<char*>(&dispatch)+sizeof(dispatch), 0);
 
-    try
-	{
-		std::string configFile = std::getenv(CheekyLayer::Contants::CONFIG_ENV.c_str());
-		std::ifstream in(configFile);
-		if(in.good())
-		{
-			in >> config;
-		}
+    try {
+        if(const char* path = std::getenv(CheekyLayer::Contants::CONFIG_ENV.c_str())) {
+            std::ifstream in(path);
+            if(in.good()) {
+                in >> config;
+            }
+        }
 	}
 	catch(std::exception&) {}
 
@@ -60,11 +61,12 @@ instance::instance(const VkInstanceCreateInfo *pCreateInfo, VkInstance* pInstanc
 		__DATE__, __TIME__, applicationName, engineName);
     logger->flush();
 
-    for(auto type : {"images", "buffers", "shaders"})
-	{
-		try
-		{
-			std::filesystem::directory_iterator it(config.override_directory / type);
+    spdlog::set_default_logger(logger);
+
+    for(auto type : {"images", "buffers", "shaders"}) {
+		try {
+            std::filesystem::path p = config.override_directory / type;
+			std::filesystem::directory_iterator it(p);
 
 			int count = 0;
 			std::transform(std::filesystem::begin(it), std::filesystem::end(it), std::inserter(overrideCache, overrideCache.end()), [&count](auto e){
@@ -72,9 +74,7 @@ instance::instance(const VkInstanceCreateInfo *pCreateInfo, VkInstance* pInstanc
 				return e.path().stem();
 			});
             logger->info("Found {} overrides for {}", count, type);
-		}
-		catch (std::filesystem::filesystem_error& ex)
-		{
+		} catch(const std::filesystem::filesystem_error& ex) {
             logger->warn("Cannot find overrides for {}: {}", type, ex.what());
 		}
 	}
@@ -187,13 +187,15 @@ bool device::has_override(const std::string& name) {
 }
 
 void device::memory_access(VkDeviceMemory memory, std::function<void(void*, VkDeviceSize)> function, VkDeviceSize offset) {
+    logger->trace("Requested mapping of memory {} at offset {:#x}", fmt::ptr(memory), offset);
+
+    scoped_lock l(lock);
     if(memoryMappings.contains(memory)) {
         const auto& mapping = memoryMappings[memory];
         auto ptrOffset = offset - mapping.offset;
         if(mapping.offset > offset || ptrOffset > mapping.size) {
-            throw std::runtime_error("memory is mapped, but requested region cannot be accessed");
+            throw std::runtime_error(std::format("memory is mapped, but requested region cannot be accessed: size = {}, mapping offset = {}, requested offset = {}", mapping.size, mapping.offset, offset));
         }
-        function((uint8_t*)mapping.pointer + ptrOffset, mapping.size - ptrOffset);
 
         VkMappedMemoryRange range{};
         range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
@@ -201,16 +203,29 @@ void device::memory_access(VkDeviceMemory memory, std::function<void(void*, VkDe
         range.offset = mapping.offset;
         range.size = mapping.size;
         dispatch.FlushMappedMemoryRanges(handle, 1, &range);
+
+        function((uint8_t*)mapping.pointer + ptrOffset, mapping.size - ptrOffset);
+
+        dispatch.FlushMappedMemoryRanges(handle, 1, &range);
     } else {
         void* ptr;
-        dispatch.MapMemory(handle, memory, offset, VK_WHOLE_SIZE, 0, &ptr);
-        function(ptr, VK_WHOLE_SIZE);
+        VkDeviceSize size = memoryAllocations.at(memory).allocationSize;
+        if(offset >= size) {
+            throw std::runtime_error("memory is not mapped, and requested offset is out of bounds");
+        }
+        size = size - offset;
+
+        VkResult res = dispatch.MapMemory(handle, memory, offset, size, 0, &ptr);
+        if(res != VK_SUCCESS) {
+            throw std::runtime_error("failed to map memory that is not already mapped: "+vk::to_string(vk::Result{res}));
+        }
+        function(ptr, size);
 
         VkMappedMemoryRange range{};
         range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
         range.memory = memory;
         range.offset = offset;
-        range.size = VK_WHOLE_SIZE;
+        range.size = size;
         dispatch.FlushMappedMemoryRanges(handle, 1, &range);
 
         dispatch.UnmapMemory(handle, memory);

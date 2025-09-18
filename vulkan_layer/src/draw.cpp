@@ -4,6 +4,7 @@
 #include "reflection/reflectionparser.hpp"
 #include "rules/execution_env.hpp"
 #include "rules/rules.hpp"
+#include "utils.hpp"
 
 #include <experimental/iterator>
 #include <vulkan/vulkan.hpp>
@@ -271,14 +272,30 @@ VkResult device::CreatePipelineLayout(const VkPipelineLayoutCreateInfo* pCreateI
 
 VkResult device::CreateGraphicsPipelines(VkPipelineCache pipelineCache, uint32_t createInfoCount, const VkGraphicsPipelineCreateInfo* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines)
 {
+	std::vector<std::vector<rules::VkHandle>> shaderStagesList;
+	shaderStagesList.resize(createInfoCount);
+
 	std::vector<std::remove_cvref_t<decltype(std::declval<rules::local_context>().creationCallbacks)>> callbacks;
 	for(unsigned int i=0; i<createInfoCount; i++) {
 		VkGraphicsPipelineCreateInfo* info = const_cast<VkGraphicsPipelineCreateInfo*>(&pCreateInfos[i]);
 
-		std::vector<rules::VkHandle> shaderStages;
-		std::transform(info->pStages, info->pStages+info->stageCount, std::back_inserter(shaderStages), [this](VkPipelineShaderStageCreateInfo s){
-			return customShaderHandles[s.module];
-		});
+		std::vector<rules::VkHandle>& shaderStages = shaderStagesList[i];
+		shaderStages.resize(info->stageCount);
+		for(unsigned int j=0; j<info->stageCount; j++) {
+			auto& stage = info->pStages[j];
+			if(stage.module != VK_NULL_HANDLE) {
+				shaderStages[j] = customShaderHandles[stage.module];
+			} else {
+				VkShaderModuleCreateInfo* shaderModuleInfo = static_cast<VkShaderModuleCreateInfo*>(
+					find_pnext(stage.pNext, VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO));
+
+				auto res = pre_shader_create(shaderModuleInfo);
+				rules::VkHandle handle = (rules::VkHandle) currentCustomShaderHandle++; // pretend, that we created it
+				post_shader_create(shaderModuleInfo, handle, res);
+
+				shaderStages[j] = handle;
+			}
+		}
 
 		rules::pipeline_info pinfo = {shaderStages, info};
 		rules::calling_context ctx{
@@ -310,7 +327,7 @@ VkResult device::CreateGraphicsPipelines(VkPipelineCache pipelineCache, uint32_t
 		state.stages.resize(info.stageCount);
 		for(unsigned int j=0; j<info.stageCount; j++) {
 			VkPipelineShaderStageCreateInfo shaderInfo = info.pStages[j];
-			rules::VkHandle customHandle = customShaderHandles[shaderInfo.module];
+			rules::VkHandle customHandle = shaderStagesList[i][j];
 
 			auto p = inst->global_context.hashes.find(customHandle);
 			std::string hash = "unknown";
@@ -319,15 +336,36 @@ VkResult device::CreateGraphicsPipelines(VkPipelineCache pipelineCache, uint32_t
 
 			state.stages[j] = {shaderInfo.stage, shaderInfo.module, customHandle, hash, std::string(shaderInfo.pName)};
 		}
-		state.vertexBindingDescriptions = std::vector(info.pVertexInputState->pVertexBindingDescriptions,
-			info.pVertexInputState->pVertexBindingDescriptions + info.pVertexInputState->vertexBindingDescriptionCount);
-		state.vertexAttributeDescriptions = std::vector(info.pVertexInputState->pVertexAttributeDescriptions,
-			info.pVertexInputState->pVertexAttributeDescriptions + info.pVertexInputState->vertexAttributeDescriptionCount);
+		if(info.pVertexInputState) {
+			if(info.pVertexInputState->pVertexBindingDescriptions && info.pVertexInputState->vertexBindingDescriptionCount) {
+				state.vertexBindingDescriptions = std::vector(info.pVertexInputState->pVertexBindingDescriptions,
+					info.pVertexInputState->pVertexBindingDescriptions + info.pVertexInputState->vertexBindingDescriptionCount);
+			}
+			if(info.pVertexInputState->pVertexAttributeDescriptions && info.pVertexInputState->vertexAttributeDescriptionCount) {
+				state.vertexAttributeDescriptions = std::vector(info.pVertexInputState->pVertexAttributeDescriptions,
+					info.pVertexInputState->pVertexAttributeDescriptions + info.pVertexInputState->vertexAttributeDescriptionCount);
+			}
+		}
 
-		pipelineStates[pPipelines[i]] = std::move(state);
+		scoped_lock l(lock);
+		const auto& savedState = pipelineStates[pPipelines[i]] = std::move(state);
 
 		for(auto& cb : callbacks[i]) {
 			cb(pPipelines[i]);
+		}
+
+		if(has_debug) {
+			std::string name = fmt::format("Pipeline {:#x}\nShaders:\n", reinterpret_cast<uint64_t>(pPipelines[i]));
+			for(const auto& s : savedState.stages) {
+				name += fmt::format("- {}: {} ({}: {})\n", vk::to_string((vk::ShaderStageFlagBits)s.stage), s.name, s.customHandle, s.hash);
+			}
+
+			VkDebugUtilsObjectNameInfoEXT nameInfo{};
+			nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+			nameInfo.objectType = VK_OBJECT_TYPE_PIPELINE;
+			nameInfo.objectHandle = (uint64_t)(VkPipeline)pPipelines[i];
+			nameInfo.pObjectName = name.c_str();
+			dispatch.SetDebugUtilsObjectNameEXT(handle, &nameInfo);
 		}
 	}
 	return result;

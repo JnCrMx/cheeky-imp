@@ -5,6 +5,7 @@
 #include "rules/rules.hpp"
 #include <memory>
 #include <spdlog/logger.h>
+#include <spdlog/spdlog.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <vulkan/vulkan_core.h>
@@ -117,6 +118,7 @@ struct device {
 
     instance* inst;
     std::shared_ptr<spdlog::logger> logger;
+    std::mutex lock;
 
     VkDevice handle;
     PFN_vkGetDeviceProcAddr gdpa;
@@ -145,6 +147,7 @@ struct device {
         VkDeviceSize size;
     };
     std::map<VkBuffer, buffer> buffers;
+    std::map<VkDeviceMemory, VkMemoryAllocateInfo> memoryAllocations;
     std::map<VkDeviceMemory, memory_map_info> memoryMappings;
 
     struct image {
@@ -185,16 +188,21 @@ struct device {
     VkResult CreateImage(const VkImageCreateInfo*, const VkAllocationCallbacks*, VkImage*);
     VkResult BindImageMemory(VkImage, VkDeviceMemory, VkDeviceSize);
     VkResult CreateImageView(const VkImageViewCreateInfo*, const VkAllocationCallbacks*, VkImageView*);
+    void handle_buffer_image_copy(std::string_view, unsigned int, VkCommandBuffer, VkBuffer, VkImage, VkBufferImageCopy);
     void CmdCopyBufferToImage(VkCommandBuffer, VkBuffer, VkImage, VkImageLayout, uint32_t, const VkBufferImageCopy*);
+    void CmdCopyBufferToImage2(VkCommandBuffer, const VkCopyBufferToImageInfo2*);
 
     // buffers.cpp
     VkResult CreateBuffer(const VkBufferCreateInfo*, const VkAllocationCallbacks*, VkBuffer*);
     VkResult BindBufferMemory(VkBuffer, VkDeviceMemory, VkDeviceSize);
+    VkResult AllocateMemory(const VkMemoryAllocateInfo*, const VkAllocationCallbacks*, VkDeviceMemory*);
     VkResult MapMemory(VkDeviceMemory, VkDeviceSize, VkDeviceSize, VkMemoryMapFlags, void**);
     void UnmapMemory(VkDeviceMemory);
     void CmdCopyBuffer(VkCommandBuffer, VkBuffer, VkBuffer, uint32_t, const VkBufferCopy*);
 
     // shaders.cpp
+    struct pre_shader_create_result* pre_shader_create(VkShaderModuleCreateInfo*);
+    void post_shader_create(const VkShaderModuleCreateInfo*, rules::VkHandle, struct pre_shader_create_result*);
     VkResult CreateShaderModule(const VkShaderModuleCreateInfo*, const VkAllocationCallbacks*, VkShaderModule*);
 
     // descriptors.cpp
@@ -270,19 +278,44 @@ inline std::unordered_map<void*, std::unique_ptr<instance>> instances;
 inline std::unordered_map<void*, std::unique_ptr<device>> devices;
 
 inline instance& get_instance(VkInstance instance) {
-    return *instances.at(GetKey(instance));
+    auto key = GetKey(instance);
+    if(!instances.contains(key)) {
+        spdlog::critical("No instance found for {}", fmt::ptr(key));
+        spdlog::default_logger()->flush();
+    }
+    return *instances.at(key);
 }
 inline instance& get_instance(VkPhysicalDevice physicalDevice) {
-    return *instances.at(GetKey(physicalDevice));
+    auto key = GetKey(physicalDevice);
+    if(!instances.contains(key)) {
+        spdlog::critical("No instance found for {}", fmt::ptr(key));
+        spdlog::default_logger()->flush();
+    }
+    return *instances.at(key);
 }
 inline device& get_device(VkDevice device) {
-    return *devices.at(GetKey(device));
+    auto key = GetKey(device);
+    if(!devices.contains(key)) {
+        spdlog::critical("No device found for {}", fmt::ptr(key));
+        spdlog::default_logger()->flush();
+    }
+    return *devices.at(key);
 }
 inline device& get_device(VkCommandBuffer commandBuffer) {
-    return *devices.at(GetKey(commandBuffer));
+    auto key = GetKey(commandBuffer);
+    if(!devices.contains(key)) {
+        spdlog::critical("No device found for {}", fmt::ptr(key));
+        spdlog::default_logger()->flush();
+    }
+    return *devices.at(key);
 }
 inline device& get_device(VkQueue commandBuffer) {
-    return *devices.at(GetKey(commandBuffer));
+    auto key = GetKey(commandBuffer);
+    if(!devices.contains(key)) {
+        spdlog::critical("No device found for {}", fmt::ptr(key));
+        spdlog::default_logger()->flush();
+    }
+    return *devices.at(key);
 }
 
 }

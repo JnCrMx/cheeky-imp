@@ -16,7 +16,7 @@
 
 extern std::mutex global_lock;
 extern std::mutex transfer_lock;
-using scoped_lock = std::lock_guard<std::mutex>;
+using scoped_lock = std::scoped_lock<std::mutex>;
 
 // layer.cpp
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateInstance(const VkInstanceCreateInfo*, const VkAllocationCallbacks*, VkInstance*);
@@ -41,10 +41,12 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateImage(VkDevice, const VkIm
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_BindImageMemory(VkDevice, VkImage, VkDeviceMemory, VkDeviceSize);
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateImageView(VkDevice, const VkImageViewCreateInfo*, const VkAllocationCallbacks*, VkImageView*);
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBufferToImage(VkCommandBuffer, VkBuffer, VkImage, VkImageLayout, uint32_t, const VkBufferImageCopy*);
+VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBufferToImage2(VkCommandBuffer, const VkCopyBufferToImageInfo2*);
 
 // buffers.cpp
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_CreateBuffer(VkDevice, const VkBufferCreateInfo*, const VkAllocationCallbacks*, VkBuffer*);
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_BindBufferMemory(VkDevice, VkBuffer, VkDeviceMemory, VkDeviceSize);
+VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_AllocateMemory(VkDevice, const VkMemoryAllocateInfo*, const VkAllocationCallbacks*, VkDeviceMemory*);
 VK_LAYER_EXPORT VkResult VKAPI_CALL CheekyLayer_MapMemory(VkDevice, VkDeviceMemory, VkDeviceSize, VkDeviceSize, VkMemoryMapFlags, void**);
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_UnmapMemory(VkDevice, VkDeviceMemory);
 VK_LAYER_EXPORT void VKAPI_CALL CheekyLayer_CmdCopyBuffer(VkCommandBuffer, VkBuffer, VkBuffer, uint32_t, const VkBufferCopy*);

@@ -54,11 +54,13 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa, VkuD
 	\
 	DeviceHook(CreateBuffer) \
 	DeviceHook(BindBufferMemory) \
+	DeviceHook(AllocateMemory) \
 	DeviceHook(MapMemory) \
 	DeviceHook(UnmapMemory) \
 	\
 	DeviceHook(CmdCopyBufferToImage) \
-	DeviceHook(CmdCopyBuffer) \
+	DeviceHook(CmdCopyBufferToImage2) \
+	/*DeviceHook(CmdCopyBuffer)*/ \
 	\
 	DeviceHook(CreateShaderModule) \
 	DeviceHook(CreateGraphicsPipelines) \
@@ -150,6 +152,7 @@ void InitDeviceDispatchTable(VkDevice device, PFN_vkGetDeviceProcAddr gdpa, VkuD
 	DeviceDispatch(AllocateDescriptorSets) \
 	\
 	DeviceDispatch(CmdCopyBufferToImage) \
+	DeviceDispatch(CmdCopyBufferToImage2) \
 	DeviceDispatch(CmdCopyBuffer) \
 	DeviceDispatch(CmdBindDescriptorSets) \
 	DeviceDispatch(CmdBindPipeline) \

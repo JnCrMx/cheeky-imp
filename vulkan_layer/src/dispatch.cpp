@@ -40,9 +40,11 @@ VK_LAYER_EXPORT PFN_vkVoidFunction VKAPI_CALL CheekyLayer_GetInstanceProcAddr(Vk
 		InstanceHooks();
 	}
 
-	{
+	if(instance) {
 		scoped_lock l(global_lock);
 		return CheekyLayer::get_instance(instance).dispatch.GetInstanceProcAddr(instance, pName);
+	} else {
+		return nullptr;
 	}
 }
 

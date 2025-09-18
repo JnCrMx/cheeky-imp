@@ -48,3 +48,14 @@ uint32_t findMemoryType(VkPhysicalDeviceMemoryProperties memProperties, uint32_t
 
 	throw std::runtime_error("failed to find suitable memory type!");
 }
+
+void* find_pnext(const void* pNext, VkStructureType type) {
+	while(pNext) {
+		const VkBaseInStructure* base = static_cast<const VkBaseInStructure*>(pNext);
+		if(base->sType == type) {
+			return const_cast<void*>(pNext);
+		}
+		pNext = base->pNext;
+	}
+	return nullptr;
+}
